@@ -184,6 +184,37 @@ describe("WebSocket route registration", () => {
     socket.socket.close();
   });
 
+  test("replaces equivalent websocket routes registered with different encodings", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-duplicate-route-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/caf%C3%A9", {
+      onConnect(ctx) {
+        ctx.send({ handler: "old" });
+      },
+    });
+    app.ws("/café", {
+      onConnect(ctx) {
+        ctx.send({ handler: "new" });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    for (const path of ["/caf%C3%A9", "/caf%c3%a9"]) {
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}${path}`);
+      expect(await socket.next()).toEqual({ handler: "new" });
+      socket.socket.close();
+    }
+  });
+
   test("does not intercept HTTP paths with encoded query or fragment characters", async () => {
     const app = await createMuboApp(
       {

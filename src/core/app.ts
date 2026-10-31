@@ -50,6 +50,14 @@ function decodeLookupPath(path: string): string | undefined {
   return normalizeLookupPath(segments.join("/"));
 }
 
+function equivalentRoutePath(path: string): string | undefined {
+  try {
+    return decodeLookupPath(path);
+  } catch {
+    return undefined;
+  }
+}
+
 function validRequestId(value: string | null): value is string {
   return value !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
 }
@@ -185,17 +193,17 @@ export class MuboApp {
 
   ws(path: string, handlers: WsHandlers): this {
     const normalized = normalizeRoutePath(path);
+    const canonical = equivalentRoutePath(normalized);
+    if (canonical !== undefined) {
+      for (const [registeredPath] of this.wsRoutes) {
+        if (equivalentRoutePath(registeredPath) === canonical) this.wsRoutes.delete(registeredPath);
+      }
+    }
     const route: WsRoute = { path: normalized, handlers };
     this.wsRoutes.set(normalized, route);
-    try {
-      const decoded = normalizeRoutePath(decodeURIComponent(normalized));
-      if (
-        decoded !== normalized &&
-        decoded.split("/").length === normalized.split("/").length
-      ) {
-        this.wsRoutes.set(decoded, route);
-      }
-    } catch {}
+    if (canonical !== undefined && canonical !== normalized) {
+      this.wsRoutes.set(canonical, route);
+    }
     return this;
   }
 
