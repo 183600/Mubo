@@ -30,7 +30,15 @@ export type RouteMatch =
   | { type: "not-found" };
 
 function routeKey(path: string): string {
-  return path.replace(/^\/+|\/+$/g, "");
+  const trimmed = path.replace(/^\/+|\/+$/g, "");
+  const segments = trimmed === "" ? [] : trimmed.split("/");
+  return JSON.stringify(
+    segments.map((segment) => {
+      if (segment === "*") return ["wildcard", segment];
+      if (segment.startsWith(":")) return ["param", segment];
+      return ["literal", decodeLiteral(segment)];
+    }),
+  );
 }
 
 function compilePath(path: string): Segment[] {

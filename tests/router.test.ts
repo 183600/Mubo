@@ -139,6 +139,26 @@ describe("router", () => {
     expect(await (third as Response).text()).toBe("third");
   });
 
+  test("replaces equivalent routes that differ only by percent-encoding", async () => {
+    const router = new Router();
+    router.add("GET", "/caf%C3%A9", ok("first"));
+    router.add("GET", "/café", ok("second"));
+    expect(router.routes).toHaveLength(1);
+
+    for (const pathname of ["/caf%C3%A9", "/caf%c3%a9", "/café"]) {
+      const match = router.match("GET", pathname);
+      expect(match.type).toBe("match");
+      const response = match.type === "match" ? await match.route.handler({} as never) : undefined;
+      expect(await (response as Response).text()).toBe("second");
+    }
+
+    const patterns = new Router();
+    patterns.add("GET", "/users/:id", ok("param"));
+    patterns.add("GET", "/users/%3Aid", ok("literal"));
+    expect(patterns.routes).toHaveLength(2);
+    expect(patterns.match("GET", "/users/42")).toMatchObject({ route: { path: "/users/:id" } });
+  });
+
   test("treats slash-only routes and request paths as the root", async () => {
     const router = new Router();
     router.add("GET", "/", ok("first"));
