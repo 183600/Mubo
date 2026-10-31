@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { MuboError } from "../core/errors.ts";
 
@@ -63,6 +63,9 @@ function clientHtml(appName: string): string {
 export async function initProject(target: string, options: InitOptions): Promise<string> {
   const dir = resolve(options.cwd, target);
   if (existsSync(dir)) {
+    if (!statSync(dir).isDirectory()) {
+      throw new MuboError("CONFIG_ERROR", `Target exists and is not a directory: ${dir}`);
+    }
     const entries = readdirSync(dir);
     if (entries.length > 0 && !options.force) {
       throw new MuboError("CONFIG_ERROR", `Directory is not empty: ${dir} (use --force to overwrite)`);

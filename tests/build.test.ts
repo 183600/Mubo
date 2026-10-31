@@ -38,6 +38,19 @@ async function waitFor(url: string, timeoutMs = 10_000): Promise<Response> {
 }
 
 describe("single-file build", () => {
+  test("rejects entry and static paths with the wrong file type", async () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, "entry-dir"));
+    writeFileSync(join(cwd, "not-a-dir"), "file");
+
+    await expect(buildProject({ cwd, entry: "entry-dir" })).rejects.toThrow(/Cannot find app entry/);
+
+    writeFileSync(join(cwd, "index.ts"), "");
+    await expect(buildProject({ cwd, entry: "index.ts", staticDir: "not-a-dir" })).rejects.toThrow(
+      /Static directory not found/,
+    );
+  });
+
   test(
     "compiles an app with embedded assets and runs it with a data directory",
     async () => {

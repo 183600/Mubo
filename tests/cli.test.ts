@@ -94,6 +94,9 @@ describe("CLI", () => {
     expect(readFileSync(join(dir, "tsconfig.json"), "utf8")).toContain("allowImportingTsExtensions");
     await expect(initProject("my-app", { cwd })).rejects.toThrow(/not empty/);
     await expect(initProject("my-app", { cwd, force: true })).resolves.toBe(dir);
+
+    writeFileSync(join(cwd, "occupied"), "not a directory");
+    await expect(initProject("occupied", { cwd })).rejects.toThrow(/not a directory/);
   });
 
   test("migrate applies, reports idempotency, and checks pending migrations", async () => {

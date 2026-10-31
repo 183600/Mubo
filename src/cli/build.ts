@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { sanitizeAppName } from "../core/config.ts";
 import { MuboError } from "../core/errors.ts";
@@ -33,13 +33,29 @@ async function packageName(cwd: string): Promise<string | undefined> {
   }
 }
 
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function findEntry(cwd: string, requested?: string): string {
   const candidates = requested
     ? [requested]
     : ["src/server/index.ts", "src/index.ts", "server.ts", "index.ts"];
   for (const candidate of candidates) {
     const absolute = resolve(cwd, candidate);
-    if (existsSync(absolute)) return absolute;
+    if (isFile(absolute)) return absolute;
   }
   throw new MuboError(
     "CONFIG_ERROR",
@@ -50,22 +66,22 @@ function findEntry(cwd: string, requested?: string): string {
 function findStaticDir(cwd: string, config: MuboConfig, requested?: string): string | undefined {
   if (requested) {
     const absolute = resolve(cwd, requested);
-    if (!existsSync(absolute)) throw new MuboError("CONFIG_ERROR", `Static directory not found: ${absolute}`);
+    if (!isDirectory(absolute)) throw new MuboError("CONFIG_ERROR", `Static directory not found: ${absolute}`);
     return absolute;
   }
   if (config.static?.mode === "off") return undefined;
   if (config.static?.dir) {
     const absolute = resolve(cwd, config.static.dir);
-    if (existsSync(absolute)) return absolute;
+    if (isDirectory(absolute)) return absolute;
     if (config.static.dir === "public") {
       const fallback = resolve(cwd, "dist/client");
-      if (existsSync(fallback)) return fallback;
+      if (isDirectory(fallback)) return fallback;
     }
     return undefined;
   }
   for (const candidate of ["public", "dist/client"]) {
     const absolute = resolve(cwd, candidate);
-    if (existsSync(absolute)) return absolute;
+    if (isDirectory(absolute)) return absolute;
   }
   return undefined;
 }
