@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bun:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
+
+      - name: Typecheck & test (graceful until package.json exists)
+        run: |
+          set +e
+          if [ ! -f package.json ]; then
+            echo "[ci] 仓库尚无 package.json，跳过检查与测试"
+            exit 0
+          fi
+          ( bun install --frozen-lockfile || bun install ) || exit 1
+          if bun -e 'const p=JSON.parse(require("fs").readFileSync("package.json","utf8"));process.exit(p.scripts&&p.scripts.typecheck?0:1)' 2>/dev/null; then
+            bun run typecheck || exit 1
+          elif [ -f tsconfig.json ] && [ -x node_modules/.bin/tsc ]; then
+            ./node_modules/.bin/tsc --noEmit || exit 1
+          fi
+          if bun -e 'const p=JSON.parse(require("fs").readFileSync("package.json","utf8"));process.exit(p.scripts&&p.scripts.test?0:1)' 2>/dev/null; then
+            bun run test || exit 1
+          elif find . -path ./node_modules -prune -o -path ./.git -prune -o -type f \( -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.test.js' -o -name '*.test.mjs' -o -name '*.spec.ts' -o -name '*.spec.js' \) -print 2>/dev/null | grep -q .; then
+            bun test || exit 1
+          else
+            echo "[ci] 暂无测试文件，跳过 bun test"
+          fi
+
+      - name: Check repository hygiene
+        run: |
+          if [ -f scripts/check-hygiene.sh ]; then
+            bash scripts/check-hygiene.sh
+          else
+            echo "[ci] 无 scripts/check-hygiene.sh，跳过"
+          fi

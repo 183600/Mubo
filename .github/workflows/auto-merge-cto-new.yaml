@@ -1,0 +1,39 @@
+name: Auto-push PRs from cto.new
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  autopush:
+    # 修改点：移除了 && !github.event.pull_request.draft
+    # 现在只要是 cto-new[bot] 的 PR，不管是不是 draft，都会进入此任务
+    if: github.event.pull_request.user.login == 'cto-new[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整的 git 历史，确保 rebase 操作能正常工作
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Push to base branch
+        run: |
+          # 1. 获取目标分支（例如 main）的最新状态
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          
+          # 2. 将当前的 PR 提交变基到目标分支的最新提交之上
+          # 如果出现冲突，这一步会失败，这是预期的行为，需要人工介入解决冲突
+          git rebase origin/${{ github.event.pull_request.base.ref }}
+          
+          # 3. 推送代码
+          git push origin HEAD:${{ github.event.pull_request.base.ref }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
