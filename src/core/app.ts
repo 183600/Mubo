@@ -117,6 +117,10 @@ export class MuboApp {
     return this.route("GET", path, handler);
   }
 
+  head(path: string, handler: RouteHandler): this {
+    return this.route("HEAD", path, handler);
+  }
+
   post(path: string, handler: RouteHandler): this {
     return this.route("POST", path, handler);
   }
@@ -366,7 +370,9 @@ export class MuboApp {
     try {
       url = new URL(request.url);
     } catch {
-      return errorResponse(requestId, new MuboError("BAD_REQUEST", "Invalid request URL"), true);
+      const response = errorResponse(requestId, new MuboError("BAD_REQUEST", "Invalid request URL"), true);
+      response.headers.set("x-request-id", requestId);
+      return response;
     }
 
     if (this.config.http.cors && request.method.toUpperCase() === "OPTIONS") {
@@ -381,6 +387,7 @@ export class MuboApp {
           vary: "Origin",
         });
         if (this.config.http.cors.credentials) headers.set("access-control-allow-credentials", "true");
+        headers.set("x-request-id", requestId);
         return new Response(null, { status: 204, headers });
       }
     }
@@ -410,6 +417,7 @@ export class MuboApp {
       if (expected) this.logger.warn("Request rejected", fields);
       else this.logger.error("Unhandled request error", fields);
       const response = errorResponse(requestId, error, this.config.app.env === "production");
+      response.headers.set("x-request-id", requestId);
       return applyCors(request, response, this.config);
     }
   }

@@ -66,6 +66,8 @@ describe("HTTP routing and middleware", () => {
       return ctx.json({ value: form.get("value") });
     });
     app.get("/files/*", (ctx) => ctx.json({ path: ctx.params["*"] }));
+    app.get("/explicit-head", () => new Response("get", { headers: { "x-handler": "get" } }));
+    app.head("/explicit-head", () => new Response(null, { status: 200, headers: { "x-handler": "head" } }));
     app.get("/failure", () => {
       throw new MuboError("VALIDATION_ERROR", "broken input");
     });
@@ -101,6 +103,9 @@ describe("HTTP routing and middleware", () => {
     expect(head.status).toBe(200);
     expect(await head.text()).toBe("");
 
+    const explicitHead = await fetch(`${base(app)}/explicit-head`, { method: "HEAD" });
+    expect(explicitHead.headers.get("x-handler")).toBe("head");
+
     const invalid = await fetch(`${base(app)}/echo`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -114,6 +119,7 @@ describe("HTTP routing and middleware", () => {
     const payload = (await failure.json()) as { error: { code: string }; requestId: string };
     expect(payload.error.code).toBe("VALIDATION_ERROR");
     expect(payload.requestId).toBeString();
+    expect(failure.headers.get("x-request-id")).toBe(payload.requestId);
 
     const raw = await fetch(`${base(app)}/raw`);
     expect(raw.status).toBe(201);

@@ -101,19 +101,25 @@ export class Router {
 
   match(method: string, pathname: string): RouteMatch {
     const upper = method.toUpperCase();
-    const effective = upper === "HEAD" ? "GET" : upper;
     const parts = pathSegments(pathname);
-    const allowed = new Set<HttpMethod>();
 
     for (const route of this.routes) {
+      if (route.method !== upper) continue;
       const params = matchSegments(route, parts);
-      if (params === null) continue;
-      if (route.method === effective || (effective === "GET" && route.method === "GET")) {
-        return { type: "match", route, params };
+      if (params !== null) return { type: "match", route, params };
+    }
+    if (upper === "HEAD") {
+      for (const route of this.routes) {
+        if (route.method !== "GET") continue;
+        const params = matchSegments(route, parts);
+        if (params !== null) return { type: "match", route, params };
       }
-      allowed.add(route.method);
     }
 
+    const allowed = new Set<HttpMethod>();
+    for (const route of this.routes) {
+      if (matchSegments(route, parts) !== null) allowed.add(route.method);
+    }
     if (allowed.size > 0) {
       if (allowed.has("GET")) allowed.add("HEAD");
       allowed.add("OPTIONS");
