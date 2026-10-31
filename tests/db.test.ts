@@ -852,4 +852,30 @@ describe("database and automatic migrations", () => {
     expect(db.query("SELECT value FROM events ORDER BY value").all()).toEqual([{ value: 2 }, { value: 3 }, { value: 5 }]);
     db.close();
   });
+
+  test("isolates concurrent sibling nested transactions", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
+
+    await db.transaction(async (tx) => {
+      const results = await Promise.allSettled([
+        tx.transaction(async (inner) => {
+          inner.query("INSERT INTO events (value) VALUES (?)").run(1);
+          await Bun.sleep(20);
+          throw new Error("sibling failed");
+        }),
+        tx.transaction(async (inner) => {
+          inner.query("INSERT INTO events (value) VALUES (?)").run(2);
+          await Bun.sleep(5);
+          return "committed";
+        }),
+      ]);
+
+      expect(results[0]?.status).toBe("rejected");
+      expect(results[1]?.status).toBe("fulfilled");
+    });
+
+    expect(db.query("SELECT value FROM events ORDER BY value").all()).toEqual([{ value: 2 }]);
+    db.close();
+  });
 });

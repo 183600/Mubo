@@ -36,6 +36,8 @@ export interface QueryResult<Row> {
 interface TransactionContext {
   depth: number;
   active: boolean;
+  childActive: boolean;
+  childQueue: Array<() => void>;
 }
 
 function normalizeParams(params: unknown[]): QueryArgument[] {
@@ -149,7 +151,7 @@ export class MuboDatabase {
     this.assertOpen();
     const current = this.transactionContext.getStore();
     if (current?.active) {
-      return this.executeTransaction(fn, current.depth, options.immediate !== false);
+      return this.runNestedTransaction(current, fn, options.immediate !== false);
     }
     if (this.transactionActive || this.transactionQueue.length > 0) {
       return this.enqueueTransaction(fn, options.immediate !== false);
@@ -177,12 +179,84 @@ export class MuboDatabase {
     }
   }
 
+  private runNestedTransaction<T>(
+    parent: TransactionContext,
+    fn: (db: MuboDatabase) => T | Promise<T>,
+    immediate: boolean,
+  ): T | Promise<T> {
+    if (parent.childActive) {
+      return new Promise<T>((resolve, reject) => {
+        parent.childQueue.push(() => {
+          let result: T | Promise<T>;
+          try {
+            result = this.executeTransaction(fn, parent.depth, immediate);
+          } catch (error) {
+            reject(error);
+            this.finishChildTransaction(parent);
+            return;
+          }
+          if (result instanceof Promise) {
+            result.then(
+              (value) => {
+                resolve(value);
+                this.finishChildTransaction(parent);
+              },
+              (error) => {
+                reject(error);
+                this.finishChildTransaction(parent);
+              },
+            );
+          } else {
+            resolve(result);
+            this.finishChildTransaction(parent);
+          }
+        });
+      });
+    }
+
+    parent.childActive = true;
+    let result: T | Promise<T>;
+    try {
+      result = this.executeTransaction(fn, parent.depth, immediate);
+    } catch (error) {
+      this.finishChildTransaction(parent);
+      throw error;
+    }
+    if (result instanceof Promise) {
+      return result.then(
+        (value) => {
+          this.finishChildTransaction(parent);
+          return value;
+        },
+        (error) => {
+          this.finishChildTransaction(parent);
+          throw error;
+        },
+      );
+    }
+    this.finishChildTransaction(parent);
+    return result;
+  }
+
+  private finishChildTransaction(parent: TransactionContext): void {
+    parent.childActive = false;
+    const next = parent.childQueue.shift();
+    if (!next) return;
+    parent.childActive = true;
+    next();
+  }
+
   private executeTransaction<T>(
     fn: (db: MuboDatabase) => T | Promise<T>,
     parentDepth: number,
     immediate: boolean,
   ): T | Promise<T> {
-    const context: TransactionContext = { depth: parentDepth + 1, active: true };
+    const context: TransactionContext = {
+      depth: parentDepth + 1,
+      active: true,
+      childActive: false,
+      childQueue: [],
+    };
     const savepoint = `mubo_sp_${parentDepth}`;
     let finished = false;
     const finish = () => {
