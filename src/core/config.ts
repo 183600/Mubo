@@ -600,6 +600,9 @@ export function resolveConfig(
     ) {
       throw new MuboError("CONFIG_ERROR", "Invalid CORS credentials setting");
     }
+    if (Array.isArray(origin)) {
+      merged.http.cors.origin = origin.map((value) => value.trim());
+    }
   }
   merged.app.name = sanitizeAppName(merged.app.name);
   merged.dataDir = resolve(cwd, merged.dataDir || defaultDataDir(merged.app.name, env));

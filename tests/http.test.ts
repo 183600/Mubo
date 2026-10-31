@@ -329,6 +329,25 @@ describe("HTTP routing and middleware", () => {
     await app.stop();
   });
 
+  test("does not duplicate Vary entries when applying CORS", async () => {
+    const app = await startApp({
+      app: { name: "cors-vary-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { cors: { origin: ["http://allowed.test"] } },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/vary", () =>
+      new Response("ok", { headers: { vary: "Accept-Encoding, origin" } }),
+    );
+
+    const response = await fetch(`${base(app)}/vary`, {
+      headers: { origin: "http://allowed.test" },
+    });
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+    expect(response.headers.get("vary")?.toLowerCase()).toBe("accept-encoding, origin");
+  });
+
   test("enforces body limits and optionally handles CORS preflight", async () => {
     const app = await startApp({
       app: { name: "limits-test", env: "test" },

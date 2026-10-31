@@ -403,6 +403,24 @@ export default defineConfig({
     });
   });
 
+  test("normalizes CORS origins and keeps credentials", () => {
+    const config = resolveConfig(
+      {
+        http: {
+          cors: {
+            origin: ["  https://one.test ", "https://two.test  "],
+            credentials: true,
+          },
+        },
+      },
+      { env: {}, argv: [] },
+    );
+    expect(config.http.cors).toEqual({
+      origin: ["https://one.test", "https://two.test"],
+      credentials: true,
+    });
+  });
+
   test("rejects malformed CORS configuration", () => {
     expect(() => resolveConfig({ http: { cors: true as never } }, { env: {}, argv: [] })).toThrow(
       /Invalid CORS configuration/,
