@@ -82,6 +82,7 @@ function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Log
 
 export class WsRoomHub {
   private readonly clients = new Map<string, Client>();
+  private readonly clientsBySocket = new Map<ServerWebSocket<WsSocketData>, Client>();
   private readonly rooms = new Map<string, Set<Client>>();
   private readonly logger?: Logger;
 
@@ -122,24 +123,21 @@ export class WsRoomHub {
     };
     client = { ctx: context, ws, rooms: new Set() };
     this.clients.set(id, client);
+    this.clientsBySocket.set(ws, client);
     return context;
   }
 
   getContext(ws: ServerWebSocket<WsSocketData>): MuboWsContext | undefined {
-    for (const client of this.clients.values()) {
-      if (client.ws === ws) return client.ctx;
-    }
-    return undefined;
+    return this.clientsBySocket.get(ws)?.ctx;
   }
 
   remove(ws: ServerWebSocket<WsSocketData>): MuboWsContext | undefined {
-    for (const [id, client] of this.clients) {
-      if (client.ws !== ws) continue;
-      for (const room of [...client.rooms]) this.unsubscribe(client.ctx, room);
-      this.clients.delete(id);
-      return client.ctx;
-    }
-    return undefined;
+    const client = this.clientsBySocket.get(ws);
+    if (!client) return undefined;
+    for (const room of [...client.rooms]) this.unsubscribe(client.ctx, room);
+    this.clients.delete(client.ctx.id);
+    this.clientsBySocket.delete(ws);
+    return client.ctx;
   }
 
   subscribe(ctx: MuboWsContext, room: string): void {
