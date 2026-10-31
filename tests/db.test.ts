@@ -1280,6 +1280,29 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("ignores redundant parentheses around index predicates", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(
+      "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT); " +
+        "CREATE INDEX idx_users_email ON users(email) WHERE (((email IS NOT NULL)));",
+    );
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text" },
+          },
+          indexes: [
+            { name: "idx_users_email", columns: ["email"], where: "email is not null" },
+          ],
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("none");
+    db.close();
+  });
+
   test("rejects added NOT NULL columns when the SQL default is NULL", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(

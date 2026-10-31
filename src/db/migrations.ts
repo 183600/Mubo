@@ -447,6 +447,35 @@ function indexWhere(sql: string | null | undefined): string | undefined {
   return undefined;
 }
 
+function stripOuterParentheses(value: string): string {
+  let text = value.trim();
+  while (text.startsWith("(") && text.endsWith(")")) {
+    let depth = 0;
+    let wrapped = true;
+    for (let index = 0; index < text.length; index++) {
+      const skip = skipSqlIgnored(text, index);
+      if (skip !== undefined) {
+        index = skip;
+        continue;
+      }
+      const char = text[index];
+      if (char === "(") depth++;
+      else if (char === ")") depth--;
+      if (depth === 0 && index > 0 && index < text.length - 1) {
+        wrapped = false;
+        break;
+      }
+      if (depth < 0) {
+        wrapped = false;
+        break;
+      }
+    }
+    if (!wrapped || depth !== 0) break;
+    text = text.slice(1, -1).trim();
+  }
+  return text;
+}
+
 function normalizeWhere(value: string | undefined): string {
   if (!value) return "";
   let result = "";
@@ -475,37 +504,12 @@ function normalizeWhere(value: string | undefined): string {
     pendingSpace = false;
     result += /[a-z]/.test(char) ? char.toUpperCase() : char;
   }
-  return result;
+  return stripOuterParentheses(result);
 }
 
 function normalizeDefault(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
-  let text = value.trim();
-  if (!text || text.toUpperCase() === "NULL") return null;
-  while (text.startsWith("(") && text.endsWith(")")) {
-    let depth = 0;
-    let wrapped = true;
-    for (let index = 0; index < text.length; index++) {
-      const skip = skipSqlIgnored(text, index);
-      if (skip !== undefined) {
-        index = skip;
-        continue;
-      }
-      const char = text[index];
-      if (char === "(") depth++;
-      else if (char === ")") depth--;
-      if (depth === 0 && index > 0 && index < text.length - 1) {
-        wrapped = false;
-        break;
-      }
-      if (depth < 0) {
-        wrapped = false;
-        break;
-      }
-    }
-    if (!wrapped || depth !== 0) break;
-    text = text.slice(1, -1).trim();
-  }
+  const text = stripOuterParentheses(value);
   if (!text || text.toUpperCase() === "NULL") return null;
   if (/^[+-]?\d+$/.test(text)) {
     const negative = text.startsWith("-");
