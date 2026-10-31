@@ -458,7 +458,7 @@ function normalizeWhere(value: string | undefined): string {
     }
     if (pendingSpace && result.length > 0) result += " ";
     pendingSpace = false;
-    result += char;
+    result += /[a-z]/.test(char) ? char.toUpperCase() : char;
   }
   return result;
 }
