@@ -140,7 +140,9 @@ const DEFAULT_IMMUTABLE_EXTENSIONS = [
 ];
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function requireSection(value: unknown, name: string): Record<string, unknown> {
@@ -422,7 +424,7 @@ export async function loadConfigFile(
       const module = (await import(`${Bun.pathToFileURL(candidate).href}?t=${Date.now()}`)) as {
         default?: MuboConfig;
       };
-      if (!module.default || typeof module.default !== "object" || Array.isArray(module.default)) {
+      if (!isPlainObject(module.default)) {
         throw new Error("config file must have a default export object");
       }
       return { config: module.default, path: candidate };

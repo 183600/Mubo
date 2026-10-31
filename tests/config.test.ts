@@ -253,6 +253,11 @@ export default defineConfig({
       /Failed to load config file/,
     );
 
+    writeFileSync(join(cwd, "mubo.config.ts"), "export default new Date();\n");
+    await expect(loadAndResolveConfig({}, { cwd, loadFile: true, env: {} })).rejects.toThrow(
+      /Failed to load config file/,
+    );
+
     expect(() => resolveConfig({}, { env: { MUBO_LOG_JSON: "maybe" }, argv: [] })).toThrow(
       /Invalid boolean value/,
     );
@@ -310,6 +315,7 @@ export default defineConfig({
     const invalid: Array<[unknown, RegExp]> = [
       [{ app: null }, /Invalid app configuration/],
       [{ http: "invalid" }, /Invalid HTTP configuration/],
+      [{ http: new Date() }, /Invalid HTTP configuration/],
       [{ db: null }, /Invalid database configuration/],
       [{ db: { migrations: null } }, /Invalid migrations configuration/],
       [{ static: [] }, /Invalid static configuration/],
