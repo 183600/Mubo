@@ -377,4 +377,25 @@ describe("static assets", () => {
     expect(await head.text()).toBe("");
     expect(head.headers.get("content-length")).toBe("11");
   });
+
+  test("uses weak comparison for weak ETags on either side", async () => {
+    const dir = tempDir();
+    const assets = new StaticAssets(
+      {
+        mode: "embedded",
+        assets: { "/weak.js": { data: "weak", etag: 'W/"weak-etag"' } },
+      },
+      dir,
+    );
+
+    for (const header of ['"weak-etag"', 'W/"weak-etag"', `"other", W/"weak-etag"`]) {
+      const url = "http://localhost/weak.js";
+      const response = await assets.handle(
+        new Request(url, { headers: { "if-none-match": header } }),
+        new URL(url),
+      );
+      expect(response?.status).toBe(304);
+      expect(response?.headers.get("etag")).toBe('W/"weak-etag"');
+    }
+  });
 });

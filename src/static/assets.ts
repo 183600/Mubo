@@ -120,12 +120,17 @@ function hasContentHash(path: string): boolean {
   return name.split(/[.-]/).some(looksLikeContentHash);
 }
 
+function weakEtag(etag: string): string {
+  return etag.trim().replace(/^W\//, "");
+}
+
 function etagMatches(header: string | null, etag: string): boolean {
   if (!header) return false;
+  const current = weakEtag(etag);
   return header
     .split(",")
-    .map((part) => part.trim().replace(/^W\//, ""))
-    .some((part) => part === "*" || part === etag);
+    .map((part) => part.trim())
+    .some((part) => part === "*" || weakEtag(part) === current);
 }
 
 function isHead(request: Request): boolean {
