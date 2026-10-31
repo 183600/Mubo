@@ -120,7 +120,7 @@ export interface ResolveConfigOptions {
   configFile?: string;
 }
 
-const DEFAULT_IMMUTABLE_EXTENSIONS = [
+export const DEFAULT_IMMUTABLE_EXTENSIONS = [
   "js",
   "mjs",
   "css",

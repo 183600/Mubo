@@ -335,6 +335,21 @@ describe("static assets", () => {
     }
   });
 
+  test("applies default immutable extensions when constructed directly", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.a1b2c3d4.js"), "hashed");
+    writeFileSync(join(dir, "plain.js"), "plain");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const hashedUrl = "http://localhost/app.a1b2c3d4.js";
+    const hashed = await assets.handle(new Request(hashedUrl), new URL(hashedUrl));
+    expect(hashed?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+
+    const plainUrl = "http://localhost/plain.js";
+    const plain = await assets.handle(new Request(plainUrl), new URL(plainUrl));
+    expect(plain?.headers.get("cache-control")).toBe("public, max-age=3600");
+  });
+
   test("normalizes immutable extension settings and ignores human-readable names", async () => {
     const dir = tempDir();
     writeFileSync(join(dir, "app.a1b2c3d4.js"), "hashed");

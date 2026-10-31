@@ -1,5 +1,9 @@
 import { extname, join, resolve, sep } from "node:path";
-import type { EmbeddedAsset, EmbeddedAssets } from "../core/config.ts";
+import {
+  DEFAULT_IMMUTABLE_EXTENSIONS,
+  type EmbeddedAsset,
+  type EmbeddedAssets,
+} from "../core/config.ts";
 import { MuboError } from "../core/errors.ts";
 import { textResponse } from "../http/response.ts";
 
@@ -170,7 +174,7 @@ export class StaticAssets {
     const globalAssets = getEmbeddedAssets();
     this.assets = normalizeAssets(options.assets ?? globalAssets);
     this.immutableExtensions = new Set(
-      (options.cache?.immutableExtensions ?? []).map(normalizeExtension).filter(Boolean),
+      (options.cache?.immutableExtensions ?? DEFAULT_IMMUTABLE_EXTENSIONS).map(normalizeExtension).filter(Boolean),
     );
     this.defaultMaxAgeSeconds = options.cache?.defaultMaxAgeSeconds ?? 3600;
   }
