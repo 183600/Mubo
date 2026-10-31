@@ -76,6 +76,19 @@ function decode(value: string): string {
   }
 }
 
+function decodeLiteral(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function literalMatches(part: string, expected: string): boolean {
+  const decoded = decode(part);
+  return decoded === expected || decodeLiteral(expected) === decoded;
+}
+
 function pathSegments(pathname: string): string[] {
   const trimmed = pathname.replace(/^\/+|\/+$/g, "");
   return trimmed === "" ? [] : trimmed.split("/");
@@ -92,7 +105,7 @@ function matchSegments(route: Route, parts: string[]): Record<string, string> | 
     const part = parts[index];
     if (part === undefined) return null;
     if (segment.kind === "literal") {
-      if (decode(part) !== segment.value) return null;
+      if (!literalMatches(part, segment.value)) return null;
     } else {
       params[segment.value] = decode(part);
     }

@@ -37,6 +37,23 @@ describe("router", () => {
     });
   });
 
+  test("matches percent-encoded literal route segments", () => {
+    const router = new Router();
+    router.add("GET", "/caf%C3%A9", ok("encoded"));
+    router.add("GET", "/100%", ok("percent"));
+
+    for (const pathname of ["/caf%C3%A9", "/café"]) {
+      const match = router.match("GET", pathname);
+      expect(match.type).toBe("match");
+      expect(match.type === "match" ? match.route.path : undefined).toBe("/caf%C3%A9");
+    }
+
+    const percent = router.match("GET", "/100%25");
+    expect(percent.type).toBe("match");
+    expect(percent.type === "match" ? percent.route.path : undefined).toBe("/100%");
+    expect(router.match("GET", "/100%2525")).toEqual({ type: "not-found" });
+  });
+
   test("keeps route parameter objects free of inherited prototype keys", () => {
     const router = new Router();
     router.add("GET", "/things/:__proto__", ok("proto"));
