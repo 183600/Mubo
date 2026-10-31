@@ -210,12 +210,30 @@ function argvOverrides(argv: string[]): MuboConfig {
         result.log = { ...result.log, level };
         break;
       }
-      case "no-static":
-        result.static = { ...result.static, mode: "off" };
+      case "no-static": {
+        if (inline === undefined) {
+          result.static = { ...result.static, mode: "off" };
+          break;
+        }
+        const enabled = readBoolean(inline);
+        if (enabled === undefined) {
+          throw new MuboError("CONFIG_ERROR", "Missing value for --no-static");
+        }
+        if (enabled) result.static = { ...result.static, mode: "off" };
         break;
-      case "no-ws":
-        result.ws = { ...result.ws, enabled: false };
+      }
+      case "no-ws": {
+        if (inline === undefined) {
+          result.ws = { ...result.ws, enabled: false };
+          break;
+        }
+        const enabled = readBoolean(inline);
+        if (enabled === undefined) {
+          throw new MuboError("CONFIG_ERROR", "Missing value for --no-ws");
+        }
+        if (enabled) result.ws = { ...result.ws, enabled: false };
         break;
+      }
       default:
         break;
     }

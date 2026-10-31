@@ -172,6 +172,26 @@ export default defineConfig({
     expect(config.ws.enabled).toBe(false);
   });
 
+  test("honors explicit false values for boolean CLI switches", () => {
+    const config = resolveConfig(
+      {},
+      { env: {}, argv: ["--no-static=false", "--no-ws=0"] },
+    );
+    expect(config.static.mode).toBe("disk");
+    expect(config.ws.enabled).toBe(true);
+
+    const disabled = resolveConfig({}, { env: {}, argv: ["--no-static=yes", "--no-ws=true"] });
+    expect(disabled.static.mode).toBe("off");
+    expect(disabled.ws.enabled).toBe(false);
+
+    expect(() => resolveConfig({}, { env: {}, argv: ["--no-static="] })).toThrow(
+      /Missing value for --no-static/,
+    );
+    expect(() => resolveConfig({}, { env: {}, argv: ["--no-ws=maybe"] })).toThrow(
+      /Invalid boolean value/,
+    );
+  });
+
   test("rejects empty HTTP hosts", () => {
     expect(() => resolveConfig({ http: { host: "" } }, { env: {}, argv: [] })).toThrow(
       /Invalid HTTP host/,
