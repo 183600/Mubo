@@ -1035,6 +1035,24 @@ describe("database and automatic migrations", () => {
     );
   });
 
+  test("rejects invalid migration options when called directly", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: { notes: { columns: { id: { type: "integer", primaryKey: true } } } },
+    });
+
+    expect(() => db.migrate(schema, { mode: "sometimes" as never })).toThrow(
+      /Invalid migration mode/,
+    );
+    expect(() => db.migrate(schema, { safeOnly: "yes" as never })).toThrow(
+      /Invalid safeOnly migration setting/,
+    );
+    expect(() => db.migrate(schema, { table: "bad-name" })).toThrow(/Invalid SQL identifier/);
+    expect(() => db.plan(schema, { table: "bad-name" })).toThrow(/Invalid SQL identifier/);
+    expect((db.migrate(schema, { mode: "off" })).status).toBe("off");
+    db.close();
+  });
+
   test("reports migration SQL failures and rolls back the plan", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const invalid = defineSchema({

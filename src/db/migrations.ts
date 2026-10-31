@@ -649,13 +649,32 @@ function migrationTableSql(table: string): string {
   )} (id TEXT PRIMARY KEY, applied_at INTEGER NOT NULL, checksum TEXT NOT NULL, meta TEXT)`;
 }
 
+interface NormalizedMigrationOptions {
+  mode: "apply" | "check" | "off";
+  safeOnly: boolean;
+  table: string;
+}
+
+function normalizeMigrationOptions(options: MigrationOptions): NormalizedMigrationOptions {
+  const mode = options.mode ?? "apply";
+  if (mode !== "apply" && mode !== "check" && mode !== "off") {
+    throw new MuboError("MIGRATION_ERROR", `Invalid migration mode: ${String(mode)}`);
+  }
+  const table = options.table ?? "_mubo_migrations";
+  quoteIdentifier(table);
+  const safeOnly = options.safeOnly ?? true;
+  if (typeof safeOnly !== "boolean") {
+    throw new MuboError("MIGRATION_ERROR", "Invalid safeOnly migration setting");
+  }
+  return { mode, table, safeOnly };
+}
+
 export function planMigrations(
   db: MuboDatabase,
   schema: MuboSchema,
   options: MigrationOptions = {},
 ): MigrationPlan {
-  const table = options.table ?? "_mubo_migrations";
-  const safeOnly = options.safeOnly ?? true;
+  const { safeOnly } = normalizeMigrationOptions(options);
   const { statements, changes } = planForSchema(db, schema, safeOnly);
   if (statements.length === 0) return { id: null, statements: [], changes: [] };
   return { id: migrationId(statements), statements, changes };
@@ -666,9 +685,7 @@ export function applyMigrations(
   schema: MuboSchema,
   options: MigrationOptions = {},
 ): MigrationResult {
-  const mode = options.mode ?? "apply";
-  const table = options.table ?? "_mubo_migrations";
-  const safeOnly = options.safeOnly ?? true;
+  const { mode, table, safeOnly } = normalizeMigrationOptions(options);
   if (mode === "off") {
     return { status: "off", id: null, statements: [], changes: [] };
   }
