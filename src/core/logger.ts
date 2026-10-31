@@ -35,6 +35,28 @@ function humanLine(level: LogLevel, message: string, fields: Record<string, unkn
   return parts.join(" ");
 }
 
+function jsonLine(level: LogLevel, message: string, fields: Record<string, unknown>): string {
+  const time = new Date().toISOString();
+  const ancestors: object[] = [];
+  try {
+    return JSON.stringify({ time, level, message, ...fields }, function (_key, value: unknown) {
+      if (typeof value === "bigint") return value.toString();
+      if (typeof value !== "object" || value === null) return value;
+      while (ancestors.length > 0 && ancestors[ancestors.length - 1] !== this) ancestors.pop();
+      if (ancestors.includes(value)) return "[Circular]";
+      ancestors.push(value);
+      return value;
+    });
+  } catch {
+    return JSON.stringify({
+      time,
+      level,
+      message,
+      loggingError: "Log fields could not be serialized",
+    });
+  }
+}
+
 export function createLogger(options: LoggerOptions = {}, baseFields: Record<string, unknown> = {}): Logger {
   const level = options.level ?? "info";
   const threshold = LEVELS[level];
@@ -43,9 +65,7 @@ export function createLogger(options: LoggerOptions = {}, baseFields: Record<str
   const emit = (entryLevel: LogLevel, message: string, fields: Record<string, unknown>) => {
     if (LEVELS[entryLevel] < threshold) return;
     const merged = { ...baseFields, ...fields };
-    const line = json
-      ? JSON.stringify({ time: new Date().toISOString(), level: entryLevel, message, ...merged })
-      : humanLine(entryLevel, message, merged);
+    const line = json ? jsonLine(entryLevel, message, merged) : humanLine(entryLevel, message, merged);
     if (entryLevel === "error") console.error(line);
     else if (entryLevel === "warn") console.warn(line);
     else console.log(line);
