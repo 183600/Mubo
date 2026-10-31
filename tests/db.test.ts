@@ -909,10 +909,14 @@ describe("database and automatic migrations", () => {
 
   test("rejects invalid database options before opening SQLite", () => {
     expect(() => new MuboDatabase({ path: "" })).toThrow(/path must not be empty/);
+    expect(() => new MuboDatabase({ path: "   " })).toThrow(/path must not be empty/);
     expect(() => new MuboDatabase({ path: ":memory:", busyTimeoutMs: -1 })).toThrow(
       /Invalid database busy timeout/,
     );
     expect(() => new MuboDatabase({ path: ":memory:", busyTimeoutMs: Number.NaN })).toThrow(
+      /Invalid database busy timeout/,
+    );
+    expect(() => new MuboDatabase({ path: ":memory:", busyTimeoutMs: 1.5 })).toThrow(
       /Invalid database busy timeout/,
     );
     expect(() => new MuboDatabase({ path: ":memory:", slowQueryMs: -1 })).toThrow(
@@ -920,6 +924,15 @@ describe("database and automatic migrations", () => {
     );
     expect(() => new MuboDatabase({ path: ":memory:", slowQueryMs: Number.POSITIVE_INFINITY })).toThrow(
       /Invalid slow query threshold/,
+    );
+    expect(() => new MuboDatabase({ path: ":memory:", slowQueryMs: 1.5 })).toThrow(
+      /Invalid slow query threshold/,
+    );
+    expect(() => new MuboDatabase({ path: ":memory:", wal: "yes" as never })).toThrow(
+      /Invalid database WAL setting/,
+    );
+    expect(() => new MuboDatabase({ path: ":memory:", foreignKeys: 1 as never })).toThrow(
+      /Invalid database foreign keys setting/,
     );
   });
 

@@ -58,16 +58,22 @@ export class MuboDatabase {
   private transactionActive = false;
 
   constructor(options: MuboDatabaseOptions) {
-    if (typeof options.path !== "string" || options.path.length === 0) {
+    if (typeof options.path !== "string" || options.path.trim().length === 0) {
       throw new MuboError("CONFIG_ERROR", "Database path must not be empty");
     }
     const busyTimeoutMs = options.busyTimeoutMs ?? 5000;
-    if (!Number.isFinite(busyTimeoutMs) || busyTimeoutMs < 0) {
+    if (!Number.isInteger(busyTimeoutMs) || busyTimeoutMs < 0) {
       throw new MuboError("CONFIG_ERROR", `Invalid database busy timeout: ${busyTimeoutMs}`);
     }
     const slowQueryMs = options.slowQueryMs ?? 200;
-    if (!Number.isFinite(slowQueryMs) || slowQueryMs < 0) {
+    if (!Number.isInteger(slowQueryMs) || slowQueryMs < 0) {
       throw new MuboError("CONFIG_ERROR", `Invalid slow query threshold: ${slowQueryMs}`);
+    }
+    if (options.wal !== undefined && typeof options.wal !== "boolean") {
+      throw new MuboError("CONFIG_ERROR", "Invalid database WAL setting");
+    }
+    if (options.foreignKeys !== undefined && typeof options.foreignKeys !== "boolean") {
+      throw new MuboError("CONFIG_ERROR", "Invalid database foreign keys setting");
     }
     this.path = options.path;
     this.slowQueryMs = slowQueryMs;
