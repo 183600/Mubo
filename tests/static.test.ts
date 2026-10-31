@@ -275,6 +275,21 @@ describe("static assets", () => {
     expect(await fallback.text()).toBe("<h1>home</h1>");
   });
 
+  test("keeps every HTML extension uncached regardless of case", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "index.htm"), "<h1>legacy</h1>");
+    writeFileSync(join(dir, "page.HTML"), "<h1>upper</h1>");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    for (const path of ["/index.htm", "/page.HTML"]) {
+      const url = `http://localhost${path}`;
+      const response = await assets.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(200);
+      expect(response?.headers.get("cache-control")).toBe("no-cache");
+      expect(response?.headers.get("content-type")).toContain("text/html");
+    }
+  });
+
   test("serves embedded assets without touching disk", async () => {
     const app = await createMuboApp(
       {

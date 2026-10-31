@@ -151,8 +151,8 @@ export class StaticAssets {
   }
 
   private cacheControl(path: string): string {
-    if (path.endsWith(".html")) return "no-cache";
     const ext = extname(path).slice(1).toLowerCase();
+    if (ext === "html" || ext === "htm") return "no-cache";
     if (this.immutableExtensions.has(ext) && hasContentHash(path)) {
       return "public, max-age=31536000, immutable";
     }
