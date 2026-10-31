@@ -298,6 +298,66 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("detects auto-increment changes on existing primary keys", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const plain = defineSchema({
+      tables: {
+        counters: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            name: { type: "text" },
+          },
+        },
+      },
+    });
+    await db.migrate(plain);
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            counters: {
+              columns: {
+                id: { type: "integer", primaryKey: true, autoIncrement: true },
+                name: { type: "text" },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Auto-increment change/);
+
+    const auto = new MuboDatabase({ path: ":memory:" });
+    const autoIncrementing = defineSchema({
+      tables: {
+        counters: {
+          columns: {
+            id: { type: "integer", primaryKey: true, autoIncrement: true },
+            name: { type: "text" },
+          },
+        },
+      },
+    });
+    await auto.migrate(autoIncrementing);
+    expect(() =>
+      auto.migrate(
+        defineSchema({
+          tables: {
+            counters: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                name: { type: "text" },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Auto-increment change/);
+
+    db.close();
+    auto.close();
+  });
+
   test("repairs missing schema objects even when a plan was applied before", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const schema = defineSchema({

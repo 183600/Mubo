@@ -49,6 +49,7 @@ interface ExistingTable {
   columns: Map<string, ExistingColumn>;
   indexes: Map<string, ExistingIndex>;
   foreignKeys: Map<string, ExistingForeignKey[]>;
+  autoIncrement: boolean;
 }
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -256,7 +257,11 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
     });
     foreignKeys.set(row.from, list);
   }
-  return { columns, indexes, foreignKeys };
+  const definition = db
+    .query<{ sql: string | null }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(table);
+  const autoIncrement = /\bAUTOINCREMENT\b/i.test(definition?.sql ?? "");
+  return { columns, indexes, foreignKeys, autoIncrement };
 }
 
 function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean): { statements: string[]; changes: string[] } {
@@ -308,6 +313,12 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
         throw new MuboError(
           "MIGRATION_ERROR",
           `Primary-key change for ${tableName}.${columnName} requires a manual migration`,
+        );
+      }
+      if (column.primaryKey && Boolean(column.autoIncrement) !== existing.autoIncrement) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Auto-increment change for ${tableName}.${columnName} requires a manual migration`,
         );
       }
       const references = column.references;
