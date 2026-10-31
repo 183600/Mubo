@@ -652,6 +652,23 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("treats parenthesized NULL sql defaults as no default", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            note: { type: "text", sqlDefault: "(NULL)" },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("applied");
+    expect((await db.migrate(schema)).status).toBe("none");
+    db.close();
+  });
+
   test("caches prepared statements while honoring schema changes and iterators", () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)");

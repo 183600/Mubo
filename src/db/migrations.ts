@@ -220,7 +220,8 @@ function normalizeDefault(value: string | null | undefined): string | null {
     if (!wrapped) break;
     text = text.slice(1, -1).trim();
   }
-  return text || null;
+  if (!text || text.toUpperCase() === "NULL") return null;
+  return text;
 }
 
 function introspectTable(db: MuboDatabase, table: string): ExistingTable {
