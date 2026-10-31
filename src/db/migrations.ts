@@ -1,4 +1,4 @@
-import { MuboError } from "../core/errors.ts";
+import { isMuboError, MuboError } from "../core/errors.ts";
 import type { MuboDatabase } from "./database.ts";
 import type { ColumnDefinition, IndexDefinition, MuboSchema, TableDefinition } from "./schema.ts";
 
@@ -440,7 +440,18 @@ export function applyMigrations(
     () => {
       const fresh = planMigrations(db, schema, { table, safeOnly });
       if (fresh.statements.length === 0 || fresh.id === null) return;
-      for (const statement of fresh.statements) db.exec(statement);
+      for (const statement of fresh.statements) {
+        try {
+          db.exec(statement);
+        } catch (error) {
+          if (isMuboError(error)) throw error;
+          const summary = statement.replace(/\s+/g, " ").slice(0, 200);
+          throw new MuboError("MIGRATION_ERROR", `Failed to apply migration statement: ${summary}`, {
+            cause: error,
+            details: { statement },
+          });
+        }
+      }
       const appliedAt = Date.now();
       const meta = JSON.stringify({ statements: fresh.statements, changes: fresh.changes });
       const alreadyApplied = db

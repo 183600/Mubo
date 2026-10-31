@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MuboDatabase } from "../src/db/database.ts";
 import { defineSchema } from "../src/db/schema.ts";
+import { MuboError } from "../src/core/errors.ts";
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -415,6 +416,39 @@ describe("database and automatic migrations", () => {
         }),
       ),
     ).toThrow(/Default value change for settings\.role/);
+    db.close();
+  });
+
+  test("reports migration SQL failures and rolls back the plan", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const invalid = defineSchema({
+      tables: {
+        broken: {
+          columns: {
+            id: { type: "text", primaryKey: true, sqlDefault: "(" },
+          },
+        },
+      },
+    });
+
+    let caught: unknown;
+    try {
+      db.migrate(invalid);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(MuboError);
+    const failure = caught as MuboError;
+    expect(failure.code).toBe("MIGRATION_ERROR");
+    expect(failure.message).toContain("Failed to apply migration statement");
+    expect(failure.details).toMatchObject({ statement: expect.stringContaining('CREATE TABLE "broken"') });
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'broken'").get(),
+    ).toBeNull();
+    const history = db
+      .query<{ count: number }>("SELECT COUNT(*) AS count FROM _mubo_migrations")
+      .get();
+    expect(history?.count).toBe(0);
     db.close();
   });
 
