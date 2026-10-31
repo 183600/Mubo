@@ -169,8 +169,14 @@ export function mergeConfig<T>(base: T, override: unknown): T {
   const result: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(override)) {
     if (value === undefined) continue;
-    const current = result[key];
-    result[key] = isPlainObject(current) && isPlainObject(value) ? mergeConfig(current, value) : value;
+    const current = Object.hasOwn(result, key) ? result[key] : undefined;
+    const merged = isPlainObject(current) && isPlainObject(value) ? mergeConfig(current, value) : value;
+    Object.defineProperty(result, key, {
+      value: merged,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return result as T;
 }

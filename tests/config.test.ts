@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createMuboApp, loadAndResolveConfig, resolveConfig } from "../src/index.ts";
-import { defaultDataDir, sanitizeAppName } from "../src/core/config.ts";
+import { defaultDataDir, mergeConfig, sanitizeAppName } from "../src/core/config.ts";
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -259,6 +259,20 @@ export default defineConfig({
     expect(() => resolveConfig({}, { env: { MUBO_PORT: "abc" }, argv: [] })).toThrow(
       /MUBO_PORT must be a number/,
     );
+  });
+
+  test("merges prototype-like keys as own properties", () => {
+    const override = JSON.parse('{"__proto__":{"polluted":"yes"},"constructor":{"mode":"own"}}') as {
+      __proto__: { polluted: string };
+      constructor: { mode: string };
+    };
+    const merged = mergeConfig({ app: { name: "base" } }, override);
+
+    expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+    expect(Object.hasOwn(merged, "__proto__")).toBe(true);
+    expect((merged as unknown as { __proto__: unknown }).__proto__).toEqual({ polluted: "yes" });
+    expect((merged as unknown as { constructor: unknown }).constructor).toEqual({ mode: "own" });
+    expect(({} as { polluted?: string }).polluted).toBeUndefined();
   });
 
   test("does not share mutable cache defaults between resolutions", () => {
