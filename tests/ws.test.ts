@@ -342,6 +342,54 @@ describe("WebSocket rooms and broadcasting", () => {
     expect(disabledPayload.requestId).toBe("ws-disabled");
   });
 
+  test("logs successful WebSocket upgrades as HTTP 101", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-upgrade-log-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "info", json: true },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {});
+
+    const lines: string[] = [];
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map((value) => String(value)).join(" "));
+    };
+    console.error = () => {};
+    try {
+      await app.start();
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`, {
+        "x-request-id": "ws-log-ok",
+      });
+      socket.socket.close();
+    } finally {
+      await app.stop();
+      console.log = originalLog;
+      console.error = originalError;
+    }
+
+    const entries = lines.flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
+    expect(
+      entries.find((entry) => entry.message === "http" && entry.requestId === "ws-log-ok"),
+    ).toMatchObject({
+      method: "GET",
+      path: "/ws",
+      status: 101,
+    });
+  });
+
   test("uses the HTTP request id for rejected WebSocket upgrades", async () => {
     const app = await createMuboApp(
       {

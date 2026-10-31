@@ -460,7 +460,10 @@ export class MuboApp {
 
       const wsResponse = await this.handleWebSocketUpgrade(request, url, server, requestId);
       if (wsResponse) {
-        if (wsResponse.status === 101) return undefined;
+        if (wsResponse.status === 101) {
+          this.logHttp(request, url, server, requestId, 101, started);
+          return undefined;
+        }
         if (!wsResponse.headers.has("x-request-id")) wsResponse.headers.set("x-request-id", requestId);
         this.logHttp(request, url, server, requestId, wsResponse.status, started);
         return applyCors(request, wsResponse, this.config);
