@@ -166,6 +166,7 @@ Mubo 应用的生命周期容器，负责：
 - 支持目录索引（`/docs` 与 `/docs/` 都会尝试 `docs/index.html`）
 - 支持 SPA fallback（例如 `/app/*` 返回 `index.html`）
 - HTML 默认 `no-cache`；带内容哈希的静态资源默认一年 immutable；支持 `ETag` / `If-None-Match` / `304` 与 HEAD
+- 哈希识别基于文件名（如 `app.3f9a1c2d.js`），不会因目录名或普通单词误判；`immutableExtensions` 不区分大小写并忽略前导点
 
 ---
 
@@ -216,11 +217,13 @@ app.db.transaction((db) => {
 app.db.migrate(schema, { mode: "check" });
 ```
 
-事务回调为同步时直接返回结果，为异步时返回 Promise；嵌套事务使用 SAVEPOINT。迁移默认只允许建表、加列和加索引，破坏性变更需手写迁移。查询会复用缓存的 prepared statement；迁移 SQL 执行失败会回滚并抛出带语句上下文的 `MIGRATION_ERROR`。
+事务回调为同步时直接返回结果，为异步时返回 Promise；嵌套事务使用 SAVEPOINT。迁移默认只允许建表、加列和加索引，破坏性变更需手写迁移。索引名称在数据库内必须全局唯一；默认值比较会忽略数字格式（如 `1` 与 `1.0`）以及 `CURRENT_TIMESTAMP` / `TRUE` 等关键字的大小写差异。查询会复用缓存的 prepared statement；迁移 SQL 执行失败会回滚并抛出带语句上下文的 `MIGRATION_ERROR`。
 
 ### WebSocket Context
 
 `ctx.id`、`ctx.ip`、`ctx.url`、`ctx.user`、`ctx.state`、`ctx.rooms`、`ctx.send()`、`ctx.emit()`、`ctx.publish()`、`ctx.subscribe()`、`ctx.unsubscribe()`、`ctx.close()`。`emit()` 使用 `{ t: "event", e, d, id? }` 协议。
+
+房间名必须是至少包含一个非空白字符的字符串；重复订阅同一房间是幂等的。`publish()` / `broadcast()` 返回成功发送的连接数，序列化或发送失败的连接会被记录日志且不计入返回值。
 
 启用 `http.trustProxy` 后，HTTP 日志与 WebSocket 的 `ctx.ip` 会优先使用 `x-forwarded-for`（首个地址）或 `x-real-ip`；默认关闭以避免伪造来源。
 
@@ -278,7 +281,7 @@ export function registerWs(app: any) {
 Mubo 的迁移目标是让“私有化单文件应用”具备：
 - **启动即升级**（用户不需要手动运行 migrate 命令）
 - **可追踪**（默认表 `_mubo_migrations`，记录迁移 ID、校验和与执行时间）
-- **尽量安全**（默认只做追加式变更：建表/加列/加索引；破坏性变更需显式开启）
+- **尽量安全**（只做追加式变更：建表/加列/加索引；破坏性变更不会自动执行，需手写 SQL 迁移）
 
 建议：
 - 将 schema 视为“产品的一部分”，随代码版本演进
@@ -319,7 +322,7 @@ Mubo 的迁移目标是让“私有化单文件应用”具备：
 | `MUBO_LOG_LEVEL` | `debug` / `info` / `warn` / `error` | `info` |
 | `MUBO_LOG_JSON` | JSON 结构化日志 | 生产环境为 `true` |
 
-数值型配置（端口、body limit、超时、心跳、缓存时间等）会在启动前校验；非法值会以 `CONFIG_ERROR` 失败。
+数值型配置（端口、body limit、超时、心跳、缓存时间等）会在启动前校验；非法值会以 `CONFIG_ERROR` 失败。超时类配置必须是非负整数；应用名会清洗并截断到 64 字符；非空的非法 `MUBO_ENV` 会直接报错，而非法 `NODE_ENV` 会被忽略并回退到 `development`。
 
 ---
 
