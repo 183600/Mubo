@@ -1,5 +1,6 @@
 import { extname, join, resolve, sep } from "node:path";
 import type { EmbeddedAsset, EmbeddedAssets } from "../core/config.ts";
+import { MuboError } from "../core/errors.ts";
 import { textResponse } from "../http/response.ts";
 
 const GLOBAL_ASSETS_KEY = "__MUBO_EMBEDDED_ASSETS__";
@@ -175,20 +176,36 @@ export class StaticAssets {
     return new Response(body, { status: 200, headers });
   }
 
-  private async embeddedResponse(request: Request, pathname: string): Promise<Response | null> {
+  private findEmbedded(pathname: string): { asset: EmbeddedAsset | string | Uint8Array | ArrayBuffer; path: string } | null {
     let key = normalizeKey(pathname);
     try {
       key = normalizeKey(decodeURIComponent(pathname));
     } catch {
+      throw new MuboError("BAD_REQUEST", `Malformed percent-encoding in URL: ${pathname}`);
+    }
+    const exact = this.assets.get(key);
+    if (exact !== undefined) return { asset: exact, path: key };
+
+    const directoryIndex = normalizeKey(`${key}/index.html`);
+    const index = this.assets.get(directoryIndex);
+    if (index !== undefined) return { asset: index, path: directoryIndex };
+
+    if (this.spaFallback) {
+      const fallback = this.assets.get("/index.html");
+      if (fallback !== undefined) return { asset: fallback, path: "/index.html" };
+    }
+    return null;
+  }
+
+  private async embeddedResponse(request: Request, pathname: string): Promise<Response | null> {
+    let found: ReturnType<StaticAssets["findEmbedded"]>;
+    try {
+      found = this.findEmbedded(pathname);
+    } catch {
       return textResponse("Bad Request", { status: 400 });
     }
-    let asset = this.assets.get(key);
-    let usedFallback = false;
-    if (asset === undefined && this.spaFallback) {
-      asset = this.assets.get("/index.html");
-      usedFallback = asset !== undefined;
-    }
-    if (asset === undefined) return null;
+    if (!found) return null;
+    const { asset, path: finalPath } = found;
 
     const bytes = decodeAsset(asset);
     const type =
@@ -199,7 +216,6 @@ export class StaticAssets {
       typeof asset === "object" && !(asset instanceof Uint8Array) && !(asset instanceof ArrayBuffer) && asset.etag
         ? asset.etag
         : `"${new Bun.CryptoHasher("sha256").update(bytes).digest("hex").slice(0, 20)}"`;
-    const finalPath = usedFallback ? "/index.html" : key;
     return this.respond(request, finalPath, bytes, etag, type ?? contentTypeFor(finalPath), bytes.byteLength);
   }
 
@@ -269,9 +285,10 @@ export class StaticAssets {
   async hasFile(pathname: string): Promise<boolean> {
     if (!this.enabled) return false;
     if (this.assets.size > 0) {
-      if (this.assets.has(normalizeKey(pathname))) return true;
       try {
-        if (this.assets.has(normalizeKey(decodeURIComponent(pathname)))) return true;
+        const found = this.findEmbedded(pathname);
+        if (found && found.path !== "/index.html") return true;
+        if (found && normalizeKey(pathname) === "/index.html") return true;
       } catch {
         return false;
       }

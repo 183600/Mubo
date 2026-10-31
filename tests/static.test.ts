@@ -118,11 +118,16 @@ describe("static assets", () => {
     expect(await disk.hasFile("/%2e%2e%2fetc/passwd")).toBe(false);
 
     const embedded = new StaticAssets(
-      { mode: "embedded", assets: { "/café.txt": "hello", "/index.html": "home" } },
+      {
+        mode: "embedded",
+        assets: { "/café.txt": "hello", "/docs/index.html": "docs", "/index.html": "home" },
+      },
       dir,
     );
     expect(await embedded.hasFile("/caf%C3%A9.txt")).toBe(true);
     expect(await embedded.hasFile("/café.txt")).toBe(true);
+    expect(await embedded.hasFile("/docs")).toBe(true);
+    expect(await embedded.hasFile("/docs/index.html")).toBe(true);
     expect(await embedded.hasFile("/missing")).toBe(false);
 
     const off = new StaticAssets({ mode: "off", dir }, dir);
@@ -172,6 +177,39 @@ describe("static assets", () => {
     const root = `http://127.0.0.1:${app.port}`;
     expect(await (await fetch(`${root}/hello.txt`)).text()).toBe("hello");
     expect((await fetch(`${root}/missing`)).status).toBe(404);
+  });
+
+  test("serves embedded directory indexes before falling back to the SPA shell", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "embedded-index-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: {
+          mode: "embedded",
+          spaFallback: true,
+          assets: {
+            "/index.html": "<h1>home</h1>",
+            "/docs/index.html": "<h1>docs</h1>",
+          },
+        },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    for (const path of ["/docs", "/docs/"]) {
+      const response = await fetch(`${root}${path}`);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("<h1>docs</h1>");
+      expect(response.headers.get("cache-control")).toBe("no-cache");
+      expect(response.headers.get("content-type")).toContain("text/html");
+    }
+
+    const fallback = await fetch(`${root}/client/route`);
+    expect(await fallback.text()).toBe("<h1>home</h1>");
   });
 
   test("serves embedded assets without touching disk", async () => {
