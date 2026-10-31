@@ -197,7 +197,12 @@ export class MuboApp {
     });
   }
 
-  private async handleWebSocketUpgrade(request: Request, url: URL, server: Server<WsSocketData>): Promise<Response | null> {
+  private async handleWebSocketUpgrade(
+    request: Request,
+    url: URL,
+    server: Server<WsSocketData>,
+    requestId: string,
+  ): Promise<Response | null> {
     const route = this.wsRoutes.get(normalizeRoutePath(url.pathname));
     if (!route) return null;
     const upgrade = (request.headers.get("upgrade") ?? "").toLowerCase();
@@ -208,9 +213,6 @@ export class MuboApp {
         headers: { upgrade: "websocket" },
       });
     }
-    const requestId = validRequestId(request.headers.get("x-request-id"))
-      ? request.headers.get("x-request-id")!
-      : crypto.randomUUID();
     if (!this.config.ws.enabled) {
       return errorResponse(requestId, new MuboError("FORBIDDEN", "WebSocket support is disabled"), true);
     }
@@ -419,7 +421,7 @@ export class MuboApp {
         }
       }
 
-      const wsResponse = await this.handleWebSocketUpgrade(request, url, server);
+      const wsResponse = await this.handleWebSocketUpgrade(request, url, server, requestId);
       if (wsResponse) {
         if (wsResponse.status === 101) return undefined;
         if (!wsResponse.headers.has("x-request-id")) wsResponse.headers.set("x-request-id", requestId);

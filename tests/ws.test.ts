@@ -260,6 +260,54 @@ describe("WebSocket rooms and broadcasting", () => {
     expect(disabledPayload.requestId).toBe("ws-disabled");
   });
 
+  test("uses the HTTP request id for rejected WebSocket upgrades", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-request-id-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "info", json: true },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", { authorize: () => null });
+
+    const lines: string[] = [];
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map((value) => String(value)).join(" "));
+    };
+    console.error = () => {};
+    let requestId: string | null = null;
+    try {
+      await app.start();
+      const response = await fetch(`http://127.0.0.1:${app.port}/ws`, {
+        headers: { upgrade: "websocket" },
+      });
+      expect(response.status).toBe(401);
+      requestId = response.headers.get("x-request-id");
+      expect(requestId).toBeString();
+    } finally {
+      await app.stop();
+      console.log = originalLog;
+      console.error = originalError;
+    }
+
+    const entries = lines.flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
+    const access = entries.find(
+      (entry) => entry.message === "http" && entry.path === "/ws" && entry.status === 401,
+    );
+    expect(access?.requestId).toBe(requestId);
+  });
+
   test("honors forwarded client addresses only when trustProxy is enabled", async () => {
     const capture = async (
       trustProxy: boolean,
