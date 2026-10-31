@@ -156,6 +156,12 @@ function requireBoolean(name: string, value: unknown): void {
   }
 }
 
+function requireString(name: string, value: unknown): void {
+  if (typeof value !== "string") {
+    throw new MuboError("CONFIG_ERROR", `Invalid ${name} setting`);
+  }
+}
+
 export function mergeConfig<T>(base: T, override: unknown): T {
   if (!isPlainObject(base) || !isPlainObject(override)) {
     return (override === undefined ? base : override) as T;
@@ -494,6 +500,12 @@ export function resolveConfig(
   requireBoolean("static SPA fallback", merged.static.spaFallback);
   requireBoolean("WebSocket enabled", merged.ws.enabled);
   requireBoolean("JSON logging", merged.log.json);
+
+  requireString("app name", merged.app.name);
+  requireString("data directory", merged.dataDir);
+  requireString("database path", merged.db.path);
+  requireString("migrations table", merged.db.migrations.table);
+  requireString("static directory", merged.static.dir);
 
   const immutableExtensions = merged.static.cache.immutableExtensions;
   if (

@@ -361,6 +361,19 @@ export default defineConfig({
     }
   });
 
+  test("rejects non-string path and name settings", () => {
+    const invalid: Array<[unknown, RegExp]> = [
+      [{ app: { name: 123 } }, /Invalid app name setting/],
+      [{ dataDir: 123 }, /Invalid data directory setting/],
+      [{ db: { path: 123 } }, /Invalid database path setting/],
+      [{ db: { migrations: { table: 123 } } }, /Invalid migrations table setting/],
+      [{ static: { dir: 123 } }, /Invalid static directory setting/],
+    ];
+    for (const [config, pattern] of invalid) {
+      expect(() => resolveConfig(config as never, { env: {}, argv: [] })).toThrow(pattern);
+    }
+  });
+
   test("treats an empty static directory as the default", () => {
     const cwd = tempDir();
     const config = resolveConfig({ static: { dir: "" } }, { cwd, env: {}, argv: [] });
