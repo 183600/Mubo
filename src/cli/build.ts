@@ -130,6 +130,9 @@ export async function buildProject(options: BuildOptions = {}): Promise<BuildRes
     options.target?.toLowerCase().includes("windows") ||
     (!options.target && process.platform === "win32");
   if (needsExe && !outfile.toLowerCase().endsWith(".exe")) outfile += ".exe";
+  if (outfile === entry) {
+    throw new MuboError("CONFIG_ERROR", `Output path must not overwrite the entry: ${outfile}`);
+  }
   const outputDir = dirname(outfile);
   if (existsSync(outputDir) && !isDirectory(outputDir)) {
     throw new MuboError("CONFIG_ERROR", `Output directory is not a directory: ${outputDir}`);

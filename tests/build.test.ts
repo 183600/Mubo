@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { Database } from "bun:sqlite";
@@ -59,6 +59,16 @@ describe("single-file build", () => {
     await expect(buildProject({ cwd, entry: "index.ts", outfile: "occupied/app" })).rejects.toThrow(
       /Output directory is not a directory/,
     );
+  });
+
+  test("rejects an output path that would overwrite the entry", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "console.log('entry');\n");
+
+    await expect(buildProject({ cwd, entry: "index.ts", outfile: "index.ts" })).rejects.toThrow(
+      /Output path must not overwrite the entry/,
+    );
+    expect(readFileSync(join(cwd, "index.ts"), "utf8")).toBe("console.log('entry');\n");
   });
 
   test("rejects a configured static directory that does not exist", async () => {
