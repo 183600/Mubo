@@ -111,6 +111,30 @@ describe("WebSocket route registration", () => {
       await app.stop();
     }
   });
+
+  test("normalizes surrounding slashes in websocket routes and requests", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-slash-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("//events///", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const socket = await openSocket(`ws://127.0.0.1:${app.port}//events`);
+    expect(await socket.next()).toEqual({ type: "ready" });
+    socket.socket.close();
+  });
 });
 
 describe("WebSocket rooms and broadcasting", () => {

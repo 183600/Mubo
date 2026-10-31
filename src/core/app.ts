@@ -28,9 +28,8 @@ function normalizeRoutePath(path: string): string {
   if (path.includes("?") || path.includes("#")) {
     throw new MuboError("CONFIG_ERROR", `WebSocket path must not contain a query or fragment: ${path}`);
   }
-  if (!path.startsWith("/")) path = `/${path}`;
-  if (path.length > 1) path = path.replace(/\/+$/, "");
-  return path || "/";
+  const trimmed = path.replace(/^\/+|\/+$/g, "");
+  return trimmed ? `/${trimmed}` : "/";
 }
 
 function validRequestId(value: string | null): value is string {
