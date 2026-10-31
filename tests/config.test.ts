@@ -138,6 +138,19 @@ export default defineConfig({
     ).toThrow(/Invalid migrations table/);
   });
 
+  test("uses the provided home directory for the default data directory", () => {
+    const home = join(tmpdir(), "mubo-fake-home");
+    const expected =
+      process.platform === "win32"
+        ? join(home, "AppData", "Roaming", "Mubo", "home-app")
+        : join(home, ".mubo", "home-app");
+    expect(defaultDataDir("home-app", { HOME: home })).toBe(expected);
+    expect(
+      resolveConfig({ app: { name: "home-app" } }, { cwd: tempDir(), env: { HOME: home }, argv: [] })
+        .dataDir,
+    ).toBe(expected);
+  });
+
   test("sanitizes app names that could escape the default data directory", () => {
     expect(sanitizeAppName("..")).toBe("mubo-app");
     expect(sanitizeAppName("...")).toBe("mubo-app");

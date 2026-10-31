@@ -426,11 +426,12 @@ function requireInteger(
 
 export function defaultDataDir(appName: string, env: Record<string, string | undefined> = process.env): string {
   const name = sanitizeAppName(appName);
+  const home = env.HOME || env.USERPROFILE || homedir();
   if (process.platform === "win32") {
-    const base = env.APPDATA || join(homedir(), "AppData", "Roaming");
+    const base = env.APPDATA || join(home, "AppData", "Roaming");
     return join(base, "Mubo", name);
   }
-  return join(homedir(), ".mubo", name);
+  return join(home, ".mubo", name);
 }
 
 const configRequire = createRequire(import.meta.url);
