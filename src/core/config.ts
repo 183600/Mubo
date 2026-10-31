@@ -536,7 +536,8 @@ export function resolveConfig(
   else if (merged.db.path !== ":memory:" && !isAbsolute(merged.db.path)) {
     merged.db.path = resolve(cwd, merged.db.path);
   }
-  if (merged.static.dir && !isAbsolute(merged.static.dir)) merged.static.dir = resolve(cwd, merged.static.dir);
+  if (!merged.static.dir) merged.static.dir = join(cwd, "public");
+  else if (!isAbsolute(merged.static.dir)) merged.static.dir = resolve(cwd, merged.static.dir);
   if (typeof merged.http.host !== "string" || merged.http.host.trim().length === 0) {
     throw new MuboError("CONFIG_ERROR", `Invalid HTTP host: ${String(merged.http.host)}`);
   }

@@ -163,6 +163,21 @@ describe("static assets", () => {
     expect(await embedded!.text()).toBe("embedded-only");
   });
 
+  test("falls back to public when configured with an empty directory", async () => {
+    const dir = tempDir();
+    mkdirSync(join(dir, "public"));
+    writeFileSync(join(dir, "public", "hello.txt"), "from public");
+    writeFileSync(join(dir, "secret.txt"), "from cwd");
+
+    const assets = new StaticAssets({ mode: "disk", dir: "" }, dir);
+    const helloUrl = "http://localhost/hello.txt";
+    const hello = await assets.handle(new Request(helloUrl), new URL(helloUrl));
+    expect(await hello!.text()).toBe("from public");
+
+    const secretUrl = "http://localhost/secret.txt";
+    expect(await assets.handle(new Request(secretUrl), new URL(secretUrl))).toBeNull();
+  });
+
   test("blocks path traversal attempts", async () => {
     const dir = publicDir();
     const assets = new StaticAssets({ mode: "disk", dir }, dir);

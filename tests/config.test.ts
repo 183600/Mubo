@@ -341,6 +341,12 @@ export default defineConfig({
     ).toThrow(/Invalid CORS credentials/);
   });
 
+  test("treats an empty static directory as the default", () => {
+    const cwd = tempDir();
+    const config = resolveConfig({ static: { dir: "" } }, { cwd, env: {}, argv: [] });
+    expect(config.static.dir).toBe(resolve(cwd, "public"));
+  });
+
   test("rejects out-of-range numeric settings", () => {
     expect(() => resolveConfig({ http: { bodyLimit: 0 } }, { env: {}, argv: [] })).toThrow(
       /Invalid body limit/,

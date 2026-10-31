@@ -120,7 +120,7 @@ export class StaticAssets {
 
   constructor(options: StaticAssetsOptions = {}, cwd = process.cwd()) {
     this.mode = options.mode ?? "disk";
-    this.root = resolve(cwd, options.dir ?? "public");
+    this.root = resolve(cwd, options.dir || "public");
     this.spaFallback = options.spaFallback ?? true;
     const globalAssets = getEmbeddedAssets();
     this.assets = normalizeAssets(options.assets ?? globalAssets);
@@ -130,7 +130,7 @@ export class StaticAssets {
 
   configure(options: StaticAssetsOptions = {}, cwd = process.cwd()): this {
     if (options.mode !== undefined) this.mode = options.mode;
-    if (options.dir !== undefined) this.root = resolve(cwd, options.dir);
+    if (options.dir !== undefined) this.root = resolve(cwd, options.dir || "public");
     if (options.spaFallback !== undefined) this.spaFallback = options.spaFallback;
     if (options.assets !== undefined) this.assets = normalizeAssets(options.assets);
     if (options.cache?.immutableExtensions !== undefined) {
