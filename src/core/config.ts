@@ -516,6 +516,7 @@ export function resolveConfig(
     if (
       origin !== "*" &&
       (!Array.isArray(origin) ||
+        origin.length === 0 ||
         origin.some((value) => typeof value !== "string" || value.length === 0))
     ) {
       throw new MuboError(
