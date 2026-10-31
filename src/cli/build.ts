@@ -123,7 +123,7 @@ export async function buildProject(options: BuildOptions = {}): Promise<BuildRes
   mkdirSync(generatedDir, { recursive: true });
 
   const name = sanitizeAppName(
-    env.MUBO_APP_NAME || config.app?.name || (await packageName(cwd)) || basename(cwd),
+    env.MUBO_APP_NAME?.trim() || config.app?.name || (await packageName(cwd)) || basename(cwd),
   );
   let outfile = options.outfile ? resolve(cwd, options.outfile) : join(cwd, "dist", name);
   const needsExe = options.target?.includes("windows") || (!options.target && process.platform === "win32");

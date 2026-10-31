@@ -80,6 +80,7 @@ describe("single-file build", () => {
     mkdirSync(join(cwd, "env-assets"));
     writeFileSync(join(cwd, "public", "index.html"), "default");
     writeFileSync(join(cwd, "env-assets", "index.html"), "environment");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "package-app" }));
 
     const result = await buildProject({
       cwd,
@@ -100,6 +101,12 @@ describe("single-file build", () => {
     });
     expect(disabled.staticDir).toBeUndefined();
     expect(disabled.assets).toBe(0);
+
+    const blankName = await buildProject({
+      cwd,
+      env: { MUBO_APP_NAME: "   ", MUBO_STATIC_MODE: "off" },
+    });
+    expect(blankName.outfile).toBe(join(cwd, "dist", "package-app"));
   }, 60_000);
 
   test("finds JavaScript entries when no TypeScript entry exists", async () => {
