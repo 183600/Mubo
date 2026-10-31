@@ -1255,6 +1255,30 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects migration metadata names that collide with existing objects", async () => {
+    const viewDb = new MuboDatabase({ path: ":memory:" });
+    viewDb.exec("CREATE VIEW _mubo_migrations AS SELECT 1 AS id");
+    expect(() => viewDb.migrate(baseSchema)).toThrow(
+      /Migration table _mubo_migrations conflicts with an existing view/,
+    );
+    expect(viewDb.query("SELECT COUNT(*) AS count FROM _mubo_migrations").get()).toEqual({
+      count: 1,
+    });
+    viewDb.close();
+
+    const indexDb = new MuboDatabase({ path: ":memory:" });
+    indexDb.exec(
+      "CREATE TABLE legacy (id INTEGER); CREATE INDEX _mubo_migrations ON legacy(id)",
+    );
+    expect(() => indexDb.migrate(baseSchema)).toThrow(
+      /Migration table _mubo_migrations conflicts with an existing index on table legacy/,
+    );
+    expect(
+      indexDb.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").get(),
+    ).toBeNull();
+    indexDb.close();
+  });
+
   test("reports migration SQL failures and rolls back the plan", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const invalid = defineSchema({

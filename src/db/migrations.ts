@@ -350,6 +350,22 @@ function viewExists(db: MuboDatabase, view: string): boolean {
   );
 }
 
+function ensureMigrationTableAvailable(db: MuboDatabase, table: string): void {
+  const owner = indexOwner(db, table);
+  if (owner !== undefined) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Migration table ${table} conflicts with an existing index on table ${owner}; use a different table name`,
+    );
+  }
+  if (viewExists(db, table)) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Migration table ${table} conflicts with an existing view; use a different table name`,
+    );
+  }
+}
+
 function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string): void {
   const owner = indexOwner(db, index);
   if (owner !== undefined && owner.toLowerCase() !== table.toLowerCase()) {
@@ -782,7 +798,10 @@ export function applyMigrations(
   }
 
   validateSchema(schema);
-  if (mode === "apply") db.exec(migrationTableSql(table));
+  if (mode === "apply") {
+    ensureMigrationTableAvailable(db, table);
+    db.exec(migrationTableSql(table));
+  }
   const initial = planMigrations(db, schema, { table, safeOnly });
   if (initial.statements.length === 0) {
     return { status: "none", id: null, statements: [], changes: [] };
