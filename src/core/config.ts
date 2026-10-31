@@ -179,12 +179,11 @@ function argvOverrides(argv: string[]): MuboConfig {
     const name = equal === -1 ? token.slice(2) : token.slice(2, equal);
     const inline = equal === -1 ? undefined : token.slice(equal + 1);
     const next = (flagName: string): string => {
-      if (inline !== undefined) return inline;
-      const value = argv[i + 1];
-      if (value === undefined || value.startsWith("-")) {
+      const value = inline !== undefined ? inline : argv[i + 1];
+      if (value === undefined || value === "" || value.startsWith("-")) {
         throw new MuboError("CONFIG_ERROR", `Missing value for --${flagName}`);
       }
-      i++;
+      if (inline === undefined) i++;
       return value;
     };
     switch (name) {
@@ -481,7 +480,9 @@ function configFileFromArgv(argv: string[]): string | undefined {
       }
       return value;
     } else if (token.startsWith("--config=")) {
-      return token.slice("--config=".length) || undefined;
+      const value = token.slice("--config=".length);
+      if (!value) throw new MuboError("CONFIG_ERROR", "Missing value for --config");
+      return value;
     }
   }
   return undefined;

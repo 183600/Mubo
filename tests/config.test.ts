@@ -153,6 +153,18 @@ export default defineConfig({
     expect(config.ws.enabled).toBe(false);
   });
 
+  test("rejects empty CLI values", async () => {
+    expect(() => resolveConfig({}, { env: {}, argv: ["--port="] })).toThrow(
+      /Missing value for --port/,
+    );
+    expect(() => resolveConfig({}, { env: {}, argv: ["--data-dir="] })).toThrow(
+      /Missing value for --data-dir/,
+    );
+    await expect(
+      loadAndResolveConfig({}, { cwd: tempDir(), loadFile: true, argv: ["--config="], env: {} }),
+    ).rejects.toThrow(/Missing value for --config/);
+  });
+
   test("reports config file loading failures and invalid environment values", async () => {
     const cwd = tempDir();
     await expect(
