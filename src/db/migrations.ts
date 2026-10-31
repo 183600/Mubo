@@ -38,9 +38,17 @@ interface ExistingIndex {
   where?: string;
 }
 
+interface ExistingForeignKey {
+  table: string;
+  column: string;
+  onDelete: string;
+  onUpdate: string;
+}
+
 interface ExistingTable {
   columns: Map<string, ExistingColumn>;
   indexes: Map<string, ExistingIndex>;
+  foreignKeys: Map<string, ExistingForeignKey[]>;
 }
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -205,7 +213,24 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
       where: indexWhere(definition?.sql),
     });
   }
-  return { columns, indexes };
+  const foreignKeys = new Map<string, ExistingForeignKey[]>();
+  for (const row of db.query<{
+    table: string;
+    from: string;
+    to: string | null;
+    on_update: string;
+    on_delete: string;
+  }>(`PRAGMA foreign_key_list(${quoteIdentifier(table)})`).all()) {
+    const list = foreignKeys.get(row.from) ?? [];
+    list.push({
+      table: row.table,
+      column: row.to ?? "id",
+      onDelete: row.on_delete.toUpperCase(),
+      onUpdate: row.on_update.toUpperCase(),
+    });
+    foreignKeys.set(row.from, list);
+  }
+  return { columns, indexes, foreignKeys };
 }
 
 function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean): { statements: string[]; changes: string[] } {
@@ -251,6 +276,37 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
         throw new MuboError(
           "MIGRATION_ERROR",
           `Column type change for ${tableName}.${columnName} (${current.type} -> ${column.type}) requires a manual migration`,
+        );
+      }
+      if (current.primaryKey !== Boolean(column.primaryKey)) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Primary-key change for ${tableName}.${columnName} requires a manual migration`,
+        );
+      }
+      const references = column.references;
+      const currentReferences = existing.foreignKeys.get(columnName) ?? [];
+      if (references) {
+        const expectedColumn = references.column ?? "id";
+        const expectedDelete = references.onDelete ?? "NO ACTION";
+        const expectedUpdate = references.onUpdate ?? "NO ACTION";
+        const sameReference = currentReferences.some(
+          (reference) =>
+            reference.table === references.table &&
+            reference.column === expectedColumn &&
+            reference.onDelete === expectedDelete &&
+            reference.onUpdate === expectedUpdate,
+        );
+        if (!sameReference) {
+          throw new MuboError(
+            "MIGRATION_ERROR",
+            `Foreign-key change for ${tableName}.${columnName} requires a manual migration`,
+          );
+        }
+      } else if (currentReferences.length > 0) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Foreign-key change for ${tableName}.${columnName} requires a manual migration`,
         );
       }
       if (!current.primaryKey && current.notNull !== Boolean(column.notNull)) {

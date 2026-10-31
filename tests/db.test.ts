@@ -204,6 +204,99 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects primary-key and foreign-key changes on existing columns", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const initial = defineSchema({
+      tables: {
+        parents: {
+          columns: { id: { type: "integer", primaryKey: true } },
+        },
+        children: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            parent_id: {
+              type: "integer",
+              references: { table: "parents", onDelete: "CASCADE" },
+            },
+            legacy_id: { type: "integer" },
+          },
+        },
+      },
+    });
+    await db.migrate(initial);
+    expect((await db.migrate(initial)).status).toBe("none");
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            parents: {
+              columns: { id: { type: "integer", primaryKey: true } },
+            },
+            children: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                parent_id: {
+                  type: "integer",
+                  references: { table: "parents", onDelete: "RESTRICT" },
+                },
+                legacy_id: { type: "integer" },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Foreign-key change/);
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            parents: {
+              columns: { id: { type: "integer", primaryKey: true } },
+            },
+            children: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                parent_id: {
+                  type: "integer",
+                  references: { table: "parents", onDelete: "CASCADE" },
+                },
+                legacy_id: {
+                  type: "integer",
+                  references: { table: "parents" },
+                },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Foreign-key change/);
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            parents: {
+              columns: { id: { type: "integer" } },
+            },
+            children: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                parent_id: {
+                  type: "integer",
+                  references: { table: "parents", onDelete: "CASCADE" },
+                },
+                legacy_id: { type: "integer" },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Primary-key change/);
+    db.close();
+  });
+
   test("check mode reports pending migrations without applying them", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(baseSchema);
