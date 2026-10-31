@@ -34,6 +34,16 @@ function validRequestId(value: string | null): value is string {
   return value !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
 }
 
+function clientIp(request: Request, server: Server<WsSocketData>, trustProxy: boolean): string {
+  if (trustProxy) {
+    const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim().split(/\s+/)[0];
+    if (forwarded && forwarded.length <= 100) return forwarded;
+    const real = request.headers.get("x-real-ip")?.trim();
+    if (real && real.length <= 100) return real;
+  }
+  return server.requestIP(request)?.address ?? "";
+}
+
 function normalizeResponse(value: unknown): Response {
   if (value instanceof Response) return value;
   if (value === undefined || value === null) return new Response(null, { status: 204 });
@@ -218,12 +228,11 @@ export class MuboApp {
       }
     }
 
-    const address = server.requestIP(request);
     const data: WsSocketData = {
       routePath: route.path,
       requestId,
       url: url.href,
-      ip: address?.address ?? "",
+      ip: clientIp(request, server, this.config.http.trustProxy),
       user,
       state: {},
     };
@@ -349,13 +358,12 @@ export class MuboApp {
     });
 
     if (!response.headers.has("x-request-id")) response.headers.set("x-request-id", requestId);
-    const address = server.requestIP(request);
     this.logger.info("http", {
       method: request.method,
       path: url.pathname,
       status: response.status,
       durationMs: Math.round((performance.now() - started) * 100) / 100,
-      ip: address?.address,
+      ip: clientIp(request, server, this.config.http.trustProxy),
     });
     return response;
   }

@@ -12,9 +12,9 @@ interface TestSocket {
   expectNone(timeoutMs?: number): Promise<void>;
 }
 
-function openSocket(url: string): Promise<TestSocket> {
+function openSocket(url: string, headers?: Record<string, string>): Promise<TestSocket> {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(url);
+    const socket = new WebSocket(url, headers ? ({ headers } as never) : undefined);
     const queue: unknown[] = [];
     const waiters: Array<{ resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }> = [];
     socket.addEventListener("message", (event) => {
@@ -221,6 +221,40 @@ describe("WebSocket rooms and broadcasting", () => {
     expect(disabledResponse.headers.get("x-request-id")).toBe("ws-disabled");
     const disabledPayload = (await disabledResponse.json()) as { requestId: string };
     expect(disabledPayload.requestId).toBe("ws-disabled");
+  });
+
+  test("honors forwarded client addresses only when trustProxy is enabled", async () => {
+    const capture = async (
+      trustProxy: boolean,
+      headers: Record<string, string>,
+    ): Promise<string> => {
+      const app = await createMuboApp(
+        {
+          app: { name: `ws-ip-${trustProxy}`, env: "test" },
+          db: { path: ":memory:" },
+          http: { port: 0, trustProxy },
+          log: { level: "error" },
+          static: { mode: "off" },
+          ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+        },
+        { argv: [] },
+      );
+      app.ws("/ws", {
+        onConnect(ctx) {
+          ctx.send({ ip: ctx.ip });
+        },
+      });
+      await app.start();
+      apps.push(app);
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`, headers);
+      const message = (await socket.next()) as { ip: string };
+      socket.socket.close();
+      return message.ip;
+    };
+
+    expect(await capture(true, { "x-forwarded-for": "203.0.113.9, 10.0.0.1" })).toBe("203.0.113.9");
+    expect(await capture(true, { "x-real-ip": "198.51.100.7" })).toBe("198.51.100.7");
+    expect(await capture(false, { "x-forwarded-for": "203.0.113.9" })).not.toBe("203.0.113.9");
   });
 
   test("routes synchronous handler failures through onError", async () => {
