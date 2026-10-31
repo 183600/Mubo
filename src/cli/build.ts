@@ -1,8 +1,7 @@
 import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { sanitizeAppName } from "../core/config.ts";
+import { loadConfigFile, resolveConfig, sanitizeAppName, type MuboConfig } from "../core/config.ts";
 import { MuboError } from "../core/errors.ts";
-import { loadConfigFile, type MuboConfig } from "../core/config.ts";
 import { mimeTypeForExtension } from "../static/assets.ts";
 
 export interface BuildOptions {
@@ -13,6 +12,7 @@ export interface BuildOptions {
   target?: string;
   minify?: boolean;
   configFile?: string;
+  env?: Record<string, string | undefined>;
 }
 
 export interface BuildResult {
@@ -72,27 +72,32 @@ function findEntry(cwd: string, requested?: string): string {
   );
 }
 
-function findStaticDir(cwd: string, config: MuboConfig, requested?: string): string | undefined {
+function findStaticDir(
+  cwd: string,
+  config: MuboConfig,
+  resolved: { mode: "embedded" | "disk" | "off"; dir: string },
+  envDir: string | undefined,
+  requested?: string,
+): string | undefined {
   if (requested) {
     const absolute = resolve(cwd, requested);
     if (!isDirectory(absolute)) throw new MuboError("CONFIG_ERROR", `Static directory not found: ${absolute}`);
     return absolute;
   }
-  if (config.static?.mode === "off") return undefined;
-  if (config.static?.dir) {
-    const absolute = resolve(cwd, config.static.dir);
-    if (isDirectory(absolute)) return absolute;
-    if (config.static.dir === "public") {
+  if (resolved.mode === "off") return undefined;
+  const configuredDir = envDir || config.static?.dir;
+  const absolute = resolve(cwd, resolved.dir);
+  if (isDirectory(absolute)) return absolute;
+  if (configuredDir) {
+    if (configuredDir === "public") {
       const fallback = resolve(cwd, "dist/client");
       if (isDirectory(fallback)) return fallback;
       return undefined;
     }
     throw new MuboError("CONFIG_ERROR", `Static directory not found: ${absolute}`);
   }
-  for (const candidate of ["public", "dist/client"]) {
-    const absolute = resolve(cwd, candidate);
-    if (isDirectory(absolute)) return absolute;
-  }
+  const fallback = resolve(cwd, "dist/client");
+  if (isDirectory(fallback)) return fallback;
   return undefined;
 }
 
@@ -135,13 +140,20 @@ export async function buildProject(options: BuildOptions = {}): Promise<BuildRes
     throw error instanceof MuboError ? error : new MuboError("CONFIG_ERROR", "Failed to load project config", { cause: error });
   }
 
-  const staticDir = findStaticDir(cwd, config, options.staticDir);
+  const env = options.env ?? process.env;
+  const resolved = resolveConfig(
+    options.staticDir === undefined ? {} : { static: { dir: options.staticDir } },
+    { cwd, env, argv: [], fileConfig: config },
+  );
+  const staticDir = findStaticDir(cwd, config, resolved.static, env.MUBO_STATIC_DIR, options.staticDir);
   const assets = staticDir ? await collectAssets(staticDir) : {};
   const assetCount = Object.keys(assets).length;
   const generatedDir = join(cwd, ".mubo");
   mkdirSync(generatedDir, { recursive: true });
 
-  const name = sanitizeAppName(config.app?.name ?? (await packageName(cwd)) ?? basename(cwd));
+  const name = sanitizeAppName(
+    env.MUBO_APP_NAME || config.app?.name || (await packageName(cwd)) || basename(cwd),
+  );
   let outfile = options.outfile ? resolve(cwd, options.outfile) : join(cwd, "dist", name);
   const needsExe = options.target?.includes("windows") || (!options.target && process.platform === "win32");
   if (needsExe && !outfile.endsWith(".exe")) outfile += ".exe";

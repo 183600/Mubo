@@ -106,7 +106,7 @@ mubo build [--entry <file>] [--outfile <file>] [--static-dir <dir>] [--target <t
 mubo migrate [--check] [--config <file>] [--data-dir <dir>]
 mubo doctor [--json] [--config <file>]
 ```
-CLI 参数优先级最高；缺失的开关值或非法日志级别会直接报错，而不是静默忽略。
+CLI 参数优先级最高；缺失的开关值或非法日志级别会直接报错，而不是静默忽略。`mubo build` 同样遵循配置优先级：`MUBO_APP_NAME`、`MUBO_STATIC_MODE`、`MUBO_STATIC_DIR` 会影响产物名称和嵌入的静态资源，`--static-dir` 优先级最高。
 
 ---
 

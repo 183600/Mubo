@@ -61,6 +61,35 @@ describe("single-file build", () => {
     );
   });
 
+  test("honors environment overrides for app name, static mode and directory", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "console.log('env config');\n");
+    mkdirSync(join(cwd, "public"));
+    mkdirSync(join(cwd, "env-assets"));
+    writeFileSync(join(cwd, "public", "index.html"), "default");
+    writeFileSync(join(cwd, "env-assets", "index.html"), "environment");
+
+    const result = await buildProject({
+      cwd,
+      env: {
+        MUBO_APP_NAME: "Env App",
+        MUBO_STATIC_MODE: "embedded",
+        MUBO_STATIC_DIR: "env-assets",
+      },
+    });
+    expect(result.outfile).toBe(join(cwd, "dist", "Env-App"));
+    expect(result.staticDir).toBe(join(cwd, "env-assets"));
+    expect(result.assets).toBe(1);
+
+    const disabled = await buildProject({
+      cwd,
+      outfile: "dist/no-static",
+      env: { MUBO_STATIC_MODE: "off" },
+    });
+    expect(disabled.staticDir).toBeUndefined();
+    expect(disabled.assets).toBe(0);
+  }, 60_000);
+
   test("finds JavaScript entries when no TypeScript entry exists", async () => {
     const cwd = tempDir();
     mkdirSync(join(cwd, "src", "server"), { recursive: true });
