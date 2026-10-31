@@ -3,6 +3,9 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "paths": {
+      "mubo": ["./src/index.ts"]
+    },
     "moduleDetection": "force",
     "lib": ["ESNext"],
     "types": ["bun"],
