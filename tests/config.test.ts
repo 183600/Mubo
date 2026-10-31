@@ -240,6 +240,12 @@ export default defineConfig({
     );
   });
 
+  test("treats an empty MUBO_ENV as unset and falls back to NODE_ENV", () => {
+    const config = resolveConfig({}, { env: { MUBO_ENV: "", NODE_ENV: "production" }, argv: [] });
+    expect(config.app.env).toBe("production");
+    expect(config.log.json).toBe(true);
+  });
+
   test("rejects invalid modes and log levels from explicit config", () => {
     expect(() => resolveConfig({ app: { env: "staging" as never } }, { env: {}, argv: [] })).toThrow(
       /Invalid app environment/,

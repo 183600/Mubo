@@ -247,7 +247,7 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
     if (value !== undefined) result[key] = value;
   };
 
-  const envName = env.MUBO_ENV ?? env.NODE_ENV;
+  const envName = env.MUBO_ENV || env.NODE_ENV;
   const app: NonNullable<MuboConfig["app"]> = {};
   if (env.MUBO_APP_NAME) app.name = env.MUBO_APP_NAME;
   if (envName === "development" || envName === "production" || envName === "test") app.env = envName;
@@ -416,7 +416,7 @@ export function resolveConfig(
 ): ResolvedMuboConfig {
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
-  const envName = env.MUBO_ENV ?? env.NODE_ENV;
+  const envName = env.MUBO_ENV || env.NODE_ENV;
   const appEnv =
     envName === "production" || envName === "test" || envName === "development"
       ? envName
