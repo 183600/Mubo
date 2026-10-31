@@ -261,6 +261,22 @@ function tableExists(db: MuboDatabase, table: string): boolean {
   );
 }
 
+function indexOwner(db: MuboDatabase, index: string): string | undefined {
+  return db
+    .query<{ tbl_name: string }>("SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = ?")
+    .get(index)?.tbl_name;
+}
+
+function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string): void {
+  const owner = indexOwner(db, index);
+  if (owner !== undefined) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Index ${index} already exists on table ${owner}; use a different name or a manual migration`,
+    );
+  }
+}
+
 function indexWhere(sql: string | null | undefined): string | undefined {
   if (!sql) return undefined;
   const match = /\bWHERE\b([\s\S]*)$/i.exec(sql);
@@ -328,7 +344,7 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
       .query<{ name: string | null }>(`PRAGMA index_info(${quoteIdentifier(row.name)})`)
       .all()
       .map((item) => item.name ?? "");
-    if (row.origin === "u" && row.unique === 1 && indexColumns.length === 1) {
+    if (row.origin === "u" && row.unique === 1 && row.partial === 0 && indexColumns.length === 1) {
       const column = columns.get(indexColumns[0]!);
       if (column) column.unique = true;
     }
@@ -398,6 +414,7 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
       statements.push(createTableSql(tableName, table));
       changes.push(`create table ${tableName}`);
       for (const index of table.indexes ?? []) {
+        ensureIndexNameAvailable(db, tableName, index.name);
         statements.push(createIndexSql(tableName, index));
         changes.push(`create index ${index.name} on ${tableName}`);
       }
@@ -500,6 +517,7 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
     for (const index of table.indexes ?? []) {
       const current = existing.indexes.get(index.name);
       if (!current) {
+        ensureIndexNameAvailable(db, tableName, index.name);
         statements.push(createIndexSql(tableName, index));
         changes.push(`create index ${index.name} on ${tableName}`);
         continue;

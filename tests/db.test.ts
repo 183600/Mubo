@@ -206,6 +206,64 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("does not treat partial unique indexes as full column constraints", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(
+      "CREATE TABLE accounts (id INTEGER PRIMARY KEY, email TEXT); " +
+        "CREATE UNIQUE INDEX idx_accounts_email ON accounts(email) WHERE email IS NOT NULL;",
+    );
+
+    const schema = defineSchema({
+      tables: {
+        accounts: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text", unique: true },
+          },
+        },
+      },
+    });
+    expect(() => db.migrate(schema)).toThrow(/UNIQUE constraint change/);
+
+    const partial = defineSchema({
+      tables: {
+        accounts: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text" },
+          },
+          indexes: [
+            { name: "idx_accounts_email", columns: ["email"], unique: true, where: "email IS NOT NULL" },
+          ],
+        },
+      },
+    });
+    expect((await db.migrate(partial)).status).toBe("none");
+    db.close();
+  });
+
+  test("rejects index names that already exist on another table", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE legacy (id INTEGER PRIMARY KEY); CREATE INDEX idx_shared ON legacy(id);");
+
+    const schema = defineSchema({
+      tables: {
+        notes: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            legacy_id: { type: "integer" },
+          },
+          indexes: [{ name: "idx_shared", columns: ["legacy_id"] }],
+        },
+      },
+    });
+    expect(() => db.migrate(schema)).toThrow(/already exists on table legacy/);
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes'").get(),
+    ).toBeNull();
+    db.close();
+  });
+
   test("rejects primary-key and foreign-key changes on existing columns", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const initial = defineSchema({
