@@ -27,6 +27,7 @@ interface ExistingColumn {
   notNull: boolean;
   defaultValue: string | null;
   primaryKey: boolean;
+  unique: boolean;
 }
 
 interface ExistingIndex {
@@ -34,6 +35,7 @@ interface ExistingIndex {
   unique: boolean;
   columns: string[];
   partial: boolean;
+  where?: string;
 }
 
 interface ExistingTable {
@@ -147,6 +149,17 @@ function tableExists(db: MuboDatabase, table: string): boolean {
   );
 }
 
+function indexWhere(sql: string | null | undefined): string | undefined {
+  if (!sql) return undefined;
+  const match = /\bWHERE\b([\s\S]*)$/i.exec(sql);
+  const where = match?.[1]?.trim();
+  return where ? where : undefined;
+}
+
+function normalizeWhere(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
 function introspectTable(db: MuboDatabase, table: string): ExistingTable {
   const columns = new Map<string, ExistingColumn>();
   for (const row of db.query<{
@@ -162,6 +175,7 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
       notNull: row.notnull === 1,
       defaultValue: row.dflt_value,
       primaryKey: row.pk > 0,
+      unique: false,
     });
   }
   const indexes = new Map<string, ExistingIndex>();
@@ -171,16 +185,24 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
     origin: string;
     partial: number;
   }>(`PRAGMA index_list(${quoteIdentifier(table)})`).all()) {
-    if (row.origin === "pk" || row.name.startsWith("sqlite_autoindex")) continue;
     const indexColumns = db
       .query<{ name: string | null }>(`PRAGMA index_info(${quoteIdentifier(row.name)})`)
       .all()
       .map((item) => item.name ?? "");
+    if (row.origin === "u" && row.unique === 1 && indexColumns.length === 1) {
+      const column = columns.get(indexColumns[0]!);
+      if (column) column.unique = true;
+    }
+    if (row.origin === "pk" || row.name.startsWith("sqlite_autoindex")) continue;
+    const definition = db
+      .query<{ sql: string | null }>("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?")
+      .get(row.name);
     indexes.set(row.name, {
       name: row.name,
       unique: row.unique === 1,
       columns: indexColumns,
       partial: row.partial === 1,
+      where: indexWhere(definition?.sql),
     });
   }
   return { columns, indexes };
@@ -240,6 +262,13 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
           `Column nullability change for ${tableName}.${columnName} requires a manual migration (${detail})`,
         );
       }
+      const wantsUnique = Boolean(column.unique) && !column.primaryKey;
+      if (wantsUnique !== current.unique) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `UNIQUE constraint change for ${tableName}.${columnName} requires a manual migration`,
+        );
+      }
     }
 
     for (const index of table.indexes ?? []) {
@@ -253,7 +282,13 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
       const sameColumns =
         current.columns.length === index.columns.length &&
         current.columns.every((column, position) => column === index.columns[position]);
-      if (!sameColumns || current.unique !== Boolean(index.unique)) {
+      const sameWhere = normalizeWhere(current.where) === normalizeWhere(index.where);
+      if (
+        !sameColumns ||
+        current.unique !== Boolean(index.unique) ||
+        current.partial !== Boolean(index.where) ||
+        !sameWhere
+      ) {
         throw new MuboError(
           "MIGRATION_ERROR",
           `Index ${index.name} on ${tableName} already exists with a different definition; use a manual migration`,

@@ -141,6 +141,69 @@ describe("database and automatic migrations", () => {
     expect(() => db.migrate(unsafeUnique)).toThrow(/UNIQUE column/);
     db.close();
   });
+  test("detects unique-column and partial-index changes on existing schema", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const initial = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text" },
+          },
+          indexes: [{ name: "idx_users_email", columns: ["email"] }],
+        },
+      },
+    });
+    await db.migrate(initial);
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            users: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                email: { type: "text", unique: true },
+              },
+              indexes: [{ name: "idx_users_email", columns: ["email"] }],
+            },
+          },
+        }),
+      ),
+    ).toThrow(/UNIQUE constraint change/);
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            users: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                email: { type: "text" },
+              },
+              indexes: [{ name: "idx_users_email", columns: ["email"], where: "email IS NOT NULL" }],
+            },
+          },
+        }),
+      ),
+    ).toThrow(/different definition/);
+
+    const singleUniqueIndex = defineSchema({
+      tables: {
+        accounts: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text" },
+          },
+          indexes: [{ name: "idx_accounts_email", columns: ["email"], unique: true }],
+        },
+      },
+    });
+    expect((await db.migrate(singleUniqueIndex)).status).toBe("applied");
+    expect((await db.migrate(singleUniqueIndex)).status).toBe("none");
+    db.close();
+  });
+
   test("check mode reports pending migrations without applying them", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(baseSchema);
