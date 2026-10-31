@@ -170,6 +170,16 @@ export const schema = defineSchema({
 `,
   );
   await write(
+    join(dir, "src", "server", "schema.test.ts"),
+    `import { expect, test } from "bun:test";
+import { schema } from "./schema";
+
+test("defines the users table", () => {
+  expect(schema.tables.users).toBeDefined();
+});
+`,
+  );
+  await write(
     join(dir, "src", "server", "index.ts"),
     `import { createMuboApp } from "mubo";
 import config from "../../mubo.config.ts";

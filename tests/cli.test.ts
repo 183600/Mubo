@@ -130,6 +130,7 @@ describe("CLI", () => {
     expect(existsSync(join(dir, "mubo.config.ts"))).toBe(true);
     expect(existsSync(join(dir, "src/server/index.ts"))).toBe(true);
     expect(existsSync(join(dir, "src/server/schema.ts"))).toBe(true);
+    expect(existsSync(join(dir, "src/server/schema.test.ts"))).toBe(true);
     expect(existsSync(join(dir, "public/index.html"))).toBe(true);
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
       scripts: Record<string, string>;
