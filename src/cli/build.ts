@@ -126,9 +126,18 @@ export async function buildProject(options: BuildOptions = {}): Promise<BuildRes
     env.MUBO_APP_NAME?.trim() || config.app?.name || (await packageName(cwd)) || basename(cwd),
   );
   let outfile = options.outfile ? resolve(cwd, options.outfile) : join(cwd, "dist", name);
-  const needsExe = options.target?.includes("windows") || (!options.target && process.platform === "win32");
-  if (needsExe && !outfile.endsWith(".exe")) outfile += ".exe";
-  mkdirSync(dirname(outfile), { recursive: true });
+  const needsExe =
+    options.target?.toLowerCase().includes("windows") ||
+    (!options.target && process.platform === "win32");
+  if (needsExe && !outfile.toLowerCase().endsWith(".exe")) outfile += ".exe";
+  const outputDir = dirname(outfile);
+  if (existsSync(outputDir) && !isDirectory(outputDir)) {
+    throw new MuboError("CONFIG_ERROR", `Output directory is not a directory: ${outputDir}`);
+  }
+  if (existsSync(outfile) && isDirectory(outfile)) {
+    throw new MuboError("CONFIG_ERROR", `Output path is a directory: ${outfile}`);
+  }
+  mkdirSync(outputDir, { recursive: true });
 
   const manifestPath = join(generatedDir, "embedded-assets.ts");
   const wrapperPath = join(generatedDir, "build-entry.ts");

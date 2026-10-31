@@ -49,6 +49,16 @@ describe("single-file build", () => {
     await expect(buildProject({ cwd, entry: "index.ts", staticDir: "not-a-dir" })).rejects.toThrow(
       /Static directory not found/,
     );
+
+    mkdirSync(join(cwd, "dist", "app"), { recursive: true });
+    await expect(buildProject({ cwd, entry: "index.ts", outfile: "dist/app" })).rejects.toThrow(
+      /Output path is a directory/,
+    );
+
+    writeFileSync(join(cwd, "occupied"), "file");
+    await expect(buildProject({ cwd, entry: "index.ts", outfile: "occupied/app" })).rejects.toThrow(
+      /Output directory is not a directory/,
+    );
   });
 
   test("rejects a configured static directory that does not exist", async () => {
