@@ -68,6 +68,12 @@ describe("CLI", () => {
     expect(parsed.flags.get("force")).toBe(true);
     expect(parsed.flags.get("port")).toBe("4000");
     expect(parsed.flags.get("outfile")).toBe("x");
+
+    const beforePositional = parseCliArgs(["init", "--force", "my-app", "--install"]);
+    expect(beforePositional.command).toBe("init");
+    expect(beforePositional.positionals).toEqual(["my-app"]);
+    expect(beforePositional.flags.get("force")).toBe(true);
+    expect(beforePositional.flags.get("install")).toBe(true);
   });
 
   test("init creates a complete project and refuses to overwrite non-empty dirs", async () => {

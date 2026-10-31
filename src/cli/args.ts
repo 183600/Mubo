@@ -4,6 +4,8 @@ export interface CliArgs {
   flags: Map<string, string | boolean>;
 }
 
+const BOOLEAN_FLAGS = new Set(["force", "install", "check", "json", "minify", "no-static", "no-ws", "help"]);
+
 export function parseCliArgs(argv: string[]): CliArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | boolean>();
@@ -21,6 +23,10 @@ export function parseCliArgs(argv: string[]): CliArgs {
     const name = equal === -1 ? token.slice(2) : token.slice(2, equal);
     if (equal !== -1) {
       flags.set(name, token.slice(equal + 1));
+      continue;
+    }
+    if (BOOLEAN_FLAGS.has(name)) {
+      flags.set(name, true);
       continue;
     }
     const next = argv[index + 1];
