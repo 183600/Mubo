@@ -97,9 +97,19 @@ function contentTypeFor(path: string): string {
   return mimeTypeForExtension(extname(path).slice(1)) ?? "application/octet-stream";
 }
 
+function normalizeExtension(extension: string): string {
+  return extension.trim().replace(/^\.+/, "").toLowerCase();
+}
+
+function looksLikeContentHash(token: string): boolean {
+  if (token.length < 8 || token.length > 64) return false;
+  if (!/^[A-Za-z0-9_-]+$/.test(token)) return false;
+  return /[0-9]/.test(token) || (/[a-z]/.test(token) && /[A-Z]/.test(token));
+}
+
 function hasContentHash(path: string): boolean {
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  return /[.-][A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9]+)*\.[A-Za-z0-9]+$/.test(name);
+  const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.[A-Za-z0-9]+$/, "");
+  return name.split(/[.-]/).some(looksLikeContentHash);
 }
 
 function etagMatches(header: string | null, etag: string): boolean {
@@ -128,7 +138,9 @@ export class StaticAssets {
     this.spaFallback = options.spaFallback ?? true;
     const globalAssets = getEmbeddedAssets();
     this.assets = normalizeAssets(options.assets ?? globalAssets);
-    this.immutableExtensions = new Set(options.cache?.immutableExtensions ?? []);
+    this.immutableExtensions = new Set(
+      (options.cache?.immutableExtensions ?? []).map(normalizeExtension).filter(Boolean),
+    );
     this.defaultMaxAgeSeconds = options.cache?.defaultMaxAgeSeconds ?? 3600;
   }
 
@@ -138,7 +150,9 @@ export class StaticAssets {
     if (options.spaFallback !== undefined) this.spaFallback = options.spaFallback;
     if (options.assets !== undefined) this.assets = normalizeAssets(options.assets);
     if (options.cache?.immutableExtensions !== undefined) {
-      this.immutableExtensions = new Set(options.cache.immutableExtensions);
+      this.immutableExtensions = new Set(
+        options.cache.immutableExtensions.map(normalizeExtension).filter(Boolean),
+      );
     }
     if (options.cache?.defaultMaxAgeSeconds !== undefined) {
       this.defaultMaxAgeSeconds = options.cache.defaultMaxAgeSeconds;

@@ -539,10 +539,17 @@ export function resolveConfig(
   const immutableExtensions = merged.static.cache.immutableExtensions;
   if (
     !Array.isArray(immutableExtensions) ||
-    immutableExtensions.some((extension) => typeof extension !== "string" || extension.length === 0)
+    immutableExtensions.some(
+      (extension) =>
+        typeof extension !== "string" ||
+        extension.trim().replace(/^\.+/, "").length === 0,
+    )
   ) {
     throw new MuboError("CONFIG_ERROR", "Invalid immutable extensions setting");
   }
+  merged.static.cache.immutableExtensions = immutableExtensions.map((extension) =>
+    extension.trim().replace(/^\.+/, "").toLowerCase(),
+  );
 
   if (!logJsonConfigured) merged.log.json = merged.app.env === "production";
   if (merged.app.env !== "development" && merged.app.env !== "production" && merged.app.env !== "test") {

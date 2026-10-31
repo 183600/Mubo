@@ -438,10 +438,20 @@ export default defineConfig({
       [{ log: { json: "false" } }, /Invalid JSON logging setting/],
       [{ static: { cache: { immutableExtensions: "js" } } }, /Invalid immutable extensions setting/],
       [{ static: { cache: { immutableExtensions: [""] } } }, /Invalid immutable extensions setting/],
+      [{ static: { cache: { immutableExtensions: ["."] } } }, /Invalid immutable extensions setting/],
+      [{ static: { cache: { immutableExtensions: ["   "] } } }, /Invalid immutable extensions setting/],
     ];
     for (const [config, pattern] of invalid) {
       expect(() => resolveConfig(config as never, { env: {}, argv: [] })).toThrow(pattern);
     }
+  });
+
+  test("normalizes immutable cache extensions", () => {
+    const config = resolveConfig(
+      { static: { cache: { immutableExtensions: [".JS", " Css ", "woff2"] } } },
+      { env: {}, argv: [] },
+    );
+    expect(config.static.cache.immutableExtensions).toEqual(["js", "css", "woff2"]);
   });
 
   test("rejects non-string path and name settings", () => {

@@ -307,6 +307,36 @@ describe("static assets", () => {
     }
   });
 
+  test("normalizes immutable extension settings and ignores human-readable names", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.a1b2c3d4.js"), "hashed");
+    writeFileSync(join(dir, "vendor.12345678.chunk.css"), "hashed");
+    writeFileSync(join(dir, "apple-touch-icon.png"), "icon");
+    writeFileSync(join(dir, "hero-image-large.png"), "hero");
+    writeFileSync(join(dir, "main.abcdefgh.js"), "lowercase");
+    const assets = new StaticAssets(
+      {
+        mode: "disk",
+        dir,
+        cache: { immutableExtensions: [".JS", " CSS ", "png"] },
+      },
+      dir,
+    );
+
+    const cacheFor = async (path: string) => {
+      const url = `http://localhost${path}`;
+      const response = await assets.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(200);
+      return response?.headers.get("cache-control");
+    };
+
+    expect(await cacheFor("/app.a1b2c3d4.js")).toBe("public, max-age=31536000, immutable");
+    expect(await cacheFor("/vendor.12345678.chunk.css")).toBe("public, max-age=31536000, immutable");
+    expect(await cacheFor("/apple-touch-icon.png")).toBe("public, max-age=3600");
+    expect(await cacheFor("/hero-image-large.png")).toBe("public, max-age=3600");
+    expect(await cacheFor("/main.abcdefgh.js")).toBe("public, max-age=3600");
+  });
+
   test("serves embedded assets without touching disk", async () => {
     const app = await createMuboApp(
       {
