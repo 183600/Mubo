@@ -58,16 +58,17 @@ function normalizeKey(path: string): string {
 function normalizeAssets(assets: EmbeddedAssets | undefined): Map<string, EmbeddedAsset | string | Uint8Array | ArrayBuffer> {
   const map = new Map<string, EmbeddedAsset | string | Uint8Array | ArrayBuffer>();
   if (!assets) return map;
+  const exactKeys = new Set(Object.keys(assets).map(normalizeKey));
   for (const [key, value] of Object.entries(assets)) {
-    map.set(normalizeKey(key), value);
-    const decoded = (() => {
-      try {
-        return normalizeKey(decodeURIComponent(key));
-      } catch {
-        return key;
-      }
-    })();
-    map.set(decoded, value);
+    const normalized = normalizeKey(key);
+    map.set(normalized, value);
+    let decoded = normalized;
+    try {
+      decoded = normalizeKey(decodeURIComponent(key));
+    } catch {}
+    if (decoded !== normalized && !exactKeys.has(decoded) && !map.has(decoded)) {
+      map.set(decoded, value);
+    }
   }
   return map;
 }

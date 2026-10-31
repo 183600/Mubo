@@ -162,6 +162,25 @@ describe("static assets", () => {
     expect(await off.hasFile("/")).toBe(false);
   });
 
+  test("prefers exact embedded asset keys over decoded aliases", async () => {
+    const assets = new StaticAssets({
+      mode: "embedded",
+      spaFallback: false,
+      assets: {
+        "/a%20b.txt": "encoded",
+        "/a b.txt": "exact",
+      },
+    });
+
+    const exactUrl = "http://localhost/a%20b.txt";
+    const exact = await assets.handle(new Request(exactUrl), new URL(exactUrl));
+    expect(await exact!.text()).toBe("exact");
+
+    const encodedUrl = "http://localhost/a%2520b.txt";
+    const encoded = await assets.handle(new Request(encodedUrl), new URL(encodedUrl));
+    expect(await encoded!.text()).toBe("encoded");
+  });
+
   test("does not let embedded SPA fallback shadow disk files in disk mode", async () => {
     const dir = publicDir();
     writeFileSync(join(dir, "only-disk.txt"), "disk-only");
