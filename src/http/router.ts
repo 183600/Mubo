@@ -82,7 +82,7 @@ function pathSegments(pathname: string): string[] {
 }
 
 function matchSegments(route: Route, parts: string[]): Record<string, string> | null {
-  const params: Record<string, string> = {};
+  const params = Object.create(null) as Record<string, string>;
   for (let index = 0; index < route.segments.length; index++) {
     const segment = route.segments[index]!;
     if (segment.kind === "wildcard") {

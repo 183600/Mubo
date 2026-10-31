@@ -37,6 +37,19 @@ describe("router", () => {
     });
   });
 
+  test("keeps route parameter objects free of inherited prototype keys", () => {
+    const router = new Router();
+    router.add("GET", "/things/:__proto__", ok("proto"));
+    const match = router.match("GET", "/things/value");
+
+    expect(match.type).toBe("match");
+    const params = match.type === "match" ? match.params : {};
+    expect(params["__proto__"]).toBe("value");
+    expect((params as { toString?: unknown }).toString).toBeUndefined();
+    expect((params as { constructor?: unknown }).constructor).toBeUndefined();
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+  });
+
   test("prefers literal routes over parameters and wildcards regardless of order", async () => {
     const router = new Router();
     router.add("GET", "/users/:id", ok("param"));

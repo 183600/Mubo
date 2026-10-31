@@ -108,6 +108,25 @@ describe("request context bodies", () => {
     expect(ctx.get("constructor")).toBe("value");
   });
 
+  test("copies route parameters without exposing inherited keys", () => {
+    const request = new Request("http://localhost/test");
+    const ctx = createRequestContext({
+      req: request,
+      url: new URL(request.url),
+      params: JSON.parse('{"__proto__":"value","constructor":"own"}') as Record<string, string>,
+      requestId: "req-params",
+      db: null as never,
+      log: createLogger({ level: "error" }),
+      app: null,
+      bodyLimit: 1024,
+    });
+
+    expect(ctx.params["__proto__"]).toBe("value");
+    expect(ctx.params["constructor"]).toBe("own");
+    expect((ctx.params as { toString?: unknown }).toString).toBeUndefined();
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+  });
+
   test("rejects streamed bodies that exceed the limit without a content-length header", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {

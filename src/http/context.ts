@@ -41,6 +41,7 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
   let rawBodyPromise: Promise<Uint8Array> | undefined;
   let parsedBodyPromise: Promise<unknown> | undefined;
   const state = Object.create(null) as Record<string, unknown>;
+  const params = Object.assign(Object.create(null) as Record<string, string>, deps.params);
 
   const readBodyBytes = async (): Promise<Uint8Array> => {
     const body = deps.req.body;
@@ -112,7 +113,7 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
     req: deps.req,
     url: deps.url,
     method: deps.req.method.toUpperCase(),
-    params: deps.params,
+    params,
     query: deps.url.searchParams,
     requestId: deps.requestId,
     state,
