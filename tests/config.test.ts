@@ -268,6 +268,24 @@ export default defineConfig({
     });
   });
 
+  test("rejects malformed CORS configuration", () => {
+    expect(() => resolveConfig({ http: { cors: true as never } }, { env: {}, argv: [] })).toThrow(
+      /Invalid CORS configuration/,
+    );
+    expect(() => resolveConfig({ http: { cors: {} as never } }, { env: {}, argv: [] })).toThrow(
+      /Invalid CORS origin/,
+    );
+    expect(() =>
+      resolveConfig({ http: { cors: { origin: "https://example.test" as never } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid CORS origin/);
+    expect(() =>
+      resolveConfig({ http: { cors: { origin: [""] } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid CORS origin/);
+    expect(() =>
+      resolveConfig({ http: { cors: { origin: "*", credentials: "yes" as never } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid CORS credentials/);
+  });
+
   test("rejects out-of-range numeric settings", () => {
     expect(() => resolveConfig({ http: { bodyLimit: 0 } }, { env: {}, argv: [] })).toThrow(
       /Invalid body limit/,

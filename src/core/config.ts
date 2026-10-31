@@ -489,6 +489,29 @@ export function resolveConfig(
   if (merged.static.mode !== "embedded" && merged.static.mode !== "disk" && merged.static.mode !== "off") {
     throw new MuboError("CONFIG_ERROR", `Invalid static mode: ${String(merged.static.mode)}`);
   }
+  if (merged.http.cors !== false) {
+    const cors = merged.http.cors as unknown;
+    if (typeof cors !== "object" || cors === null || Array.isArray(cors)) {
+      throw new MuboError("CONFIG_ERROR", "Invalid CORS configuration");
+    }
+    const origin = (cors as { origin?: unknown }).origin;
+    if (
+      origin !== "*" &&
+      (!Array.isArray(origin) ||
+        origin.some((value) => typeof value !== "string" || value.length === 0))
+    ) {
+      throw new MuboError(
+        "CONFIG_ERROR",
+        'Invalid CORS origin: expected "*" or a non-empty array of strings',
+      );
+    }
+    if (
+      (cors as { credentials?: unknown }).credentials !== undefined &&
+      typeof (cors as { credentials?: unknown }).credentials !== "boolean"
+    ) {
+      throw new MuboError("CONFIG_ERROR", "Invalid CORS credentials setting");
+    }
+  }
   merged.app.name = sanitizeAppName(merged.app.name);
   merged.dataDir = resolve(cwd, merged.dataDir || defaultDataDir(merged.app.name, env));
   if (!merged.db.path) merged.db.path = join(merged.dataDir, "mubo.sqlite");
