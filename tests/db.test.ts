@@ -231,6 +231,30 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects existing indexes with descending columns", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(
+      "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT); " +
+        "CREATE INDEX idx_users_email ON users(email DESC);",
+    );
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            users: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                email: { type: "text" },
+              },
+              indexes: [{ name: "idx_users_email", columns: ["email"] }],
+            },
+          },
+        }),
+      ),
+    ).toThrow(/different definition/);
+    db.close();
+  });
+
   test("does not treat partial unique indexes as full column constraints", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec(
