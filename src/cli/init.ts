@@ -110,6 +110,7 @@ export async function initProject(target: string, options: InitOptions): Promise
           strict: true,
           skipLibCheck: true,
           noEmit: true,
+          allowImportingTsExtensions: true,
         },
         include: ["src/**/*.ts", "mubo.config.ts"],
       },

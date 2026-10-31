@@ -8,6 +8,7 @@
     "build": "bun run ../../src/cli/index.ts build",
     "migrate": "bun run ../../src/cli/index.ts migrate",
     "doctor": "bun run ../../src/cli/index.ts doctor",
+    "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {

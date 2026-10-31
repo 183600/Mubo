@@ -85,6 +85,7 @@ describe("CLI", () => {
     expect(pkg.scripts.dev).toBe("mubo dev");
     expect(pkg.dependencies.mubo).toBeTruthy();
     expect(readFileSync(join(dir, "mubo.config.ts"), "utf8")).toContain("mode: \"embedded\"");
+    expect(readFileSync(join(dir, "tsconfig.json"), "utf8")).toContain("allowImportingTsExtensions");
     await expect(initProject("my-app", { cwd })).rejects.toThrow(/not empty/);
     await expect(initProject("my-app", { cwd, force: true })).resolves.toBe(dir);
   });
