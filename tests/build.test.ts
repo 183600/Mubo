@@ -120,6 +120,32 @@ await app.start();
         proc.kill("SIGTERM");
         await proc.exited;
       }
+
+      const argDataDir = join(cwd, "arg-data");
+      const argPort = await freePort();
+      const argProc = Bun.spawn(
+        [result.outfile, "--port", String(argPort), "--data-dir", argDataDir, "--host", "127.0.0.1"],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            MUBO_PORT: "9",
+            MUBO_DATA_DIR: join(cwd, "ignored-data"),
+            MUBO_LOG_LEVEL: "error",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      try {
+        const health = await waitFor(`http://127.0.0.1:${argPort}/healthz`);
+        expect(health.status).toBe(200);
+        expect(existsSync(join(argDataDir, "mubo.sqlite"))).toBe(true);
+        expect(existsSync(join(cwd, "ignored-data"))).toBe(false);
+      } finally {
+        argProc.kill("SIGTERM");
+        await argProc.exited;
+      }
     },
     60_000,
   );
