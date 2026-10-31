@@ -165,4 +165,43 @@ describe("WebSocket rooms and broadcasting", () => {
     expect(closeEvents.length).toBe(1);
     second.socket.close();
   });
+
+  test("routes synchronous handler failures through onError", async () => {
+    const errors: string[] = [];
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-error-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+        throw new Error("connect exploded");
+      },
+      onMessage(ctx) {
+        ctx.send({ type: "message-seen" });
+        throw new Error("message exploded");
+      },
+      onError(ctx, error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        ctx.send({ type: "error", message: errors.at(-1) });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+    expect(await socket.next()).toEqual({ type: "ready" });
+    expect(await socket.next()).toEqual({ type: "error", message: "connect exploded" });
+    socket.socket.send("hi");
+    expect(await socket.next()).toEqual({ type: "message-seen" });
+    expect(await socket.next()).toEqual({ type: "error", message: "message exploded" });
+    expect(errors).toEqual(["connect exploded", "message exploded"]);
+    socket.socket.close();
+  });
 });

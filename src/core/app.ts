@@ -276,31 +276,28 @@ export class MuboApp {
     handlers: WsHandlers,
     invoke: () => unknown | Promise<unknown>,
   ): void {
-    try {
-      const result = invoke();
-      if (result instanceof Promise) {
-        result.catch((error) => {
-          this.logger.error("WebSocket handler failed", {
-            id: ctx.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          if (handlers.onError) {
-            try {
-              const handled = handlers.onError(ctx, error);
-              if (handled instanceof Promise) {
-                handled.catch((nested) => this.logger.error("WebSocket onError failed", { error: String(nested) }));
-              }
-            } catch (nested) {
-              this.logger.error("WebSocket onError failed", { error: String(nested) });
-            }
-          }
-        });
-      }
-    } catch (error) {
+    const report = (error: unknown) => {
       this.logger.error("WebSocket handler failed", {
         id: ctx.id,
         error: error instanceof Error ? error.message : String(error),
       });
+      if (!handlers.onError) return;
+      try {
+        const handled = handlers.onError(ctx, error);
+        if (handled instanceof Promise) {
+          handled.catch((nested) =>
+            this.logger.error("WebSocket onError failed", { error: String(nested) }),
+          );
+        }
+      } catch (nested) {
+        this.logger.error("WebSocket onError failed", { error: String(nested) });
+      }
+    };
+    try {
+      const result = invoke();
+      if (result instanceof Promise) result.catch(report);
+    } catch (error) {
+      report(error);
     }
   }
 
