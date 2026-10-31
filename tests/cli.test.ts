@@ -114,6 +114,15 @@ describe("CLI", () => {
     }
   });
 
+  test("documents config and dev flags in help output", async () => {
+    const result = await runCli(tempDir(), ["--help"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("mubo build");
+    expect(result.stdout).toContain("--config <file>");
+    expect(result.stdout).toContain("--no-static");
+    expect(result.stdout).toContain("--no-ws");
+  });
+
   test("dev rejects entry paths that are not files", async () => {
     const cwd = tempDir();
     mkdirSync(join(cwd, "entry-dir"));
