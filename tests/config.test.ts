@@ -84,6 +84,17 @@ export default defineConfig({
     await app.stop();
   });
 
+  test("ignores --config after the CLI separator", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "mubo.config.ts"), `export default { app: { name: "default-file" } };\n`);
+    writeFileSync(join(cwd, "custom.config.ts"), `export default { app: { name: "custom-file" } };\n`);
+
+    for (const argv of [["--", "--config", "custom.config.ts"], ["--", "--config=custom.config.ts"]]) {
+      const config = await loadAndResolveConfig({}, { cwd, loadFile: true, argv, env: {} });
+      expect(config.app.name).toBe("default-file");
+    }
+  });
+
   test("defaults to JSON logs for production apps from any config source", () => {
     expect(resolveConfig({ app: { env: "production" } }, { env: {}, argv: [] }).log.json).toBe(true);
     expect(

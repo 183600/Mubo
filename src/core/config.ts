@@ -549,6 +549,7 @@ function configFileFromArgv(argv: string[]): string | undefined {
   for (let index = 0; index < argv.length; index++) {
     const token = argv[index];
     if (token === undefined) continue;
+    if (token === "--") break;
     if (token === "--config") {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("-")) {
