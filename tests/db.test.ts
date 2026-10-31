@@ -1098,4 +1098,43 @@ describe("database and automatic migrations", () => {
     expect(db.query("SELECT value FROM events ORDER BY value").all()).toEqual([{ value: 2 }]);
     db.close();
   });
+
+  test("cancels pending nested work when a parent transaction exits early", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
+    let firstError: unknown;
+    let secondError: unknown;
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+
+    await expect(
+      db.transaction(async (tx) => {
+        first = tx.transaction(async (inner) => {
+          await Bun.sleep(20);
+          inner.query("INSERT INTO events (value) VALUES (?)").run(1);
+          return "first";
+        }) as Promise<unknown>;
+        second = tx.transaction(async (inner) => {
+          inner.query("INSERT INTO events (value) VALUES (?)").run(2);
+          return "second";
+        }) as Promise<unknown>;
+        first.catch((error) => {
+          firstError = error;
+        });
+        second.catch((error) => {
+          secondError = error;
+        });
+        await Bun.sleep(1);
+        throw new Error("parent failed");
+      }),
+    ).rejects.toThrow("parent failed");
+
+    await Promise.allSettled([first, second]);
+    expect(firstError).toBeInstanceOf(MuboError);
+    expect((firstError as Error).message).toBe("Transaction is no longer active");
+    expect(secondError).toBeInstanceOf(MuboError);
+    expect((secondError as Error).message).toMatch(/cancelled/);
+    expect(db.query("SELECT value FROM events").all()).toEqual([]);
+    db.close();
+  });
 });
