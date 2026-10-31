@@ -58,15 +58,23 @@ describe("logger", () => {
     expect(lines[0]).toContain('empty=""');
   });
 
-  test("escapes line separators in human-readable messages and field names", () => {
+  test("escapes line separators in human-readable messages and fields", () => {
     const logger = createLogger({ level: "debug", json: false });
     const lines = captureLogs(() => {
-      logger.info("first\nsecond\u2028third", { "bad\nkey": "value" });
+      logger.info("first\nsecond\u2028third", {
+        "bad\nkey": "value",
+        separator: "left\u2028right",
+        nested: { text: "a\u2029b" },
+      });
     });
 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("first\\nsecond\\u2028third");
     expect(lines[0]).toContain("bad\\nkey=value");
+    expect(lines[0]).toContain('separator="left\\u2028right"');
+    expect(lines[0]).toContain('nested={"text":"a\\u2029b"}');
+    expect(lines[0]).not.toContain("\u2028");
+    expect(lines[0]).not.toContain("\u2029");
     expect(lines[0]!.split("\n")).toHaveLength(1);
   });
 

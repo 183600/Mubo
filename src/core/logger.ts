@@ -18,13 +18,14 @@ export interface Logger {
 
 function formatValue(value: unknown): string {
   if (typeof value === "string") {
-    return /^[A-Za-z0-9._:/@+-]+$/.test(value) ? value : JSON.stringify(value);
+    return oneLine(/^[A-Za-z0-9._:/@+-]+$/.test(value) ? value : JSON.stringify(value));
   }
-  if (value instanceof Error) return JSON.stringify(value.message);
+  if (value instanceof Error) return oneLine(JSON.stringify(value.message));
   try {
-    return JSON.stringify(value);
+    const json = JSON.stringify(value);
+    return oneLine(json === undefined ? String(value) : json);
   } catch {
-    return String(value);
+    return oneLine(String(value));
   }
 }
 
