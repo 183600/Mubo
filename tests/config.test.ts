@@ -522,21 +522,20 @@ export default defineConfig({
   });
 
   test("normalizes CORS origins and keeps credentials", () => {
-    const config = resolveConfig(
-      {
-        http: {
-          cors: {
-            origin: ["  https://one.test ", "https://two.test  "],
-            credentials: true,
-          },
+    const input = {
+      http: {
+        cors: {
+          origin: ["  https://one.test ", "https://two.test  "],
+          credentials: true,
         },
       },
-      { env: {}, argv: [] },
-    );
+    };
+    const config = resolveConfig(input, { env: {}, argv: [] });
     expect(config.http.cors).toEqual({
       origin: ["https://one.test", "https://two.test"],
       credentials: true,
     });
+    expect(input.http.cors.origin).toEqual(["  https://one.test ", "https://two.test  "]);
   });
 
   test("rejects malformed CORS configuration", () => {
