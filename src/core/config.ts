@@ -1,0 +1,420 @@
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import type { MuboSchema } from "../db/schema.ts";
+import { MuboError } from "./errors.ts";
+import { isLogLevel, type LogLevel } from "./logger.ts";
+
+export interface CorsConfig {
+  origin: string[] | "*";
+  credentials?: boolean;
+  maxAgeSeconds?: number;
+}
+
+export interface MuboConfig {
+  app?: {
+    name?: string;
+    env?: "development" | "production" | "test";
+  };
+  dataDir?: string;
+  schema?: MuboSchema;
+  http?: {
+    host?: string;
+    port?: number;
+    trustProxy?: boolean;
+    cors?: false | CorsConfig;
+    bodyLimit?: number;
+  };
+  db?: {
+    path?: string;
+    wal?: boolean;
+    busyTimeoutMs?: number;
+    foreignKeys?: boolean;
+    slowQueryMs?: number;
+    migrations?: {
+      mode?: "apply" | "check" | "off";
+      safeOnly?: boolean;
+      table?: string;
+      lock?: "file" | "sqlite";
+    };
+  };
+  static?: {
+    mode?: "embedded" | "disk" | "off";
+    dir?: string;
+    spaFallback?: boolean;
+    assets?: EmbeddedAssets;
+    cache?: {
+      immutableExtensions?: string[];
+      defaultMaxAgeSeconds?: number;
+    };
+  };
+  ws?: {
+    enabled?: boolean;
+    maxPayloadBytes?: number;
+    heartbeat?: { intervalMs?: number; timeoutMs?: number };
+  };
+  log?: {
+    level?: LogLevel;
+    json?: boolean;
+  };
+}
+
+export interface EmbeddedAsset {
+  data: string | Uint8Array | ArrayBuffer;
+  encoding?: "base64" | "utf8";
+  type?: string;
+  etag?: string;
+}
+
+export type EmbeddedAssets = Record<string, EmbeddedAsset | string | Uint8Array | ArrayBuffer>;
+
+export interface ResolvedMuboConfig {
+  app: { name: string; env: "development" | "production" | "test" };
+  dataDir: string;
+  schema?: MuboSchema;
+  http: {
+    host: string;
+    port: number;
+    trustProxy: boolean;
+    cors: false | CorsConfig;
+    bodyLimit: number;
+  };
+  db: {
+    path: string;
+    wal: boolean;
+    busyTimeoutMs: number;
+    foreignKeys: boolean;
+    slowQueryMs: number;
+    migrations: {
+      mode: "apply" | "check" | "off";
+      safeOnly: boolean;
+      table: string;
+      lock: "file" | "sqlite";
+    };
+  };
+  static: {
+    mode: "embedded" | "disk" | "off";
+    dir: string;
+    spaFallback: boolean;
+    assets?: EmbeddedAssets;
+    cache: {
+      immutableExtensions: string[];
+      defaultMaxAgeSeconds: number;
+    };
+  };
+  ws: {
+    enabled: boolean;
+    maxPayloadBytes: number;
+    heartbeat: { intervalMs: number; timeoutMs: number };
+  };
+  log: { level: LogLevel; json: boolean };
+}
+
+export interface ResolveConfigOptions {
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+  argv?: string[];
+  /** Load `mubo.config.*` from cwd before applying overrides. */
+  loadFile?: boolean;
+  configFile?: string;
+}
+
+const DEFAULT_IMMUTABLE_EXTENSIONS = [
+  "js",
+  "mjs",
+  "css",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "svg",
+  "webp",
+  "avif",
+  "ico",
+  "woff",
+  "woff2",
+  "ttf",
+  "otf",
+  "mp4",
+  "webm",
+];
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function mergeConfig<T>(base: T, override: unknown): T {
+  if (!isPlainObject(base) || !isPlainObject(override)) {
+    return (override === undefined ? base : override) as T;
+  }
+  const result: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined) continue;
+    const current = result[key];
+    result[key] = isPlainObject(current) && isPlainObject(value) ? mergeConfig(current, value) : value;
+  }
+  return result as T;
+}
+
+function readNumber(value: string | undefined, name: string): number | undefined {
+  if (value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new MuboError("CONFIG_ERROR", `${name} must be a number`);
+  return parsed;
+}
+
+function readBoolean(value: string | undefined): boolean | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (["1", "true", "yes", "on"].includes(value.toLowerCase())) return true;
+  if (["0", "false", "no", "off"].includes(value.toLowerCase())) return false;
+  throw new MuboError("CONFIG_ERROR", `Invalid boolean value: ${value}`);
+}
+
+function argvOverrides(argv: string[]): MuboConfig {
+  const result: MuboConfig = {};
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token === undefined || !token.startsWith("--")) continue;
+    const equal = token.indexOf("=");
+    const name = equal === -1 ? token.slice(2) : token.slice(2, equal);
+    const inline = equal === -1 ? undefined : token.slice(equal + 1);
+    const next = () => inline ?? argv[++i];
+    switch (name) {
+      case "data-dir":
+        result.dataDir = next();
+        break;
+      case "port":
+        result.http = { ...result.http, port: readNumber(next(), "--port") };
+        break;
+      case "host":
+        result.http = { ...result.http, host: next() };
+        break;
+      case "db":
+        result.db = { ...result.db, path: next() };
+        break;
+      case "static-dir":
+        result.static = { ...result.static, dir: next() };
+        break;
+      case "log-level": {
+        const level = next();
+        if (level !== undefined && isLogLevel(level)) result.log = { ...result.log, level };
+        break;
+      }
+      case "no-static":
+        result.static = { ...result.static, mode: "off" };
+        break;
+      case "no-ws":
+        result.ws = { ...result.ws, enabled: false };
+        break;
+      default:
+        break;
+    }
+  }
+  return result;
+}
+
+function envOverrides(env: Record<string, string | undefined>): MuboConfig {
+  const result: MuboConfig = {};
+  const set = <K extends keyof MuboConfig>(key: K, value: MuboConfig[K]) => {
+    if (value !== undefined) result[key] = value;
+  };
+
+  const envName = env.MUBO_ENV ?? env.NODE_ENV;
+  const app: NonNullable<MuboConfig["app"]> = {};
+  if (env.MUBO_APP_NAME) app.name = env.MUBO_APP_NAME;
+  if (envName === "development" || envName === "production" || envName === "test") app.env = envName;
+  if (Object.keys(app).length > 0) set("app", app);
+  if (env.MUBO_DATA_DIR) result.dataDir = env.MUBO_DATA_DIR;
+
+  const port = readNumber(env.MUBO_PORT, "MUBO_PORT");
+  const host = env.MUBO_HOST;
+  const bodyLimit = readNumber(env.MUBO_BODY_LIMIT, "MUBO_BODY_LIMIT");
+  if (port !== undefined || host !== undefined || bodyLimit !== undefined) {
+    result.http = { port, host, bodyLimit };
+  }
+
+  const dbPath = env.MUBO_DB_PATH;
+  const busyTimeoutMs = readNumber(env.MUBO_BUSY_TIMEOUT_MS, "MUBO_BUSY_TIMEOUT_MS");
+  const migrationMode = env.MUBO_MIGRATIONS_MODE;
+  const migrationTable = env.MUBO_MIGRATIONS_TABLE;
+  const safeOnly = readBoolean(env.MUBO_MIGRATIONS_SAFE_ONLY);
+  if (dbPath || busyTimeoutMs !== undefined || migrationMode || migrationTable || safeOnly !== undefined) {
+    result.db = {
+      path: dbPath,
+      busyTimeoutMs,
+      migrations: {
+        mode:
+          migrationMode === "apply" || migrationMode === "check" || migrationMode === "off"
+            ? migrationMode
+            : undefined,
+        table: migrationTable,
+        safeOnly,
+      },
+    };
+  }
+
+  const staticMode = env.MUBO_STATIC_MODE;
+  const staticDir = env.MUBO_STATIC_DIR;
+  const spaFallback = readBoolean(env.MUBO_STATIC_SPA_FALLBACK);
+  if (
+    staticMode === "embedded" ||
+    staticMode === "disk" ||
+    staticMode === "off" ||
+    staticDir ||
+    spaFallback !== undefined
+  ) {
+    result.static = {
+      mode:
+        staticMode === "embedded" || staticMode === "disk" || staticMode === "off" ? staticMode : undefined,
+      dir: staticDir,
+      spaFallback,
+    };
+  }
+
+  const wsEnabled = readBoolean(env.MUBO_WS_ENABLED);
+  const wsMaxPayload = readNumber(env.MUBO_WS_MAX_PAYLOAD, "MUBO_WS_MAX_PAYLOAD");
+  if (wsEnabled !== undefined || wsMaxPayload !== undefined) {
+    result.ws = { enabled: wsEnabled, maxPayloadBytes: wsMaxPayload };
+  }
+
+  const logLevel = env.MUBO_LOG_LEVEL;
+  const logJson = readBoolean(env.MUBO_LOG_JSON);
+  if ((logLevel && isLogLevel(logLevel)) || logJson !== undefined) {
+    result.log = {
+      level: logLevel && isLogLevel(logLevel) ? logLevel : undefined,
+      json: logJson,
+    };
+  }
+  return result;
+}
+
+export function sanitizeAppName(name: string): string {
+  const cleaned = name.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return cleaned || "mubo-app";
+}
+
+export function defaultDataDir(appName: string, env: Record<string, string | undefined> = process.env): string {
+  const name = sanitizeAppName(appName);
+  if (process.platform === "win32") {
+    const base = env.APPDATA || join(homedir(), "AppData", "Roaming");
+    return join(base, "Mubo", name);
+  }
+  return join(homedir(), ".mubo", name);
+}
+
+export async function loadConfigFile(
+  cwd: string,
+  explicitFile?: string,
+): Promise<{ config: MuboConfig; path?: string }> {
+  const candidates = explicitFile
+    ? [isAbsolute(explicitFile) ? explicitFile : resolve(cwd, explicitFile)]
+    : ["mubo.config.ts", "mubo.config.js", "mubo.config.mjs"].map((file) => join(cwd, file));
+
+  for (const candidate of candidates) {
+    if (!(await Bun.file(candidate).exists())) continue;
+    try {
+      const module = (await import(`${Bun.pathToFileURL(candidate).href}?t=${Date.now()}`)) as {
+        default?: MuboConfig;
+      };
+      if (!module.default || typeof module.default !== "object") {
+        throw new Error("config file must have a default export object");
+      }
+      return { config: module.default, path: candidate };
+    } catch (error) {
+      throw new MuboError("CONFIG_ERROR", `Failed to load config file ${candidate}`, { cause: error });
+    }
+  }
+  if (explicitFile) {
+    throw new MuboError("CONFIG_ERROR", `Config file not found: ${explicitFile}`);
+  }
+  return { config: {} };
+}
+
+export function resolveConfig(
+  overrides: MuboConfig = {},
+  options: ResolveConfigOptions & { fileConfig?: MuboConfig } = {},
+): ResolvedMuboConfig {
+  const cwd = options.cwd ?? process.cwd();
+  const env = options.env ?? process.env;
+  const envName = env.MUBO_ENV ?? env.NODE_ENV;
+  const appEnv =
+    envName === "production" || envName === "test" || envName === "development"
+      ? envName
+      : "development";
+
+  const defaults: ResolvedMuboConfig = {
+    app: { name: "mubo-app", env: appEnv },
+    dataDir: "",
+    http: {
+      host: "127.0.0.1",
+      port: 3000,
+      trustProxy: false,
+      cors: false,
+      bodyLimit: 1024 * 1024,
+    },
+    db: {
+      path: "",
+      wal: true,
+      busyTimeoutMs: 5000,
+      foreignKeys: true,
+      slowQueryMs: 200,
+      migrations: { mode: "apply", safeOnly: true, table: "_mubo_migrations", lock: "sqlite" },
+    },
+    static: {
+      mode: "disk",
+      dir: join(cwd, "public"),
+      spaFallback: true,
+      cache: { immutableExtensions: DEFAULT_IMMUTABLE_EXTENSIONS, defaultMaxAgeSeconds: 3600 },
+    },
+    ws: {
+      enabled: true,
+      maxPayloadBytes: 1024 * 1024,
+      heartbeat: { intervalMs: 30_000, timeoutMs: 60_000 },
+    },
+    log: { level: "info", json: appEnv === "production" },
+  };
+
+  const merged = mergeConfig(
+    mergeConfig(mergeConfig(defaults as unknown, options.fileConfig ?? {}), overrides as unknown),
+    mergeConfig(envOverrides(env) as unknown, argvOverrides(options.argv ?? process.argv.slice(2)) as unknown),
+  ) as ResolvedMuboConfig;
+
+  merged.app.name = sanitizeAppName(merged.app.name);
+  merged.dataDir = resolve(cwd, merged.dataDir || defaultDataDir(merged.app.name, env));
+  if (!merged.db.path) merged.db.path = join(merged.dataDir, "mubo.sqlite");
+  else if (merged.db.path !== ":memory:" && !isAbsolute(merged.db.path)) {
+    merged.db.path = resolve(cwd, merged.db.path);
+  }
+  if (merged.static.dir && !isAbsolute(merged.static.dir)) merged.static.dir = resolve(cwd, merged.static.dir);
+  if (!Number.isInteger(merged.http.port) || merged.http.port < 0 || merged.http.port > 65535) {
+    throw new MuboError("CONFIG_ERROR", `Invalid HTTP port: ${merged.http.port}`);
+  }
+  if (!Number.isInteger(merged.http.bodyLimit) || merged.http.bodyLimit <= 0) {
+    throw new MuboError("CONFIG_ERROR", `Invalid body limit: ${merged.http.bodyLimit}`);
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(merged.db.migrations.table)) {
+    throw new MuboError("CONFIG_ERROR", `Invalid migrations table name: ${merged.db.migrations.table}`);
+  }
+  return merged;
+}
+
+export async function loadAndResolveConfig(
+  overrides: MuboConfig = {},
+  options: ResolveConfigOptions = {},
+): Promise<ResolvedMuboConfig> {
+  const cwd = options.cwd ?? process.cwd();
+  if (!options.loadFile) return resolveConfig(overrides, options);
+  const { config: fileConfig } = await loadConfigFile(cwd, options.configFile);
+  return resolveConfig(overrides, { ...options, cwd, fileConfig });
+}
+
+export function ensureDataDir(dbPath: string, dataDir: string): void {
+  const dir = dbPath === ":memory:" ? dataDir : dirname(dbPath);
+  if (dir) {
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch (error) {
+      throw new MuboError("CONFIG_ERROR", `Cannot create data directory ${dir}`, { cause: error });
+    }
+  }
+}
