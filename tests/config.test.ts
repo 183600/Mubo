@@ -84,6 +84,23 @@ export default defineConfig({
     await app.stop();
   });
 
+  test("uses the last --config value from argv", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "first.config.ts"), `export default { app: { name: "first-file" } };\n`);
+    writeFileSync(join(cwd, "last.config.ts"), `export default { app: { name: "last-file" } };\n`);
+
+    const config = await loadAndResolveConfig(
+      {},
+      {
+        cwd,
+        loadFile: true,
+        argv: ["--config", "first.config.ts", "--config=last.config.ts"],
+        env: {},
+      },
+    );
+    expect(config.app.name).toBe("last-file");
+  });
+
   test("reloads a config file after it changes", async () => {
     const cwd = tempDir();
     const file = join(cwd, "mubo.config.ts");

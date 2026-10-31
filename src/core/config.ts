@@ -614,6 +614,7 @@ export function resolveConfig(
 }
 
 function configFileFromArgv(argv: string[]): string | undefined {
+  let result: string | undefined;
   for (let index = 0; index < argv.length; index++) {
     const token = argv[index];
     if (token === undefined) continue;
@@ -623,14 +624,15 @@ function configFileFromArgv(argv: string[]): string | undefined {
       if (value === undefined || value.startsWith("-")) {
         throw new MuboError("CONFIG_ERROR", "Missing value for --config");
       }
-      return value;
+      result = value;
+      index++;
     } else if (token.startsWith("--config=")) {
       const value = token.slice("--config=".length);
       if (!value) throw new MuboError("CONFIG_ERROR", "Missing value for --config");
-      return value;
+      result = value;
     }
   }
-  return undefined;
+  return result;
 }
 
 export async function loadAndResolveConfig(
