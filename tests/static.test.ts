@@ -130,6 +130,22 @@ describe("static assets", () => {
     expect(await embedded.hasFile("/docs/index.html")).toBe(true);
     expect(await embedded.hasFile("/missing")).toBe(false);
 
+    const mixed = new StaticAssets(
+      {
+        mode: "disk",
+        dir,
+        assets: { "/index.html": "home", "/embedded.txt": "embedded" },
+      },
+      dir,
+    );
+    expect(await mixed.hasFile("/robots.txt")).toBe(true);
+    expect(await mixed.hasFile("/embedded.txt")).toBe(true);
+    expect(await mixed.hasFile("/missing")).toBe(false);
+
+    const emptyEmbedded = new StaticAssets({ mode: "embedded", dir }, dir);
+    expect(await emptyEmbedded.hasFile("/robots.txt")).toBe(true);
+    expect(await emptyEmbedded.hasFile("/missing")).toBe(false);
+
     const off = new StaticAssets({ mode: "off", dir }, dir);
     expect(await off.hasFile("/")).toBe(false);
   });
