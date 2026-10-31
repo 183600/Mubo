@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Database as SQLiteDatabase, type SQLQueryBindings } from "bun:sqlite";
 import { ensureDataDir } from "../core/config.ts";
 import { MuboError } from "../core/errors.ts";
@@ -32,6 +33,11 @@ export interface QueryResult<Row> {
   iterate(...params: unknown[]): IterableIterator<Row>;
 }
 
+interface TransactionContext {
+  depth: number;
+  active: boolean;
+}
+
 function normalizeParams(params: unknown[]): QueryArgument[] {
   if (params.length === 1 && Array.isArray(params[0])) return params[0] as QueryArgument[];
   return params as QueryArgument[];
@@ -44,7 +50,9 @@ export class MuboDatabase {
   private readonly logger?: Logger;
   private readonly schema?: MuboSchema;
   private closed = false;
-  private transactionDepth = 0;
+  private readonly transactionContext = new AsyncLocalStorage<TransactionContext>();
+  private readonly transactionQueue: Array<() => void> = [];
+  private transactionActive = false;
 
   constructor(options: MuboDatabaseOptions) {
     this.path = options.path;
@@ -117,18 +125,52 @@ export class MuboDatabase {
     options: { immediate?: boolean } = {},
   ): T | Promise<T> {
     this.assertOpen();
-    const depth = this.transactionDepth;
-    const savepoint = `mubo_sp_${depth}`;
-    this.transactionDepth++;
+    const current = this.transactionContext.getStore();
+    if (current?.active) {
+      return this.executeTransaction(fn, current.depth, options.immediate !== false);
+    }
+    if (this.transactionActive || this.transactionQueue.length > 0) {
+      return this.enqueueTransaction(fn, options.immediate !== false);
+    }
+    this.transactionActive = true;
+    try {
+      const result = this.executeTransaction(fn, 0, options.immediate !== false);
+      if (result instanceof Promise) {
+        return result.then(
+          (value) => {
+            this.finishTransaction();
+            return value;
+          },
+          (error) => {
+            this.finishTransaction();
+            throw error;
+          },
+        );
+      }
+      this.finishTransaction();
+      return result;
+    } catch (error) {
+      this.finishTransaction();
+      throw error;
+    }
+  }
+
+  private executeTransaction<T>(
+    fn: (db: MuboDatabase) => T | Promise<T>,
+    parentDepth: number,
+    immediate: boolean,
+  ): T | Promise<T> {
+    const context: TransactionContext = { depth: parentDepth + 1, active: true };
+    const savepoint = `mubo_sp_${parentDepth}`;
     let finished = false;
     const finish = () => {
       if (finished) return;
       finished = true;
-      this.transactionDepth--;
+      context.active = false;
     };
     const commit = () => {
       try {
-        if (depth === 0) this.raw.run("COMMIT");
+        if (parentDepth === 0) this.raw.run("COMMIT");
         else this.raw.run(`RELEASE ${savepoint}`);
       } finally {
         finish();
@@ -136,7 +178,7 @@ export class MuboDatabase {
     };
     const rollback = () => {
       try {
-        if (depth === 0) this.raw.run("ROLLBACK");
+        if (parentDepth === 0) this.raw.run("ROLLBACK");
         else {
           this.raw.run(`ROLLBACK TO ${savepoint}`);
           this.raw.run(`RELEASE ${savepoint}`);
@@ -148,9 +190,9 @@ export class MuboDatabase {
       }
     };
     try {
-      if (depth === 0) this.raw.run(options.immediate === false ? "BEGIN" : "BEGIN IMMEDIATE");
+      if (parentDepth === 0) this.raw.run(immediate ? "BEGIN IMMEDIATE" : "BEGIN");
       else this.raw.run(`SAVEPOINT ${savepoint}`);
-      const result = fn(this);
+      const result = this.transactionContext.run(context, () => fn(this));
       if (result instanceof Promise) {
         return result.then(
           (value) => {
@@ -174,6 +216,54 @@ export class MuboDatabase {
       rollback();
       throw error;
     }
+  }
+
+  private enqueueTransaction<T>(
+    fn: (db: MuboDatabase) => T | Promise<T>,
+    immediate: boolean,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.transactionQueue.push(() => {
+        let result: T | Promise<T>;
+        try {
+          this.assertOpen();
+          result = this.executeTransaction(fn, 0, immediate);
+        } catch (error) {
+          reject(error);
+          this.finishTransaction();
+          return;
+        }
+        if (result instanceof Promise) {
+          result.then(
+            (value) => {
+              resolve(value);
+              this.finishTransaction();
+            },
+            (error) => {
+              reject(error);
+              this.finishTransaction();
+            },
+          );
+        } else {
+          resolve(result);
+          this.finishTransaction();
+        }
+      });
+      this.drainTransactions();
+    });
+  }
+
+  private drainTransactions(): void {
+    if (this.transactionActive) return;
+    const next = this.transactionQueue.shift();
+    if (!next) return;
+    this.transactionActive = true;
+    next();
+  }
+
+  private finishTransaction(): void {
+    this.transactionActive = false;
+    this.drainTransactions();
   }
 
   ping(): boolean {

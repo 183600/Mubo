@@ -473,4 +473,39 @@ describe("database and automatic migrations", () => {
     expect(db.query("SELECT COUNT(*) AS count FROM users").get()).toEqual({ count: 2 });
     db.close();
   });
+
+  test("serializes concurrent async transactions and isolates nested rollbacks", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
+
+    const failing = db.transaction(async () => {
+      db.query("INSERT INTO events (value) VALUES (?)").run(1);
+      await Bun.sleep(20);
+      throw new Error("first transaction failed");
+    });
+    const succeeding = db.transaction(async () => {
+      db.query("INSERT INTO events (value) VALUES (?)").run(2);
+      await Bun.sleep(5);
+      return "committed";
+    });
+
+    await expect(failing).rejects.toThrow("first transaction failed");
+    expect(await succeeding).toBe("committed");
+    expect(db.query("SELECT value FROM events ORDER BY value").all()).toEqual([{ value: 2 }]);
+
+    const result = db.transaction((tx) => {
+      tx.query("INSERT INTO events (value) VALUES (?)").run(3);
+      expect(() =>
+        tx.transaction(() => {
+          tx.query("INSERT INTO events (value) VALUES (?)").run(4);
+          throw new Error("nested transaction failed");
+        }),
+      ).toThrow("nested transaction failed");
+      tx.query("INSERT INTO events (value) VALUES (?)").run(5);
+      return "outer committed";
+    });
+    expect(result).toBe("outer committed");
+    expect(db.query("SELECT value FROM events ORDER BY value").all()).toEqual([{ value: 2 }, { value: 3 }, { value: 5 }]);
+    db.close();
+  });
 });
