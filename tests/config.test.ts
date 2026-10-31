@@ -208,6 +208,11 @@ export default defineConfig({
     );
   });
 
+  test("treats an empty MUBO_HOST as unset", () => {
+    const config = resolveConfig({}, { env: { MUBO_HOST: "" }, argv: [] });
+    expect(config.http.host).toBe("127.0.0.1");
+  });
+
   test("rejects empty HTTP hosts", () => {
     expect(() => resolveConfig({ http: { host: "" } }, { env: {}, argv: [] })).toThrow(
       /Invalid HTTP host/,

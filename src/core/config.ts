@@ -256,7 +256,7 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
   if (env.MUBO_DATA_DIR) result.dataDir = env.MUBO_DATA_DIR;
 
   const port = readNumber(env.MUBO_PORT, "MUBO_PORT");
-  const host = env.MUBO_HOST;
+  const host = env.MUBO_HOST || undefined;
   const bodyLimit = readNumber(env.MUBO_BODY_LIMIT, "MUBO_BODY_LIMIT");
   if (port !== undefined || host !== undefined || bodyLimit !== undefined) {
     result.http = { port, host, bodyLimit };
