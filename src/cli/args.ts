@@ -50,5 +50,12 @@ export function stringFlag(args: CliArgs, name: string): string | undefined {
 }
 
 export function boolFlag(args: CliArgs, name: string): boolean {
-  return args.flags.get(name) === true || args.flags.get(name) === "true";
+  const value = args.flags.get(name);
+  if (value === undefined) return false;
+  if (typeof value === "boolean") return value;
+  const normalized = value.toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  if (value.length === 0) throw new MuboError("CONFIG_ERROR", `Missing value for --${name}`);
+  throw new MuboError("CONFIG_ERROR", `Invalid boolean value for --${name}: ${value}`);
 }

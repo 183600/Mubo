@@ -80,6 +80,18 @@ describe("CLI", () => {
     expect(boolFlag(booleans, "force")).toBe(false);
     expect(stringFlag(booleans, "host")).toBe("127.0.0.1");
     expect(stringFlag(booleans, "force")).toBeUndefined();
+    for (const value of ["1", "true", "TRUE", "yes", "on"]) {
+      expect(boolFlag(parseCliArgs(["build", `--minify=${value}`]), "minify")).toBe(true);
+    }
+    for (const value of ["0", "false", "FALSE", "no", "off"]) {
+      expect(boolFlag(parseCliArgs(["build", `--minify=${value}`]), "minify")).toBe(false);
+    }
+    expect(() => boolFlag(parseCliArgs(["build", "--minify=maybe"]), "minify")).toThrow(
+      /Invalid boolean value/,
+    );
+    expect(() => boolFlag(parseCliArgs(["build", "--minify="]), "minify")).toThrow(
+      /Missing value for --minify/,
+    );
 
     const separator = parseCliArgs(["migrate", "--", "--check", "file"]);
     expect(separator.command).toBe("migrate");
