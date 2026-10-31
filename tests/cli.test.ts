@@ -140,6 +140,9 @@ describe("CLI", () => {
     expect(pkg.dependencies.mubo).toBeTruthy();
     expect(readFileSync(join(dir, "mubo.config.ts"), "utf8")).toContain("mode: \"embedded\"");
     expect(readFileSync(join(dir, "tsconfig.json"), "utf8")).toContain("allowImportingTsExtensions");
+    const oddDir = await initProject("._odd-app_.", { cwd });
+    const oddPkg = JSON.parse(readFileSync(join(oddDir, "package.json"), "utf8")) as { name: string };
+    expect(oddPkg.name).toBe("odd-app");
     await expect(initProject("my-app", { cwd })).rejects.toThrow(/not empty/);
     await expect(initProject("my-app", { cwd, force: true })).resolves.toBe(dir);
 
