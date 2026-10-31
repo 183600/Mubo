@@ -346,6 +346,12 @@ describe("HTTP routing and middleware", () => {
     });
     expect(response.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
     expect(response.headers.get("vary")?.toLowerCase()).toBe("accept-encoding, origin");
+
+    app.get("/vary-all", () => new Response("ok", { headers: { vary: "*" } }));
+    const all = await fetch(`${base(app)}/vary-all`, {
+      headers: { origin: "http://allowed.test" },
+    });
+    expect(all.headers.get("vary")).toBe("*");
   });
 
   test("varies CORS responses even when the request origin is absent or denied", async () => {

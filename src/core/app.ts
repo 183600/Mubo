@@ -76,6 +76,7 @@ function addVary(headers: Headers, value: string): void {
     return;
   }
   const values = current.split(",").map((entry) => entry.trim().toLowerCase());
+  if (values.includes("*")) return;
   if (!values.includes(value.toLowerCase())) headers.append("vary", value);
 }
 
