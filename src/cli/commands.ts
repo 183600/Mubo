@@ -8,6 +8,7 @@ import {
 } from "../core/config.ts";
 import { errorMessage, MuboError } from "../core/errors.ts";
 import { MuboDatabase } from "../db/database.ts";
+import { validateSchema } from "../db/migrations.ts";
 import type { CliArgs } from "./args.ts";
 import { boolFlag, stringFlag } from "./args.ts";
 import { findEntry } from "./project.ts";
@@ -170,11 +171,18 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
     ok: portFree,
     detail: `${config.http.host}:${config.http.port}${portFree ? " available" : " already in use"}`,
   });
-  checks.push({
-    name: "schema",
-    ok: true,
-    detail: `${Object.keys(config.schema?.tables ?? {}).length} table(s)`,
-  });
+  let schemaOk = true;
+  let schemaDetail = "no schema configured";
+  if (config.schema) {
+    try {
+      validateSchema(config.schema);
+      schemaDetail = `${Object.keys(config.schema.tables).length} table(s) valid`;
+    } catch (error) {
+      schemaOk = false;
+      schemaDetail = errorMessage(error);
+    }
+  }
+  checks.push({ name: "schema", ok: schemaOk, detail: schemaDetail, fatal: true });
 
   const json = boolFlag(context.args, "json");
   if (json) {

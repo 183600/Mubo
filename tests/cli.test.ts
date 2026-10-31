@@ -187,6 +187,37 @@ describe("CLI", () => {
     expect(checks.find((check) => check.name === "port")?.ok).toBe(true);
   });
 
+  test("doctor flags invalid schema definitions", async () => {
+    const cwd = tempDir();
+    const importPath = framework.split("\\").join("/");
+    writeFileSync(
+      join(cwd, "mubo.config.ts"),
+      `import { defineConfig } from ${JSON.stringify(importPath)};
+export default defineConfig({
+  app: { name: "cli-invalid-schema", env: "test" },
+  db: { path: ":memory:" },
+  http: { port: 0 },
+  static: { mode: "off" },
+  log: { level: "error" },
+  schema: {
+    tables: {
+      broken: {
+        columns: { id: { type: "integer" } },
+        indexes: [{ name: "bad-name", columns: ["id"] }],
+      },
+    },
+  },
+});
+`,
+    );
+    const result = await runCli(cwd, ["doctor", "--json", "--data-dir", join(cwd, "data"), "--port", "0"]);
+    expect(result.code).toBe(1);
+    const checks = JSON.parse(result.stdout) as Array<{ name: string; ok: boolean; detail: string }>;
+    const schema = checks.find((check) => check.name === "schema");
+    expect(schema?.ok).toBe(false);
+    expect(schema?.detail).toContain("Invalid SQL identifier");
+  });
+
   test("doctor flags an unusable configured database path", async () => {
     const cwd = tempDir();
     const dbPath = join(cwd, "db-dir");

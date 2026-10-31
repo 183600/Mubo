@@ -474,7 +474,7 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
   return { columns, indexes, foreignKeys, autoIncrement };
 }
 
-function validateSchema(schema: MuboSchema): void {
+export function validateSchema(schema: MuboSchema): void {
   if (!isObject(schema) || !isObject(schema.tables)) {
     throw new MuboError("MIGRATION_ERROR", "Invalid schema definition");
   }
