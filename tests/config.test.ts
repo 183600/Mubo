@@ -227,6 +227,11 @@ export default defineConfig({
       /Failed to load config file/,
     );
 
+    writeFileSync(join(cwd, "mubo.config.ts"), "export default [];\n");
+    await expect(loadAndResolveConfig({}, { cwd, loadFile: true, env: {} })).rejects.toThrow(
+      /Failed to load config file/,
+    );
+
     expect(() => resolveConfig({}, { env: { MUBO_LOG_JSON: "maybe" }, argv: [] })).toThrow(
       /Invalid boolean value/,
     );

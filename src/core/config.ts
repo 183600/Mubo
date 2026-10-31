@@ -396,7 +396,7 @@ export async function loadConfigFile(
       const module = (await import(`${Bun.pathToFileURL(candidate).href}?t=${Date.now()}`)) as {
         default?: MuboConfig;
       };
-      if (!module.default || typeof module.default !== "object") {
+      if (!module.default || typeof module.default !== "object" || Array.isArray(module.default)) {
         throw new Error("config file must have a default export object");
       }
       return { config: module.default, path: candidate };
