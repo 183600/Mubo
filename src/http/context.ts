@@ -37,6 +37,12 @@ export interface ContextDependencies {
   bodyLimit: number;
 }
 
+function payloadTooLarge(limit: number): MuboError {
+  return new MuboError("PAYLOAD_TOO_LARGE", `Request body exceeds ${limit} bytes`, {
+    status: 413,
+  });
+}
+
 export function createRequestContext(deps: ContextDependencies): MuboRequestContext {
   let rawBodyPromise: Promise<Uint8Array> | undefined;
   let parsedBodyPromise: Promise<unknown> | undefined;
@@ -52,9 +58,7 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
     const declared = Number(deps.req.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > deps.bodyLimit) {
       await body.cancel().catch(() => undefined);
-      throw new MuboError("PAYLOAD_TOO_LARGE", `Request body exceeds ${deps.bodyLimit} bytes`, {
-        status: 413,
-      });
+      throw payloadTooLarge(deps.bodyLimit);
     }
     const reader = body.getReader();
     const chunks: Uint8Array[] = [];
@@ -65,9 +69,7 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
       size += value.byteLength;
       if (size > deps.bodyLimit) {
         await reader.cancel().catch(() => undefined);
-        throw new MuboError("PAYLOAD_TOO_LARGE", `Request body exceeds ${deps.bodyLimit} bytes`, {
-          status: 413,
-        });
+        throw payloadTooLarge(deps.bodyLimit);
       }
       chunks.push(value);
     }

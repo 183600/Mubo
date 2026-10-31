@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { MuboError } from "../core/errors.ts";
+import { errorMessage, MuboError } from "../core/errors.ts";
 import { boolFlag, parseCliArgs, stringFlag } from "./args.ts";
 import { buildProject } from "./build.ts";
 import { devCommand, doctorCommand, migrateCommand } from "./commands.ts";
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   console.error(`[mubo] ${message}`);
   if (!(error instanceof MuboError) && error instanceof Error && error.stack) {
     console.error(error.stack);

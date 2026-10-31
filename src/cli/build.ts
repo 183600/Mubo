@@ -3,6 +3,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 import { loadConfigFile, resolveConfig, sanitizeAppName, type MuboConfig } from "../core/config.ts";
 import { MuboError } from "../core/errors.ts";
 import { mimeTypeForExtension } from "../static/assets.ts";
+import { findEntry } from "./project.ts";
 
 export interface BuildOptions {
   cwd?: string;
@@ -33,43 +34,12 @@ async function packageName(cwd: string): Promise<string | undefined> {
   }
 }
 
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
 function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory();
   } catch {
     return false;
   }
-}
-
-const ENTRY_CANDIDATES = [
-  "src/server/index.ts",
-  "src/server/index.js",
-  "src/index.ts",
-  "src/index.js",
-  "server.ts",
-  "server.js",
-  "index.ts",
-  "index.js",
-];
-
-function findEntry(cwd: string, requested?: string): string {
-  const candidates = requested ? [requested] : ENTRY_CANDIDATES;
-  for (const candidate of candidates) {
-    const absolute = resolve(cwd, candidate);
-    if (isFile(absolute)) return absolute;
-  }
-  throw new MuboError(
-    "CONFIG_ERROR",
-    `Cannot find app entry${requested ? `: ${requested}` : ` (tried ${ENTRY_CANDIDATES.join(", ")})`}`,
-  );
 }
 
 function findStaticDir(
@@ -132,13 +102,13 @@ function importPath(fromDir: string, toFile: string): string {
 export async function buildProject(options: BuildOptions = {}): Promise<BuildResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const entry = findEntry(cwd, options.entry);
-  let config: MuboConfig = {};
-  try {
-    const loaded = await loadConfigFile(cwd, options.configFile);
-    config = loaded.config;
-  } catch (error) {
-    throw error instanceof MuboError ? error : new MuboError("CONFIG_ERROR", "Failed to load project config", { cause: error });
-  }
+  const config: MuboConfig = await loadConfigFile(cwd, options.configFile)
+    .then((loaded) => loaded.config)
+    .catch((error: unknown) => {
+      throw error instanceof MuboError
+        ? error
+        : new MuboError("CONFIG_ERROR", "Failed to load project config", { cause: error });
+    });
 
   const env = options.env ?? process.env;
   const resolved = resolveConfig(

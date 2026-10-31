@@ -275,6 +275,18 @@ function createIndexSql(table: string, index: IndexDefinition): string {
   )} (${index.columns.map(quoteIdentifier).join(", ")})${where}`;
 }
 
+function appendIndexPlan(
+  statements: string[],
+  changes: string[],
+  db: MuboDatabase,
+  table: string,
+  index: IndexDefinition,
+): void {
+  ensureIndexNameAvailable(db, table, index.name);
+  statements.push(createIndexSql(table, index));
+  changes.push(`create index ${index.name} on ${table}`);
+}
+
 function tableExists(db: MuboDatabase, table: string): boolean {
   return (
     db
@@ -463,9 +475,7 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
       statements.push(createTableSql(tableName, table));
       changes.push(`create table ${tableName}`);
       for (const index of table.indexes ?? []) {
-        ensureIndexNameAvailable(db, tableName, index.name);
-        statements.push(createIndexSql(tableName, index));
-        changes.push(`create index ${index.name} on ${tableName}`);
+        appendIndexPlan(statements, changes, db, tableName, index);
       }
       continue;
     }
@@ -566,9 +576,7 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
     for (const index of table.indexes ?? []) {
       const current = findCaseInsensitive(existing.indexes, index.name);
       if (!current) {
-        ensureIndexNameAvailable(db, tableName, index.name);
-        statements.push(createIndexSql(tableName, index));
-        changes.push(`create index ${index.name} on ${tableName}`);
+        appendIndexPlan(statements, changes, db, tableName, index);
         continue;
       }
       const sameColumns =

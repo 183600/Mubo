@@ -117,6 +117,23 @@ function isMoreSpecific(route: Route, than: Route): boolean {
   return false;
 }
 
+interface RouteCandidate {
+  route: Route;
+  params: Record<string, string>;
+}
+
+function findBestMatch(routes: readonly Route[], method: string, parts: string[]): RouteCandidate | undefined {
+  let best: RouteCandidate | undefined;
+  for (const route of routes) {
+    if (route.method !== method) continue;
+    const params = matchSegments(route, parts);
+    if (params !== null && (!best || isMoreSpecific(route, best.route))) {
+      best = { route, params };
+    }
+  }
+  return best;
+}
+
 export class Router {
   readonly routes: Route[] = [];
 
@@ -134,23 +151,7 @@ export class Router {
     const upper = method.toUpperCase();
     const parts = pathSegments(pathname);
 
-    let best: { route: Route; params: Record<string, string> } | undefined;
-    for (const route of this.routes) {
-      if (route.method !== upper) continue;
-      const params = matchSegments(route, parts);
-      if (params !== null && (!best || isMoreSpecific(route, best.route))) {
-        best = { route, params };
-      }
-    }
-    if (!best && upper === "HEAD") {
-      for (const route of this.routes) {
-        if (route.method !== "GET") continue;
-        const params = matchSegments(route, parts);
-        if (params !== null && (!best || isMoreSpecific(route, best.route))) {
-          best = { route, params };
-        }
-      }
-    }
+    const best = findBestMatch(this.routes, upper, parts) ?? (upper === "HEAD" ? findBestMatch(this.routes, "GET", parts) : undefined);
     if (best) return { type: "match", route: best.route, params: best.params };
 
     const allowed = new Set<HttpMethod>();

@@ -1,15 +1,16 @@
-import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
 import {
   loadAndResolveConfig,
   loadConfigFile,
   type ResolvedMuboConfig,
 } from "../core/config.ts";
-import { MuboError } from "../core/errors.ts";
+import { errorMessage, MuboError } from "../core/errors.ts";
 import { MuboDatabase } from "../db/database.ts";
 import type { CliArgs } from "./args.ts";
 import { boolFlag, stringFlag } from "./args.ts";
+import { findEntry } from "./project.ts";
 
 export interface CommandContext {
   cwd: string;
@@ -28,39 +29,8 @@ async function projectConfig(context: CommandContext): Promise<ResolvedMuboConfi
   );
 }
 
-const DEV_ENTRY_CANDIDATES = [
-  "src/server/index.ts",
-  "src/server/index.js",
-  "src/index.ts",
-  "src/index.js",
-  "server.ts",
-  "server.js",
-  "index.ts",
-  "index.js",
-];
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function findDevEntry(cwd: string, requested?: string): string {
-  const candidates = requested ? [requested] : DEV_ENTRY_CANDIDATES;
-  for (const candidate of candidates) {
-    const path = resolve(cwd, candidate);
-    if (isFile(path)) return path;
-  }
-  throw new MuboError(
-    "CONFIG_ERROR",
-    `Cannot find app entry${requested ? `: ${requested}` : ` (tried ${DEV_ENTRY_CANDIDATES.join(", ")})`}`,
-  );
-}
-
 export async function devCommand(context: CommandContext): Promise<void> {
-  const entry = findDevEntry(context.cwd, stringFlag(context.args, "entry"));
+  const entry = findEntry(context.cwd, stringFlag(context.args, "entry"));
   const forwarded: string[] = [];
   for (const name of ["port", "host", "data-dir", "db", "static-dir", "log-level", "config"]) {
     const value = stringFlag(context.args, name);
@@ -145,9 +115,7 @@ async function checkWritableDirectory(path: string): Promise<boolean> {
 
 export async function doctorCommand(context: CommandContext): Promise<void> {
   const config = await projectConfig(context);
-  const configInfo = await loadConfigFile(context.cwd, stringFlag(context.args, "config")).catch((error) => {
-    throw error;
-  });
+  const configInfo = await loadConfigFile(context.cwd, stringFlag(context.args, "config"));
   const checks: Array<{ name: string; ok: boolean; detail: string; fatal?: boolean }> = [];
   checks.push({ name: "bun", ok: true, detail: `${Bun.version} (${Bun.revision.slice(0, 12)})`, fatal: true });
   checks.push({
@@ -192,7 +160,7 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
       }
     }
   } catch (error) {
-    dbDetail = error instanceof Error ? error.message : String(error);
+    dbDetail = errorMessage(error);
   }
   checks.push({ name: "sqlite", ok: dbOk, detail: dbOk ? `${dbDetail} (writable)` : dbDetail, fatal: true });
 

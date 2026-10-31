@@ -1,5 +1,5 @@
 import type { Server, ServerWebSocket } from "bun";
-import { isMuboError, MuboError } from "./errors.ts";
+import { errorMessage, isMuboError, MuboError } from "./errors.ts";
 import { createLogger, type Logger } from "./logger.ts";
 import {
   loadAndResolveConfig,
@@ -165,7 +165,8 @@ export class MuboApp {
   }
 
   ws(path: string, handlers: WsHandlers): this {
-    this.wsRoutes.set(normalizeRoutePath(path), { path: normalizeRoutePath(path), handlers });
+    const normalized = normalizeRoutePath(path);
+    this.wsRoutes.set(normalized, { path: normalized, handlers });
     return this;
   }
 
@@ -235,7 +236,7 @@ export class MuboApp {
       } catch (error) {
         this.logger.child({ requestId }).warn("WebSocket authorization failed", {
           path: route.path,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         });
         return errorResponse(requestId, new MuboError("UNAUTHORIZED", "WebSocket authorization failed"), true);
       }
@@ -259,8 +260,12 @@ export class MuboApp {
     return new Response(null, { status: 101 });
   }
 
+  private wsRoute(ws: ServerWebSocket<WsSocketData>): WsRoute | undefined {
+    return this.wsRoutes.get(ws.data.routePath);
+  }
+
   private handleWsOpen(ws: ServerWebSocket<WsSocketData>): void {
-    const route = this.wsRoutes.get(ws.data.routePath);
+    const route = this.wsRoute(ws);
     if (!route) {
       ws.close(1011, "Unknown WebSocket route");
       return;
@@ -273,14 +278,14 @@ export class MuboApp {
   }
 
   private handleWsMessage(ws: ServerWebSocket<WsSocketData>, message: string | Buffer): void {
-    const route = this.wsRoutes.get(ws.data.routePath);
+    const route = this.wsRoute(ws);
     const ctx = this.wsHub.getContext(ws);
     if (!route?.handlers.onMessage || !ctx) return;
     this.runWsHandler(ctx, route.handlers, () => route.handlers.onMessage!(ctx, message));
   }
 
   private handleWsClose(ws: ServerWebSocket<WsSocketData>, code: number, reason: string): void {
-    const route = this.wsRoutes.get(ws.data.routePath);
+    const route = this.wsRoute(ws);
     const ctx = this.wsHub.remove(ws);
     if (ctx && route?.handlers.onClose) {
       this.runWsHandler(ctx, route.handlers, () => route.handlers.onClose!(ctx, code, reason));
@@ -290,7 +295,7 @@ export class MuboApp {
   }
 
   private handleWsError(ws: ServerWebSocket<WsSocketData>, error: Error): void {
-    const route = this.wsRoutes.get(ws.data.routePath);
+    const route = this.wsRoute(ws);
     const ctx = this.wsHub.getContext(ws);
     const log = ctx?.log ?? this.logger.child({ requestId: ws.data.requestId });
     log.error("WebSocket error", {
@@ -310,7 +315,7 @@ export class MuboApp {
     const report = (error: unknown) => {
       ctx.log.error("WebSocket handler failed", {
         id: ctx.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
       if (!handlers.onError) return;
       try {
@@ -399,9 +404,8 @@ export class MuboApp {
 
   async handleRequest(request: Request, server: Server<WsSocketData>): Promise<Response | undefined> {
     const started = performance.now();
-    const requestId = validRequestId(request.headers.get("x-request-id"))
-      ? request.headers.get("x-request-id")!
-      : crypto.randomUUID();
+    const requestIdHeader = request.headers.get("x-request-id");
+    const requestId = validRequestId(requestIdHeader) ? requestIdHeader : crypto.randomUUID();
 
     let url: URL;
     try {
@@ -449,7 +453,7 @@ export class MuboApp {
         requestId,
         method: request.method,
         path: url.pathname,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
         stack:
           !expected && this.config.app.env !== "production" && error instanceof Error
             ? error.stack

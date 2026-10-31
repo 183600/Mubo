@@ -1,89 +1,160 @@
-# Mubo 实现方案（完整计划）
+# Mubo 实现方案
 
-> 目标：实现一个完全基于 Bun 内置能力的“全栈单体”框架：集成 SQLite（自动迁移）、HTTP + WebSocket、静态资源处理，并支持将应用编译为单一二进制文件交付。  
-> 约束：不引入 Docker/外部数据库/Redis/S3 作为“必需组件”。允许可选插件，但核心必须零依赖外部服务。  
-> 注意：本计划不包含“编译器实现代码”。只描述框架与应用侧的实现与集成方式。
+> 目标：构建一个只依赖 Bun 内置能力的“全栈单体”框架，集成 HTTP、WebSocket、SQLite 自动迁移、静态资源与单文件编译。
+>
+> 约束：Docker、外部数据库、Redis、S3 等都不能成为核心运行的必需组件。
+>
+> 说明：本文描述框架的设计边界、模块职责与实现路径，不包含 Bun 编译器本身的实现。
 
----
+## 目录
 
-## 1. 总体目标与范围
+- [1. 范围与交付物](#1-范围与交付物)
+- [2. 设计原则](#2-设计原则)
+- [3. 仓库结构](#3-仓库结构)
+- [4. 运行时架构](#4-运行时架构)
+- [5. 配置系统](#5-配置系统)
+- [6. HTTP 层](#6-http-层)
+- [7. WebSocket](#7-websocket)
+- [8. SQLite 与自动迁移](#8-sqlite-与自动迁移)
+- [9. 静态资源](#9-静态资源)
+- [10. 单文件交付](#10-单文件交付)
+- [11. CLI](#11-cli)
+- [12. 可观测性](#12-可观测性)
+- [13. 安全](#13-安全)
+- [14. 测试策略](#14-测试策略)
+- [15. 性能策略](#15-性能策略)
+- [16. 兼容性与版本化](#16-兼容性与版本化)
+- [17. 里程碑](#17-里程碑)
+- [18. 风险与应对](#18-风险与应对)
+- [19. 对外 API](#19-对外-api)
+- [20. 完成标准](#20-完成标准)
+
+## 1. 范围与交付物
 
 ### 1.1 交付物
-- `mubo` 框架包（TypeScript/JavaScript）
-- `bunx mubo` CLI（脚手架/构建/诊断）
-- 示例应用（最小：HTTP + SQLite + 静态 + WebSocket）
-- 文档：README、配置说明、API 参考、迁移说明、部署指南
 
-### 1.2 核心能力（MVP 必须有）
+- `mubo` 运行时包（TypeScript）
+- `mubo` CLI：`init` / `dev` / `build` / `migrate` / `doctor`
+- 最小示例项目（HTTP + SQLite + 静态资源 + WebSocket）
+- 文档：README、配置参考、API 说明、迁移策略、部署方式
+
+### 1.2 核心能力
+
 1. **HTTP 服务**
-   - 基于 `Bun.serve`，提供路由与中间件
-   - JSON body 解析、错误处理、请求日志
-   - 健康检查端点（默认 `/healthz`）
+   - 基于 `Bun.serve`
+   - 路由、中间件、JSON/表单解析、请求日志与统一错误响应
+   - 默认健康检查端点 `/healthz` 与 `/readyz`
 
-2. **SQLite 数据库与自动迁移**
-   - 基于 `bun:sqlite`（`Bun.Sqlite`）
-   - 启动时自动执行迁移（可关闭/只检查）
-   - 迁移历史记录与并发保护
+2. **SQLite 与自动迁移**
+   - 基于 `bun:sqlite`
+   - 启动时按 schema 自动执行追加式迁移
+   - 迁移历史可追踪、重复启动幂等
 
 3. **WebSocket**
-   - 基于 `Bun.serve` 原生 WS
-   - 提供消息分发、房间订阅、广播工具
-   - 支持鉴权钩子与连接上下文
+   - 原生 WebSocket 升级与连接上下文
+   - 鉴权钩子、房间订阅、广播、心跳与断线清理
 
-4. **静态资源处理**
-   - 开发：可直接服务 `public/` 或代理前端 dev server（可选）
-   - 生产：从内嵌资源（或磁盘）输出，支持缓存头与 SPA fallback
+4. **静态资源**
+   - 开发时直接服务 `public/`
+   - 生产时从磁盘或内嵌资源输出
+   - 缓存头、ETag、目录索引与 SPA fallback
 
-5. **单文件交付模式**
-   - 支持将服务端代码与静态资源打包进一个可执行文件
+5. **单文件交付**
+   - 服务端入口、迁移逻辑和静态资源一起编译
    - 运行时自动创建数据目录与数据库文件
-   - 支持 `--data-dir` / 环境变量配置数据位置
-
----
+   - `--data-dir` / `MUBO_DATA_DIR` 可配置数据位置
 
 ## 2. 设计原则
 
-1. **Bun-first**：只使用 Bun 内置能力（SQLite、serve、WebSocket、文件 API、测试框架）。
-2. **SQL 优先**：避免“魔法 ORM”。提供轻量封装、类型辅助与安全的参数绑定。
+1. **Bun-first**：只使用 Bun 内置的 SQLite、`Bun.serve`、WebSocket、文件 API 和测试框架。
+2. **SQL 优先**：不实现“魔法 ORM”，提供轻量封装、类型辅助与安全的参数绑定。
 3. **默认安全**：默认绑定 localhost、默认只做追加式迁移、默认合理缓存策略。
-4. **可观测性内建**：结构化日志、请求 ID、慢查询提示、基础指标（可选）。
-5. **可插拔但不复杂**：核心保持小而稳，扩展通过插件接口接入。
+4. **可观测性内建**：结构化日志、请求 ID、慢查询提示和基础健康检查。
+5. **可扩展但不复杂**：核心保持小而稳，复杂能力通过显式配置或中间件接入。
 
----
+## 3. 仓库结构
 
-## 3. 架构概览
+```txt
+mubo/
+  src/
+    cli/
+      index.ts        # CLI 入口与命令分发
+      args.ts         # 参数解析
+      init.ts         # 项目模板
+      build.ts        # 单文件构建
+      commands.ts     # dev/migrate/doctor
+      project.ts      # 入口探测等共享项目工具
+    core/
+      app.ts          # App 生命周期、HTTP/WS 装配
+      config.ts       # 配置合并、校验与数据目录解析
+      errors.ts       # MuboError 与错误码
+      logger.ts       # 结构化日志
+    db/
+      database.ts     # SQLite 连接、查询、事务与迁移入口
+      migrations.ts   # schema 校验、diff、迁移计划与执行
+      schema.ts       # 声明式 schema 类型
+    http/
+      router.ts       # 路由匹配
+      context.ts      # 请求上下文与 body 解析
+      response.ts     # JSON/文本/HTML/错误响应
+    static/
+      assets.ts       # 磁盘与内嵌静态资源
+    ws/
+      hub.ts          # WebSocket 连接、房间与广播
+    index.ts          # 公共导出
+  examples/
+    minimal/
+  tests/
+  README.md
+  PLAN.md
+  LICENSE
+```
 
-### 3.1 运行时模块划分
-- `core/`：App 生命周期、配置、日志、错误处理、工具
-- `http/`：路由、middleware、请求解析、响应辅助
-- `ws/`：WS 路由、连接上下文、房间与广播
-- `db/`：SQLite 连接、迁移、查询执行与事务封装
-- `static/`：静态资源加载器（磁盘/内嵌）、缓存与 SPA fallback
-- `cli/`：init/dev/build/migrate/doctor（只调度，不耦合运行时）
-- `plugins/`：插件协议（可选）
+## 4. 运行时架构
 
-### 3.2 数据与控制流（启动流程）
-1. 读取配置（env + config file + defaults）
-2. 初始化日志（log level、格式、requestId）
-3. 解析数据目录（data dir）
-4. 初始化 SQLite（连接参数、WAL、busy_timeout）
-5. 获取迁移锁并执行迁移
-6. 注册路由（HTTP + WS）
-7. 初始化静态资源服务
-8. `Bun.serve` 启动
-9. 捕获信号并优雅退出（关闭连接、释放锁）
+### 4.1 模块职责
 
----
+- `core/`：App 生命周期、配置、日志、错误处理。
+- `http/`：路由、中间件、上下文、响应辅助。
+- `ws/`：WebSocket 路由、连接上下文、房间与广播。
+- `db/`：SQLite 连接、迁移、查询与事务。
+- `static/`：磁盘/内嵌资源加载、缓存与 SPA fallback。
+- `cli/`：项目创建、开发启动、构建、迁移和诊断，只负责调度。
 
-## 4. 配置系统
+### 4.2 启动流程
 
-### 4.1 配置来源与优先级
-1. CLI 参数（优先级最高）
+1. 合并配置（默认值、配置文件、环境变量、CLI 参数）。
+2. 初始化日志（级别、格式、基础字段）。
+3. 解析数据目录与数据库路径。
+4. 打开 SQLite，设置 WAL、`busy_timeout`、外键等参数。
+5. 根据 schema 规划并执行迁移。
+6. 注册 HTTP 路由、中间件和 WebSocket 处理器。
+7. 初始化静态资源服务。
+8. 启动 `Bun.serve`。
+9. 应用注册信号处理并调用 `app.stop()` 优雅退出（关闭连接、停止服务、关闭数据库）。
+
+### 4.3 App 生命周期
+
+- `createMuboApp(config, options)`：加载配置并创建 App、Logger、Database 和 StaticAssets。
+- `app.start()`：执行迁移并启动服务；重复调用返回同一个 server。
+- `app.stop()`：停止心跳、关闭 WebSocket、停止 server、关闭数据库。
+- `app.serverInstance` / `app.port` / `app.started`：运行时状态查询。
+
+## 5. 配置系统
+
+### 5.1 来源与优先级
+
+从高到低：
+
+1. CLI 参数
 2. 环境变量（`MUBO_*`）
-3. `mubo.config.ts` / `mubo.config.js`
+3. `mubo.config.ts` / `mubo.config.js` / `mubo.config.mjs`
 4. 默认值
 
-### 4.2 配置结构（建议）
+传入任意显式配置项时默认不读取配置文件；`loadFile: true` 可强制读取。CLI 生成的入口直接导入配置，因此编译后的应用不依赖运行目录中的配置文件。
+
+### 5.2 配置结构
+
 ```ts
 export interface MuboConfig {
   app?: {
@@ -91,31 +162,40 @@ export interface MuboConfig {
     env?: "development" | "production" | "test";
   };
 
+  dataDir?: string;
+  schema?: MuboSchema;
+
   http?: {
-    host?: string;      // 默认 127.0.0.1
-    port?: number;      // 默认 3000
+    host?: string;          // 默认 127.0.0.1
+    port?: number;          // 默认 3000
     trustProxy?: boolean;
-    cors?: false | { origin: string[] | "*" };
-    bodyLimit?: number; // JSON body 最大字节数
+    cors?: false | {
+      origin: string[] | "*";
+      credentials?: boolean;
+      maxAgeSeconds?: number;
+    };
+    bodyLimit?: number;
   };
 
   db?: {
-    path?: string;      // 默认: <dataDir>/mubo.sqlite
-    wal?: boolean;      // 默认 true
+    path?: string;          // 默认 <dataDir>/mubo.sqlite
+    wal?: boolean;          // 默认 true
     busyTimeoutMs?: number; // 默认 5000
     foreignKeys?: boolean;  // 默认 true
+    slowQueryMs?: number;   // 默认 200
     migrations?: {
       mode?: "apply" | "check" | "off";
-      safeOnly?: boolean; // 默认 true：仅追加式变更
-      table?: string;     // 默认 "_mubo_migrations"
-      lock?: "file" | "sqlite"; // 默认 sqlite
+      safeOnly?: boolean;   // 默认 true
+      table?: string;       // 默认 _mubo_migrations
+      lock?: "file" | "sqlite";
     };
   };
 
   static?: {
     mode?: "embedded" | "disk" | "off";
-    dir?: string;            // disk 模式目录
-    spaFallback?: boolean;   // 默认 true
+    dir?: string;
+    spaFallback?: boolean;
+    assets?: EmbeddedAssets;
     cache?: {
       immutableExtensions?: string[];
       defaultMaxAgeSeconds?: number;
@@ -125,7 +205,7 @@ export interface MuboConfig {
   ws?: {
     enabled?: boolean;
     maxPayloadBytes?: number;
-    heartbeat?: { intervalMs: number; timeoutMs: number };
+    heartbeat?: { intervalMs?: number; timeoutMs?: number };
   };
 
   log?: {
@@ -135,56 +215,71 @@ export interface MuboConfig {
 }
 ```
 
-### 4.3 数据目录策略
-- 优先使用 `--data-dir` / `MUBO_DATA_DIR`
-- 默认选择：
+### 5.3 校验与规范化
+
+- 布尔、字符串、枚举和数值字段在启动前校验。
+- 端口限制在 `0..65535`。
+- 超时、缓存时间等非负；WebSocket payload 与心跳超时必须大于 0。
+- 应用名清洗并截断到 64 字符。
+- 相对路径以工作目录为基准解析。
+- 非法配置抛出 `CONFIG_ERROR`，不会静默回退。
+
+### 5.4 数据目录策略
+
+- 优先使用 `--data-dir` / `MUBO_DATA_DIR`。
+- 默认：
   - macOS/Linux：`$HOME/.mubo/<appName>/`
-  - Windows：`%APPDATA%\\Mubo\\<appName>\\`
-- 数据目录包含：
-  - `mubo.sqlite`
-  - `logs/`（可选）
-  - `tmp/`（可选）
+  - Windows：`%APPDATA%\Mubo\<appName>\`
+- 数据目录通常包含 `mubo.sqlite`；日志等文件可按需扩展。
 
----
+## 6. HTTP 层
 
-## 5. HTTP 层设计
+### 6.1 路由
 
-### 5.1 路由器
-基于 `Bun.serve({ fetch(req) {} })` 实现轻量路由：
+基于 `Bun.serve({ fetch })` 实现轻量路由：
 
-- `app.get(path, handler)`
-- `app.post(path, handler)`
-- `app.put/patch/delete(...)`
-- 路径匹配：
-  - 静态路径：`/healthz`
-  - 参数路径：`/users/:id`
-  - 可选通配：`/assets/*`（用于静态与 SPA）
+- `app.get/post/put/patch/delete/head/options(path, handler)`
+- 静态路径：`/healthz`
+- 参数路径：`/users/:id`
+- 末尾通配符：`/assets/*`
 
 实现要点：
-- 预编译路由表，按 method 分组
-- 简单高效的 path matcher（避免引入外部依赖）
-- `ctx` 上下文对象：
-  - `ctx.req`, `ctx.url`, `ctx.params`, `ctx.query`
-  - `ctx.json()`, `ctx.text()`, `ctx.form()`（按需）
-  - `ctx.db`（SQLite 连接/封装）
-  - `ctx.log`（带 requestId）
 
-### 5.2 中间件（middleware）
-- `app.use(middleware)`：洋葱模型
-- 内置中间件（默认启用）：
-  - requestId
-  - 结构化访问日志
-  - 错误边界（异常转 JSON）
-  - JSON body 解析（按 Content-Type）
-- 可选中间件：
-  - CORS
-  - rate limit（内存令牌桶；边缘场景够用）
-  - auth（session/token 骨架）
+- 路由路径在注册时编译为 segment，避免每次请求重新解析。
+- 匹配时优先更具体的路径：字面量 > 参数 > 通配符。
+- 同一 `method + path` 重复注册时覆盖旧处理器。
+- 未匹配到 method 但路径存在时返回 `405`，并设置 `Allow`。
+- `HEAD` 未显式注册时回退到 `GET`。
 
-### 5.3 响应辅助
-- `Response.json(data, { status, headers })`
-- `ctx.ok(data)` / `ctx.fail(code, message)`
-- 统一错误格式：
+### 6.2 中间件
+
+- `app.use(middleware)` 使用洋葱模型。
+- 中间件可以读取/修改上下文，并决定是否调用 `next()`。
+- `next()` 被重复调用时抛出 `INTERNAL_ERROR`。
+- 内置行为：请求 ID、访问日志、错误边界、body 解析、CORS（可选）。
+
+### 6.3 请求上下文
+
+核心字段与方法：
+
+- `ctx.req`、`ctx.url`、`ctx.method`
+- `ctx.params`、`ctx.query`、`ctx.requestId`
+- `ctx.state`、`ctx.set/get`
+- `ctx.db`、`ctx.log`、`ctx.app`
+- `ctx.body()`、`ctx.text()`、`ctx.formData()` / `ctx.form()`
+- `ctx.json()`、`ctx.textResponse()`、`ctx.ok()`、`ctx.fail()`
+
+请求体按 Content-Type 解析：
+
+- `application/json` / `+json`：JSON
+- `application/x-www-form-urlencoded`：对象
+- `text/*`：文本
+- 其他：字节数组
+
+body 只读取一次并缓存；超过 `bodyLimit` 返回 `PAYLOAD_TOO_LARGE`。
+
+### 6.4 响应与错误
+
 ```json
 {
   "error": {
@@ -195,427 +290,468 @@ export interface MuboConfig {
 }
 ```
 
----
+- `MuboError` 统一转换为 JSON 响应。
+- 生产环境隐藏非预期错误的内部信息。
+- 响应头包含 `x-request-id`。
+- `ctx.ok(data)` 与 `ctx.json(data)` 等价；`ctx.fail` 用于业务错误。
 
-## 6. WebSocket 设计
+### 6.5 CORS 与代理
 
-### 6.1 WS 路由注册
-- `app.ws(path, handlers)`
-  - `onConnect(ctx)`
-  - `onMessage(ctx, message)`
-  - `onClose(ctx, code, reason)`
-  - `onError(ctx, err)`
+- `http.cors` 支持 `"*"` 或白名单数组。
+- 启用 credentials 时不能把 `Access-Control-Allow-Origin` 设为 `*`。
+- 自动响应预检请求并设置 `Vary: Origin`。
+- `http.trustProxy` 开启后，日志与 WebSocket `ctx.ip` 优先使用 `x-forwarded-for` 或 `x-real-ip`。
 
-### 6.2 连接上下文
-- `ctx.id`：连接 ID
-- `ctx.ip`：客户端 IP（考虑 proxy）
-- `ctx.user`：鉴权后的用户对象（可选）
-- `ctx.send(data)`：自动 JSON 序列化（可配置）
-- `ctx.subscribe(room)` / `ctx.unsubscribe(room)`
-- `ctx.publish(room, data)`
+## 7. WebSocket
 
-### 6.3 消息协议（建议）
-使用事件包结构，便于扩展：
-```json
-{ "t": "event", "e": "crm.lead.created", "d": { ... }, "id": "optional" }
-```
-
-### 6.4 心跳与断线
-- 服务端定时 ping（若 Bun 提供可用机制则使用；否则应用层心跳）
-- 超时自动断开，释放订阅与资源
-
-### 6.5 鉴权策略（最小实现）
-- 允许从以下位置提取 token：
-  - `Sec-WebSocket-Protocol`
-  - URL query：`?token=...`
-  - Cookie（若前置 HTTP 已设置）
-- 提供 `authorize(ctx): user | null` 钩子
-
----
-
-## 7. SQLite 与自动迁移设计（重点）
-
-### 7.1 DB 初始化参数
-- `PRAGMA journal_mode=WAL;`（默认）
-- `PRAGMA foreign_keys=ON;`（默认）
-- `PRAGMA busy_timeout=...;`
-- 可选：`synchronous=NORMAL`（权衡性能/安全）
-
-### 7.2 迁移元数据与锁
-需要解决：**同一数据目录多进程启动**导致同时迁移。
-
-方案 A（推荐）：SQLite 锁表
-- 创建 `_mubo_migration_lock` 表（单行）
-- 使用事务 `BEGIN IMMEDIATE` 获取写锁
-- 在持锁事务中执行迁移并提交
-- 优点：跨平台、无需文件锁 API
-- 缺点：需要谨慎处理异常退出（SQLite 会回滚释放锁）
-
-迁移历史表：
-- `_mubo_migrations(id TEXT PRIMARY KEY, applied_at INTEGER, checksum TEXT, meta TEXT)`
-- 每个迁移一个稳定 ID（例如内容 hash 或自定义名称）
-
-### 7.3 Schema 表达方式（声明式）
-提供一个极简 DSL（TypeScript 对象）来描述 schema，避免引入 ORM：
+### 7.1 路由注册
 
 ```ts
-export const schema = {
+app.ws(path, {
+  authorize(request, { path }),
+  onConnect(ctx),
+  onMessage(ctx, message),
+  onClose(ctx, code, reason),
+  onError(ctx, error),
+});
+```
+
+- 路径在注册时规范化。
+- 非 WebSocket 升级请求返回 `426`，除非同一路径存在普通 HTTP 路由。
+- `ws.enabled=false` 时拒绝升级。
+- `authorize` 返回 `null` / `false` 时拒绝连接。
+
+### 7.2 连接上下文
+
+- `ctx.id`：连接 ID
+- `ctx.ws`：底层 `ServerWebSocket`
+- `ctx.ip`、`ctx.url`、`ctx.requestId`
+- `ctx.user`：鉴权结果
+- `ctx.state`：连接级状态
+- `ctx.rooms`：当前订阅房间
+- `ctx.send()`、`ctx.emit()`
+- `ctx.publish()`、`ctx.broadcast()`
+- `ctx.subscribe()`、`ctx.unsubscribe()`
+- `ctx.close()`
+
+### 7.3 消息协议
+
+推荐事件包结构，便于扩展：
+
+```json
+{ "t": "event", "e": "crm.lead.created", "d": {}, "id": "optional" }
+```
+
+`send()` 对字符串、ArrayBuffer、TypedArray、Blob 原样发送；其他值序列化为 JSON。不可序列化的值会抛出 `VALIDATION_ERROR`。
+
+### 7.4 房间与广播
+
+- 房间名必须包含非空白字符。
+- 重复订阅是幂等的。
+- 连接断开时自动退出所有房间。
+- `publish()` / `broadcast()` 返回成功发送的连接数。
+- 发送失败的连接会记录日志但不计入返回值。
+
+### 7.5 心跳与断线
+
+- `Bun.serve` 开启 `sendPings`。
+- `idleTimeout` 根据 `ws.heartbeat.timeoutMs` 计算，并限制在合理范围内。
+- `ws.heartbeat.intervalMs > 0` 时定时向所有连接发送 ping。
+- 关闭连接时清理房间与上下文。
+
+## 8. SQLite 与自动迁移
+
+### 8.1 初始化参数
+
+- `PRAGMA journal_mode = WAL`
+- `PRAGMA synchronous = NORMAL`
+- `PRAGMA foreign_keys = ON`
+- `PRAGMA busy_timeout = ...`
+
+不支持 WAL 的文件系统（或 `:memory:`）会安全回退。
+
+### 8.2 Schema DSL
+
+```ts
+export const schema = defineSchema({
   tables: {
     users: {
       columns: {
-        id: { type: "text", primaryKey: true },
-        email: { type: "text", unique: true, notNull: true },
-        created_at: { type: "integer", notNull: true }
+        id: { type: "integer", primaryKey: true, autoIncrement: true },
+        email: { type: "text", notNull: true, unique: true },
+        created_at: { type: "integer", notNull: true },
       },
-      indexes: [{ name: "idx_users_created_at", columns: ["created_at"] }]
-    }
-  }
-} as const;
+      indexes: [{ name: "idx_users_created_at", columns: ["created_at"] }],
+    },
+  },
+});
 ```
 
-类型系统目标：
-- schema 对象尽量可推导（`as const`）
-- 查询层可选提供泛型辅助（非必须）
+列支持：
 
-### 7.4 自动迁移策略（安全优先）
-Mubo 的“自动迁移”定义为：在应用启动时，框架根据 schema 变化自动生成并应用迁移，默认 **仅追加式变更**：
+- `type`
+- `primaryKey` / `autoIncrement`
+- `notNull` / `unique`
+- `default` / `sqlDefault`
+- `references`（表、列、`ON DELETE`、`ON UPDATE`）
 
-安全变更（默认允许）：
-- `CREATE TABLE`（新表）
-- `CREATE INDEX`（新索引）
-- `ALTER TABLE ADD COLUMN`（新增列，且必须允许 NULL 或提供默认值）
-- 添加不影响已有数据的约束（谨慎；SQLite 支持有限）
+索引支持：
 
-不安全变更（默认禁止，需显式开启 `safeOnly=false` 或使用手写迁移）：
-- 删除列、改类型
-- 重命名列/表（通常需要重建表）
-- 改主键/外键策略
-- 大规模数据重写
+- `name`、`columns`
+- `unique`
+- `where`（部分索引）
 
-### 7.5 自动迁移实现路径（推荐方案）
-实现一个“schema diff → migration plan → apply”的流程：
+### 8.3 迁移流程
 
-1. **读取当前数据库结构（introspection）**
-   - `sqlite_master` 获取表/索引
-   - `PRAGMA table_info(table)` 获取列信息
-   - `PRAGMA index_list(table)` + `PRAGMA index_info(index)` 获取索引
+1. **校验 schema**
+   - 表名、列名、索引名必须是合法 SQL 标识符。
+   - 索引名在数据库内全局唯一。
+   - 主键、自增、外键和默认值必须合法。
 
-2. **与声明式 schema 比对**
-   - 表是否存在
-   - 列是否存在（类型/默认值/nullable）
-   - 索引是否存在
+2. **读取当前数据库结构**
+   - `sqlite_master`：表、索引定义。
+   - `PRAGMA table_info`：列信息。
+   - `PRAGMA index_list` / `PRAGMA index_info`：索引信息。
+   - `PRAGMA foreign_key_list`：外键信息。
 
-3. **生成变更计划（migration plan）**
-   - 生成一组 SQL 语句（按安全顺序）
-   - 对每次启动生成 deterministic 的迁移 ID（例如对“计划 JSON”做 hash）
-   - 若该 ID 已存在于 `_mubo_migrations`，跳过（幂等）
+3. **生成迁移计划**
+   - 新表：`CREATE TABLE`，随后创建索引。
+   - 已有表新增列：`ALTER TABLE ADD COLUMN`。
+   - 新增索引：`CREATE INDEX`。
+   - 迁移 ID 由计划 SQL 的 SHA-256 截断生成。
+   - 计划为空时视为无需迁移。
 
 4. **执行迁移**
-   - `BEGIN IMMEDIATE`
-   - 逐条执行 SQL
-   - 写入 `_mubo_migrations`
-   - `COMMIT`
+   - 使用 `BEGIN IMMEDIATE` 获取 SQLite 写锁。
+   - 在事务内重新计算计划，避免并发启动时重复执行。
+   - 逐条执行 SQL，写入迁移历史。
+   - 失败时回滚并抛出带语句上下文的 `MIGRATION_ERROR`。
 
-5. **校验**
-   - 可选：迁移后再次 introspection，确保结构满足 schema
+5. **迁移历史**
+   - 默认表：`_mubo_migrations`
+   - 字段：`id`、`applied_at`、`checksum`、`meta`
+   - 重复启动幂等。
 
-### 7.6 手写迁移（可选增强）
-提供接口允许应用显式提供迁移列表，适用于复杂变更：
+### 8.4 安全迁移规则
+
+默认允许：
+
+- 新建表
+- 新增可空列
+- 新增带默认值的 `NOT NULL` 列
+- 新增索引
+
+默认拒绝：
+
+- 删除列或表
+- 修改列类型
+- 修改主键、自增策略、外键或 `UNIQUE` 约束
+- 修改默认值或可空性
+- 已存在索引定义不一致
+
+破坏性变更需要手写 SQL 迁移或重建表，不应依赖自动迁移。
+
+### 8.5 查询与事务
 
 ```ts
-app.db.migrations.define([
-  {
-    id: "202x_add_orders",
-    up(db) { db.exec("CREATE TABLE ..."); },
-    down(db) { db.exec("DROP TABLE ..."); }
-  }
-]);
+db.query(sql).all(...params)
+db.query(sql).get(...params)
+db.query(sql).run(...params)
+db.query(sql).values(...params)
+db.query(sql).iterate(...params)
+db.exec(sql)
+db.transaction((tx) => { ... })
 ```
 
-> MVP 可先实现“自动迁移 + 追加式”，手写迁移作为后续增强。
+- prepared statement 按 SQL 文本缓存；`iterate` 使用独立语句。
+- `transaction` 同步执行时同步返回，异步执行时返回 Promise。
+- 嵌套事务使用 `SAVEPOINT`。
+- 并发事务排队执行，避免同一连接上交叉提交。
+- 慢查询超过 `slowQueryMs` 时记录警告。
 
-### 7.7 查询执行与事务封装
-- 提供 `db.query(sql).all(params)` / `.get(params)` / `.run(params)`
-- 自动使用 prepared statements（缓存语句对象）
-- 事务封装：
-  - `db.transaction(fn)`：内部 `BEGIN`/`COMMIT`/`ROLLBACK`
+## 9. 静态资源
 
----
+### 9.1 资源来源
 
-## 8. 静态资源设计
+- `embedded`：资源打包进二进制，运行时从内嵌 manifest 读取。
+- `disk`：从磁盘目录读取，适合开发或外部挂载。
+- `off`：不提供静态服务。
 
-### 8.1 资源来源模式
-- `embedded`：资源打包进二进制；运行时通过内置 manifest 读取
-- `disk`：从磁盘目录读取（适合开发或不内嵌模式）
-- `off`：不提供静态服务（纯 API）
+在 `disk` 模式下，如果同时提供了内嵌资源，会优先匹配内嵌资源，再回退到磁盘；内嵌 SPA fallback 不会遮蔽磁盘文件。
 
-### 8.2 Manifest 与缓存策略
-生成一个资源清单（manifest）：
-- `path -> { bytes | loaderKey, contentType, etag, size, mtime? }`
+### 9.2 路径与安全
 
-缓存建议：
-- 对带 hash 的文件（如 `app.8c3f1.js`）：
-  - `Cache-Control: public, max-age=31536000, immutable`
-- 对 `index.html`：
-  - `Cache-Control: no-cache`
-- 支持 `If-None-Match` → `304`
+- 资源键统一为以 `/` 开头的路径。
+- 目录路径补 `index.html`。
+- 嵌入资源同时注册原始键与解码后的键。
+- 磁盘模式拒绝路径穿越、NUL 字节和非法百分号编码。
+- 非法路径返回 `400`，越界路径返回 `403`。
 
-### 8.3 Content-Type 推断
-- 内置扩展名映射（js/css/html/svg/png/jpg/webp/woff2/json等）
-- 允许用户覆盖
+### 9.3 缓存策略
 
-### 8.4 SPA fallback
-当请求路径不匹配任何静态文件且 `spaFallback=true`：
-- 返回 `index.html`
-- 适用于前端路由（React Router / Vue Router）
+- `index.html` / `*.htm`：`no-cache`
+- 带内容哈希的静态资源：`public, max-age=31536000, immutable`
+- 其他资源：`public, max-age=<defaultMaxAgeSeconds>`
+- 支持 `ETag`、`If-None-Match`、弱 ETag 与 `304`
+- `HEAD` 返回响应头但不返回 body
 
----
+哈希识别基于文件名中的 token，例如 `app.3f9a1c2d.js`。`immutableExtensions` 不区分大小写，并忽略前导点。
 
-## 9. 单文件交付（不涉及编译器实现代码）
+### 9.4 SPA fallback
 
-### 9.1 目标形态
-- 一个可执行文件，包含：
-  - 服务端入口
-  - 静态资源（可选）
-  - 迁移逻辑与 schema
-- 数据库存储：
-  - 运行时落地到 `dataDir/mubo.sqlite`
-  - 首次运行自动创建并迁移到最新版本
+当请求未命中静态文件且 `spaFallback=true` 时，返回 `index.html`。这适用于 React Router、Vue Router 等前端路由。
 
-### 9.2 资源内嵌策略（框架侧）
-- 构建阶段由 CLI 生成 `embedded-manifest.json`（或 TS 模块）并纳入打包
-- 运行时静态服务从 manifest 提供字节流或从打包资源读取
+## 10. 单文件交付
 
-### 9.3 可升级性
-- 新二进制替换旧二进制
-- 启动即执行迁移升级数据库
-- 保留备份策略（可选）：
-  - 在执行非安全迁移前自动复制 DB 文件
+### 10.1 构建产物
 
----
+```txt
+一个可执行文件
+├── 服务端入口
+├── 静态资源（可选）
+└── schema 与迁移逻辑
+```
 
-## 10. CLI 设计（bunx mubo）
+数据库不打包进二进制，而是在运行时写入 `<dataDir>/mubo.sqlite`。
 
-> CLI 只做“项目创建/调度/生成”，运行时能力放在框架包中。
+### 10.2 构建流程
 
-### 10.1 命令清单
-- `mubo init <dir>`
-  - 生成项目模板（server + 可选 client）
-  - 生成 `mubo.config.ts`
-  - 生成示例 schema、示例路由、示例 WS
+1. 查找入口文件。
+2. 加载项目配置并解析静态资源目录。
+3. 收集静态资源，生成 base64 manifest。
+4. 生成 `.mubo/embedded-assets.ts` 与 `.mubo/build-entry.ts`。
+5. 调用 `bun build --compile` 输出可执行文件。
+6. 根据 target 或平台决定是否追加 `.exe`。
+
+### 10.3 可升级性
+
+- 新二进制替换旧二进制即可升级。
+- 启动时自动执行迁移。
+- 复杂或破坏性变更应先在备份副本上验证。
+
+## 11. CLI
+
+CLI 只负责项目创建、调度与诊断，运行时能力仍由框架包提供。
+
+### 11.1 命令
+
+- `mubo init <dir> [--force] [--install]`
+  - 生成项目模板、配置、示例 schema、路由、WebSocket 和最小测试。
 
 - `mubo dev`
-  - 以开发模式启动（watch）
-  - 可选：代理前端 dev server（例如读取用户配置 `clientDevProxy`）
+  - 查找入口并以 `bun --watch` 启动。
+  - 转发端口、主机、数据目录、数据库、静态目录和日志级别等参数。
 
 - `mubo build`
-  - 构建前端（若存在配置）
-  - 生成静态资源 manifest（用于 embedded 模式）
-  - 调用 Bun 的构建能力输出可执行文件（仅调用/编排，不实现编译器）
+  - 收集静态资源并生成内嵌 manifest。
+  - 调用 Bun 编译单文件。
+  - 支持 `--entry`、`--outfile`、`--static-dir`、`--target`、`--minify`、`--config`。
 
 - `mubo migrate`
-  - 显式执行迁移（用于 CI 或排错）
-  - 支持 `--check`：只检查是否需要迁移
+  - 显式执行迁移。
+  - `--check` 只检查是否有待执行迁移。
 
 - `mubo doctor`
-  - 输出环境诊断：Bun 版本、可写目录、端口占用、SQLite 可用性等
+  - 检查 Bun 版本、平台、配置文件、数据目录、SQLite、端口和 schema。
+  - `--json` 输出机器可读结果。
 
-### 10.2 模板
-提供最小模板与“CRM/ERP 骨架模板（可选）”：
-- 最小模板：health + users 表 + ws echo + 静态主页
-- 骨架模板（可选）：登录/会话/角色权限/审计日志
+### 11.2 入口探测
 
----
+未指定 `--entry` 时，按顺序查找：
 
-## 11. 安全与合规（内建最低标准）
-
-### 11.1 默认绑定策略
-- 生产环境默认 `127.0.0.1`，提示用户通过反向代理暴露
-- 明确文档说明如何绑定 `0.0.0.0`
-
-### 11.2 输入与错误
-- 默认 JSON body 限制
-- 默认错误不泄露堆栈（生产）
-- 统一错误码枚举（便于前端处理）
-
-### 11.3 SQLite 安全建议
-- 默认开启外键
-- SQL 参数必须绑定（禁止字符串拼接的 helper）
-- 迁移默认 safeOnly，避免误删数据
-
-### 11.4 WebSocket 安全
-- 限制 `maxPayloadBytes`
-- 可选简单 rate limit（每连接/每 IP）
-- 鉴权钩子建议默认开启（模板提供）
-
----
+```txt
+src/server/index.ts
+src/server/index.js
+src/index.ts
+src/index.js
+server.ts
+server.js
+index.ts
+index.js
+```
 
 ## 12. 可观测性
 
 ### 12.1 日志
-- `info`：启动信息、端口、数据目录
-- `http`：method/path/status/duration/requestId
-- `db`：慢查询警告（超过阈值）
-- `ws`：连接/断开/异常
+
+- `info`：启动信息、端口、数据目录。
+- `http`：method、path、status、duration、requestId、ip。
+- `db`：慢查询警告。
+- `ws`：连接、断开和异常。
 
 支持两种输出：
+
 - 人类可读（开发）
 - JSON（生产）
 
-### 12.2 指标（可选）
-- `GET /metrics`（Prometheus 文本格式，可选）
-- 或最小化：`/healthz` + `/readyz`
+日志字段中的换行会被转义，避免日志注入。JSON 序列化支持循环引用和 bigint 兜底。
 
----
+### 12.2 健康检查
 
-## 13. 测试策略
+- `/healthz`：返回应用名与 uptime。
+- `/readyz`：检查数据库可用性，异常时返回 `503`。
 
-### 13.1 单元测试（bun test）
-- 路由匹配与中间件顺序
-- schema diff 生成的迁移计划
-- 静态资源缓存头、ETag、SPA fallback
-- WS 事件分发（可模拟）
+## 13. 安全
 
-### 13.2 集成测试
-- 启动服务，调用 HTTP API
-- 初始化空 DB → 自动迁移 → CRUD
-- 升级 schema → 再次启动 → 验证迁移幂等
-- 并发启动迁移锁测试（两个进程/两个实例模拟）
+- 默认绑定 `127.0.0.1`，生产环境建议置于反向代理之后。
+- 默认限制请求体大小与 WebSocket 最大 payload。
+- 生产环境错误响应不泄露堆栈。
+- SQL 参数必须绑定，不提供字符串拼接辅助。
+- 迁移默认 `safeOnly`，避免误删数据。
+- 静态资源严格校验路径，阻止目录穿越。
+- WebSocket 建议使用 `authorize` 钩子并限制消息大小。
 
----
+## 14. 测试策略
 
-## 14. 性能策略（边缘友好）
+### 14.1 单元测试
 
-- 路由与静态资源尽量避免额外分配
-- prepared statement 缓存
-- 静态资源使用 `Response` 流/byte array，尽量减少拷贝
-- 默认开启 WAL，提升并发读写体验
-- 为慢查询提供提示（explain 可选）
+- 路由匹配、参数解码、405 与 HEAD 回退。
+- 中间件顺序与错误边界。
+- 配置合并、环境变量优先级与非法值校验。
+- schema 校验、迁移计划与幂等性。
+- 事务、嵌套事务与并发排队。
+- 静态资源缓存头、ETag、SPA fallback 与路径安全。
+- WebSocket 房间、广播、鉴权和错误处理。
+- 日志格式与请求上下文。
 
----
+### 14.2 集成测试
 
-## 15. 版本化与兼容性策略
+- 启动服务并调用 HTTP API。
+- 空数据库启动 → 自动迁移 → CRUD。
+- 修改 schema 后重启 → 追加迁移且幂等。
+- 多实例并发迁移。
+- 单文件构建后运行，并验证静态资源、数据库和参数优先级。
 
-- 框架自身语义化版本（semver）
-- 迁移机制必须向后兼容：旧 DB 在新版本可自动升级
-- 对 schema DSL 的破坏性变更需要提供迁移工具或兼容层
+## 15. 性能策略
 
----
+- 路由在注册时预编译，避免请求期重复解析。
+- prepared statement 缓存。
+- 静态资源直接返回字节或 `BunFile`，减少拷贝。
+- WAL + `busy_timeout` 提升并发读写体验。
+- 慢查询提示便于定位性能问题。
+- WebSocket 房间使用集合索引，广播只遍历目标连接。
 
-## 16. 里程碑（不含日期）
+## 16. 兼容性与版本化
 
-### Milestone A — MVP（可用最小闭环）
-- App 生命周期 + 配置 + 日志
-- HTTP 路由 + middleware
-- SQLite 初始化 + 自动迁移（追加式）
+- 框架自身使用语义化版本。
+- 迁移机制必须向后兼容：旧数据库在新版本启动时可自动升级。
+- schema DSL 的破坏性变更需要提供迁移工具或兼容层。
+- 配置文件与公共导出变更应尽量保持向后兼容。
+
+## 17. 里程碑
+
+里程碑用于划分能力边界，不绑定具体日期。
+
+### A. 最小可用闭环
+
+- App 生命周期、配置、日志
+- HTTP 路由与中间件
+- SQLite 初始化与追加式自动迁移
 - 静态资源 disk 模式
-- WS 基础 echo 示例
-- CLI：init / dev
-- 示例项目跑通
+- WebSocket 基础示例
+- CLI：`init` / `dev`
+- 示例项目可运行
 
-### Milestone B — 单文件发布闭环
-- 静态资源 embedded 模式 + manifest
-- CLI：build（编排构建、生成 manifest）
+### B. 单文件发布
+
+- 静态资源 embedded 模式与 manifest
+- CLI：`build`
 - 生产缓存策略、ETag、304
 - 数据目录默认策略与可配置
-- 文档：部署与升级说明
+- 部署与升级文档
 
-### Milestone C — 可靠性增强
-- 迁移锁（sqlite 方案）与并发启动测试
-- 迁移 check 模式、诊断命令 doctor
+### C. 可靠性增强
+
+- 迁移并发保护
+- 迁移 check 模式与 `doctor`
 - 慢查询日志
 - 优雅退出与资源清理
 
-### Milestone D — 应用骨架能力（可选增强）
-- 内置 auth/session（cookie + sqlite）
-- RBAC（基础角色权限）
-- 审计日志表与事件流（可选）
+### D. 应用骨架（可选）
 
----
+- 内置 auth/session（cookie + SQLite）
+- 基础 RBAC
+- 审计日志与事件流
 
-## 17. 风险与应对
+## 18. 风险与应对
 
-1. **“自动迁移”复杂度**  
-   - 应对：默认只做追加式变更；复杂变更走手写迁移（后续增强）。
+1. **自动迁移复杂度**
+   - 默认只做追加式变更。
+   - 复杂变更使用手写 SQL 或重建表流程。
 
-2. **SQLite 并发与锁**  
-   - 应对：WAL + busy_timeout；迁移使用 `BEGIN IMMEDIATE`；提供诊断输出。
+2. **SQLite 并发与锁**
+   - WAL + `busy_timeout`。
+   - 迁移使用 `BEGIN IMMEDIATE`，并在事务内复核计划。
+   - `doctor` 提供数据库与目录诊断。
 
-3. **静态资源内嵌与缓存正确性**  
-   - 应对：manifest 驱动、ETag 校验、测试覆盖 304/缓存头。
+3. **静态资源缓存正确性**
+   - manifest 驱动。
+   - ETag 与缓存头有测试覆盖。
+   - 哈希识别只依赖文件名中的内容哈希 token。
 
-4. **Windows 路径与权限问题**  
-   - 应对：统一 dataDir 解析与目录创建；doctor 命令检测可写性。
+4. **Windows 路径与权限**
+   - 统一数据目录解析与目录创建。
+   - `doctor` 检查目录可写性。
+   - 构建时根据目标平台补充 `.exe`。
 
----
+## 19. 对外 API
 
-## 18. 代码组织建议（框架仓库）
+### 19.1 创建应用
 
-```txt
-mubo/
-  packages/
-    mubo/                 # 运行时框架包
-      src/
-        core/
-        http/
-        ws/
-        db/
-        static/
-        index.ts
-    create-mubo/          # bunx mubo init 模板与逻辑
-    mubo-cli/             # bunx mubo 命令实现（调度/生成）
-  examples/
-    minimal/
-  docs/
-  LICENSE
-  README.md
-  PLAN.md
-```
-
----
-
-## 19. 对外 API 草案（便于实现对齐）
-
-### 19.1 createMuboApp
 ```ts
-const app = await createMuboApp(config);
+const app = await createMuboApp(config, { cwd, env, argv });
 await app.start();
 await app.stop();
 ```
 
 ### 19.2 HTTP
+
 ```ts
-app.use(mw);
+app.use(middleware);
 app.get(path, handler);
 app.post(path, handler);
+app.put(path, handler);
+app.patch(path, handler);
+app.delete(path, handler);
+app.head(path, handler);
+app.options(path, handler);
 ```
 
-### 19.3 DB
+### 19.3 数据库
+
 ```ts
 app.db.exec(sql);
-app.db.query(sql).get(params);
+app.db.query(sql).get(...params);
+app.db.query(sql).all(...params);
+app.db.query(sql).run(...params);
 app.db.transaction((tx) => { ... });
-app.db.migrate(); // 启动时自动调用
+app.db.migrate(schema, options);
 ```
 
-### 19.4 WS
+### 19.4 WebSocket
+
 ```ts
-app.ws("/ws", { onConnect, onMessage, onClose });
+app.ws("/ws", { authorize, onConnect, onMessage, onClose, onError });
 ```
 
-### 19.5 Static
+### 19.5 静态资源
+
 ```ts
 app.static({ mode: "embedded", spaFallback: true });
 ```
 
----
+### 19.6 Schema
 
-## 20. 完成标准（Definition of Done）
+```ts
+const schema = defineSchema({ tables: { ... } });
+```
 
-- 新建项目：`mubo init` 后可 `dev` 启动并访问 `/healthz`
-- SQLite：首次启动自动建表；修改 schema 后重启可自动追加迁移且幂等
-- WebSocket：可连接、收发消息、断线释放资源
-- 静态资源：生产模式支持缓存头与 ETag；SPA fallback 可用
-- 单文件：构建后仅分发一个可执行文件即可运行（DB 自动落地到 dataDir）
-- 文档：README + 部署 + 迁移策略说明齐全
-- 测试：核心模块单测与至少一条集成测试通过
+## 20. 完成标准
+
+- `mubo init` 后可启动并访问 `/healthz`。
+- 首次启动自动建表；schema 变更后重启可追加迁移且幂等。
+- WebSocket 可连接、收发消息，断线后释放房间资源。
+- 静态资源支持缓存头、ETag 与 SPA fallback。
+- 构建后仅分发一个可执行文件即可运行，数据库自动落地。
+- 核心模块单测与至少一条集成测试通过。
+- README、配置说明、迁移策略和部署说明齐全。

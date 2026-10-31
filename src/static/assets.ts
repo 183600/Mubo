@@ -76,6 +76,14 @@ export function getEmbeddedAssets(): EmbeddedAssets | undefined {
   return (globalThis as Record<string, unknown>)[GLOBAL_ASSETS_KEY] as EmbeddedAssets | undefined;
 }
 
+function assetMetadata(
+  asset: EmbeddedAsset | string | Uint8Array | ArrayBuffer,
+): EmbeddedAsset | undefined {
+  return typeof asset === "object" && !(asset instanceof Uint8Array) && !(asset instanceof ArrayBuffer)
+    ? asset
+    : undefined;
+}
+
 function decodeAsset(asset: EmbeddedAsset | string | Uint8Array | ArrayBuffer): Uint8Array {
   if (asset instanceof Uint8Array) return asset;
   if (asset instanceof ArrayBuffer) return new Uint8Array(asset);
@@ -198,7 +206,7 @@ export class StaticAssets {
     pathname: string,
     allowSpaFallback = true,
   ): { asset: EmbeddedAsset | string | Uint8Array | ArrayBuffer; path: string } | null {
-    let key = normalizeKey(pathname);
+    let key: string;
     try {
       key = normalizeKey(decodeURIComponent(pathname));
     } catch {
@@ -236,14 +244,10 @@ export class StaticAssets {
     const { asset, path: finalPath } = found;
 
     const bytes = decodeAsset(asset);
-    const type =
-      typeof asset === "object" && !(asset instanceof Uint8Array) && !(asset instanceof ArrayBuffer)
-        ? asset.type
-        : undefined;
+    const metadata = assetMetadata(asset);
+    const type = metadata?.type;
     const etag =
-      typeof asset === "object" && !(asset instanceof Uint8Array) && !(asset instanceof ArrayBuffer) && asset.etag
-        ? asset.etag
-        : `"${new Bun.CryptoHasher("sha256").update(bytes).digest("hex").slice(0, 20)}"`;
+      metadata?.etag || `"${new Bun.CryptoHasher("sha256").update(bytes).digest("hex").slice(0, 20)}"`;
     return this.respond(request, finalPath, bytes, etag, type ?? contentTypeFor(finalPath), bytes.byteLength);
   }
 
@@ -315,8 +319,7 @@ export class StaticAssets {
     if (this.assets.size > 0) {
       try {
         const found = this.findEmbedded(pathname);
-        if (found && found.path !== "/index.html") return true;
-        if (found && normalizeKey(pathname) === "/index.html") return true;
+        if (found) return found.path !== "/index.html" || normalizeKey(pathname) === "/index.html";
       } catch {
         return false;
       }

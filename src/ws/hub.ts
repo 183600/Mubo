@@ -1,5 +1,5 @@
 import type { ServerWebSocket } from "bun";
-import { MuboError } from "../core/errors.ts";
+import { errorMessage, MuboError } from "../core/errors.ts";
 import type { Logger } from "../core/logger.ts";
 
 export type WsPayload = string | ArrayBuffer | ArrayBufferView | Blob | unknown;
@@ -78,7 +78,7 @@ function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Log
     ws.send(serializePayload(data) as any);
     return true;
   } catch (error) {
-    logger?.warn("WebSocket send failed", { error: error instanceof Error ? error.message : String(error) });
+    logger?.warn("WebSocket send failed", { error: errorMessage(error) });
     return false;
   }
 }
@@ -173,24 +173,22 @@ export class WsRoomHub {
     if (members.size === 0) this.rooms.delete(room);
   }
 
-  publish(room: string, data: unknown, options: { except?: string } = {}): number {
-    const members = this.rooms.get(room);
-    if (!members) return 0;
+  private deliver(clients: Iterable<Client>, data: unknown, options: { except?: string } = {}): number {
     let sent = 0;
-    for (const client of members) {
+    for (const client of clients) {
       if (options.except && client.ctx.id === options.except) continue;
       if (safeSend(client.ws, data, this.logger)) sent++;
     }
     return sent;
   }
 
+  publish(room: string, data: unknown, options: { except?: string } = {}): number {
+    const members = this.rooms.get(room);
+    return members ? this.deliver(members, data, options) : 0;
+  }
+
   broadcast(data: unknown, options: { except?: string } = {}): number {
-    let sent = 0;
-    for (const client of this.clients.values()) {
-      if (options.except && client.ctx.id === options.except) continue;
-      if (safeSend(client.ws, data, this.logger)) sent++;
-    }
-    return sent;
+    return this.deliver(this.clients.values(), data, options);
   }
 
   pingAll(): void {

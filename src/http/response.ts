@@ -1,10 +1,9 @@
 import { isMuboError, type MuboError } from "../core/errors.ts";
 
-export interface JsonInit extends ResponseInit {}
+export type JsonInit = ResponseInit;
 
 function makeHeaders(headers: ResponseInit["headers"]): Headers {
-  const result = new Headers(headers as any);
-  return result;
+  return new Headers(headers as any);
 }
 
 export function jsonResponse(data: unknown, init: JsonInit = {}): Response {

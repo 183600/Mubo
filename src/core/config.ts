@@ -202,19 +202,37 @@ function readBoolean(value: string | undefined): boolean | undefined {
   throw new MuboError("CONFIG_ERROR", `Invalid boolean value: ${value}`);
 }
 
-function resolveEnvironment(env: Record<string, string | undefined>): string | undefined {
-  const explicit = env.MUBO_ENV?.trim();
-  if (explicit) {
-    if (explicit !== "development" && explicit !== "production" && explicit !== "test") {
-      throw new MuboError(
-        "CONFIG_ERROR",
-        `Invalid MUBO_ENV: ${explicit} (expected development, production or test)`,
-      );
-    }
-    return explicit;
+const APP_ENVIRONMENTS = ["development", "production", "test"] as const;
+const MIGRATION_MODES = ["apply", "check", "off"] as const;
+const STATIC_MODES = ["embedded", "disk", "off"] as const;
+
+function readChoice<T extends string>(
+  value: string | undefined,
+  label: string,
+  allowed: readonly T[],
+): T | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (!(allowed as readonly string[]).includes(trimmed)) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      `Invalid ${label}: ${trimmed} (expected ${allowed.join(", ")})`,
+    );
   }
+  return trimmed as T;
+}
+
+function requireChoice(name: string, value: unknown, allowed: readonly string[]): void {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw new MuboError("CONFIG_ERROR", `Invalid ${name}: ${String(value)}`);
+  }
+}
+
+function resolveEnvironment(env: Record<string, string | undefined>): string | undefined {
+  const explicit = readChoice(env.MUBO_ENV, "MUBO_ENV", APP_ENVIRONMENTS);
+  if (explicit) return explicit;
   const nodeEnv = env.NODE_ENV?.trim();
-  if (nodeEnv === "development" || nodeEnv === "production" || nodeEnv === "test") return nodeEnv;
+  if ((APP_ENVIRONMENTS as readonly string[]).includes(nodeEnv ?? "")) return nodeEnv;
   return undefined;
 }
 
@@ -314,18 +332,7 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
 
   const dbPath = env.MUBO_DB_PATH?.trim() || undefined;
   const busyTimeoutMs = readNumber(env.MUBO_BUSY_TIMEOUT_MS, "MUBO_BUSY_TIMEOUT_MS");
-  const migrationMode = env.MUBO_MIGRATIONS_MODE?.trim() || undefined;
-  if (
-    migrationMode !== undefined &&
-    migrationMode !== "apply" &&
-    migrationMode !== "check" &&
-    migrationMode !== "off"
-  ) {
-    throw new MuboError(
-      "CONFIG_ERROR",
-      `Invalid MUBO_MIGRATIONS_MODE: ${migrationMode} (expected apply, check or off)`,
-    );
-  }
+  const migrationMode = readChoice(env.MUBO_MIGRATIONS_MODE, "MUBO_MIGRATIONS_MODE", MIGRATION_MODES);
   const migrationTable = env.MUBO_MIGRATIONS_TABLE?.trim() || undefined;
   const safeOnly = readBoolean(env.MUBO_MIGRATIONS_SAFE_ONLY);
   if (dbPath || busyTimeoutMs !== undefined || migrationMode || migrationTable || safeOnly !== undefined) {
@@ -333,40 +340,19 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
       path: dbPath,
       busyTimeoutMs,
       migrations: {
-        mode:
-          migrationMode === "apply" || migrationMode === "check" || migrationMode === "off"
-            ? migrationMode
-            : undefined,
+        mode: migrationMode,
         table: migrationTable,
         safeOnly,
       },
     };
   }
 
-  const staticMode = env.MUBO_STATIC_MODE?.trim() || undefined;
-  if (
-    staticMode !== undefined &&
-    staticMode !== "embedded" &&
-    staticMode !== "disk" &&
-    staticMode !== "off"
-  ) {
-    throw new MuboError(
-      "CONFIG_ERROR",
-      `Invalid MUBO_STATIC_MODE: ${staticMode} (expected embedded, disk or off)`,
-    );
-  }
+  const staticMode = readChoice(env.MUBO_STATIC_MODE, "MUBO_STATIC_MODE", STATIC_MODES);
   const staticDir = env.MUBO_STATIC_DIR?.trim() || undefined;
   const spaFallback = readBoolean(env.MUBO_STATIC_SPA_FALLBACK);
-  if (
-    staticMode === "embedded" ||
-    staticMode === "disk" ||
-    staticMode === "off" ||
-    staticDir ||
-    spaFallback !== undefined
-  ) {
+  if (staticMode || staticDir || spaFallback !== undefined) {
     result.static = {
-      mode:
-        staticMode === "embedded" || staticMode === "disk" || staticMode === "off" ? staticMode : undefined,
+      mode: staticMode,
       dir: staticDir,
       spaFallback,
     };
@@ -556,31 +542,11 @@ export function resolveConfig(
   );
 
   if (!logJsonConfigured) merged.log.json = merged.app.env === "production";
-  if (merged.app.env !== "development" && merged.app.env !== "production" && merged.app.env !== "test") {
-    throw new MuboError("CONFIG_ERROR", `Invalid app environment: ${String(merged.app.env)}`);
-  }
-  if (!isLogLevel(merged.log.level)) {
-    throw new MuboError("CONFIG_ERROR", `Invalid log level: ${String(merged.log.level)}`);
-  }
-  if (
-    merged.db.migrations.mode !== "apply" &&
-    merged.db.migrations.mode !== "check" &&
-    merged.db.migrations.mode !== "off"
-  ) {
-    throw new MuboError(
-      "CONFIG_ERROR",
-      `Invalid migrations mode: ${String(merged.db.migrations.mode)}`,
-    );
-  }
-  if (merged.db.migrations.lock !== "file" && merged.db.migrations.lock !== "sqlite") {
-    throw new MuboError(
-      "CONFIG_ERROR",
-      `Invalid migrations lock: ${String(merged.db.migrations.lock)}`,
-    );
-  }
-  if (merged.static.mode !== "embedded" && merged.static.mode !== "disk" && merged.static.mode !== "off") {
-    throw new MuboError("CONFIG_ERROR", `Invalid static mode: ${String(merged.static.mode)}`);
-  }
+  requireChoice("app environment", merged.app.env, APP_ENVIRONMENTS);
+  requireChoice("log level", merged.log.level, ["debug", "info", "warn", "error"]);
+  requireChoice("migrations mode", merged.db.migrations.mode, MIGRATION_MODES);
+  requireChoice("migrations lock", merged.db.migrations.lock, ["file", "sqlite"]);
+  requireChoice("static mode", merged.static.mode, STATIC_MODES);
   if (merged.http.cors !== false) {
     const cors = merged.http.cors as unknown;
     if (typeof cors !== "object" || cors === null || Array.isArray(cors)) {
