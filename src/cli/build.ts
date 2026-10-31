@@ -145,7 +145,8 @@ export async function buildProject(options: BuildOptions = {}): Promise<BuildRes
     options.staticDir === undefined ? {} : { static: { dir: options.staticDir } },
     { cwd, env, argv: [], fileConfig: config },
   );
-  const staticDir = findStaticDir(cwd, config, resolved.static, env.MUBO_STATIC_DIR, options.staticDir);
+  const envStaticDir = env.MUBO_STATIC_DIR?.trim() || undefined;
+  const staticDir = findStaticDir(cwd, config, resolved.static, envStaticDir, options.staticDir);
   const assets = staticDir ? await collectAssets(staticDir) : {};
   const assetCount = Object.keys(assets).length;
   const generatedDir = join(cwd, ".mubo");

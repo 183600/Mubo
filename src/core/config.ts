@@ -298,19 +298,21 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
 
   const envName = resolveEnvironment(env);
   const app: NonNullable<MuboConfig["app"]> = {};
-  if (env.MUBO_APP_NAME) app.name = env.MUBO_APP_NAME;
+  const appName = env.MUBO_APP_NAME?.trim();
+  if (appName) app.name = appName;
   if (envName !== undefined) app.env = envName as "development" | "production" | "test";
   if (Object.keys(app).length > 0) set("app", app);
-  if (env.MUBO_DATA_DIR) result.dataDir = env.MUBO_DATA_DIR;
+  const dataDir = env.MUBO_DATA_DIR?.trim();
+  if (dataDir) result.dataDir = dataDir;
 
   const port = readNumber(env.MUBO_PORT, "MUBO_PORT");
-  const host = env.MUBO_HOST || undefined;
+  const host = env.MUBO_HOST?.trim() || undefined;
   const bodyLimit = readNumber(env.MUBO_BODY_LIMIT, "MUBO_BODY_LIMIT");
   if (port !== undefined || host !== undefined || bodyLimit !== undefined) {
     result.http = { port, host, bodyLimit };
   }
 
-  const dbPath = env.MUBO_DB_PATH;
+  const dbPath = env.MUBO_DB_PATH?.trim() || undefined;
   const busyTimeoutMs = readNumber(env.MUBO_BUSY_TIMEOUT_MS, "MUBO_BUSY_TIMEOUT_MS");
   const migrationMode = env.MUBO_MIGRATIONS_MODE?.trim() || undefined;
   if (
@@ -324,7 +326,7 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
       `Invalid MUBO_MIGRATIONS_MODE: ${migrationMode} (expected apply, check or off)`,
     );
   }
-  const migrationTable = env.MUBO_MIGRATIONS_TABLE;
+  const migrationTable = env.MUBO_MIGRATIONS_TABLE?.trim() || undefined;
   const safeOnly = readBoolean(env.MUBO_MIGRATIONS_SAFE_ONLY);
   if (dbPath || busyTimeoutMs !== undefined || migrationMode || migrationTable || safeOnly !== undefined) {
     result.db = {
@@ -353,7 +355,7 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
       `Invalid MUBO_STATIC_MODE: ${staticMode} (expected embedded, disk or off)`,
     );
   }
-  const staticDir = env.MUBO_STATIC_DIR;
+  const staticDir = env.MUBO_STATIC_DIR?.trim() || undefined;
   const spaFallback = readBoolean(env.MUBO_STATIC_SPA_FALLBACK);
   if (
     staticMode === "embedded" ||

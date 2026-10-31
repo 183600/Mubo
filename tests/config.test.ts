@@ -349,6 +349,58 @@ export default defineConfig({
     expect(config.ws.enabled).toBe(false);
   });
 
+  test("trims whitespace around environment paths, names and the migrations table", () => {
+    const config = resolveConfig(
+      {},
+      {
+        cwd: "/tmp/mubo-config",
+        env: {
+          MUBO_APP_NAME: "  spaced app  ",
+          MUBO_DATA_DIR: "  /tmp/mubo-data  ",
+          MUBO_DB_PATH: "  /tmp/mubo-data/app.sqlite  ",
+          MUBO_HOST: " 0.0.0.0 ",
+          MUBO_MIGRATIONS_TABLE: "  custom_migrations  ",
+          MUBO_STATIC_DIR: "  assets  ",
+        },
+        argv: [],
+      },
+    );
+    expect(config.app.name).toBe("spaced-app");
+    expect(config.dataDir).toBe("/tmp/mubo-data");
+    expect(config.db.path).toBe("/tmp/mubo-data/app.sqlite");
+    expect(config.http.host).toBe("0.0.0.0");
+    expect(config.db.migrations.table).toBe("custom_migrations");
+    expect(config.static.dir).toBe("/tmp/mubo-config/assets");
+
+    const blank = resolveConfig(
+      {
+        app: { name: "fallback" },
+        dataDir: "/tmp/fallback",
+        db: { path: ":memory:" },
+        http: { host: "127.0.0.1" },
+        static: { mode: "off" },
+      },
+      {
+        cwd: "/tmp/mubo-config",
+        env: {
+          MUBO_APP_NAME: "   ",
+          MUBO_DATA_DIR: "   ",
+          MUBO_DB_PATH: "   ",
+          MUBO_HOST: "   ",
+          MUBO_MIGRATIONS_TABLE: "   ",
+          MUBO_STATIC_DIR: "   ",
+        },
+        argv: [],
+      },
+    );
+    expect(blank.app.name).toBe("fallback");
+    expect(blank.dataDir).toBe("/tmp/fallback");
+    expect(blank.db.path).toBe(":memory:");
+    expect(blank.http.host).toBe("127.0.0.1");
+    expect(blank.db.migrations.table).toBe("_mubo_migrations");
+    expect(blank.static.dir).toBe("/tmp/mubo-config/public");
+  });
+
   test("bounds sanitized app names to a filesystem-safe length", () => {
     const name = sanitizeAppName(`${"a".repeat(80)}...`);
     expect(name.length).toBeLessThanOrEqual(64);
