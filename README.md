@@ -93,9 +93,20 @@ bun run build
 ### 诊断与迁移
 ```bash
 bunx mubo doctor          # Bun/SQLite/数据目录/端口检查
+bunx mubo doctor --json   # 机器可读的诊断输出
 bunx mubo migrate --check # 只检查是否有待执行的迁移
 bunx mubo migrate         # 显式执行迁移（应用启动时也会自动执行）
 ```
+
+### CLI 参数
+```bash
+mubo init <dir> [--force] [--install]
+mubo dev [--entry <file>] [--port <port>] [--host <host>] [--data-dir <dir>]
+mubo build [--entry <file>] [--outfile <file>] [--static-dir <dir>] [--target <target>] [--minify] [--config <file>]
+mubo migrate [--check] [--config <file>] [--data-dir <dir>]
+mubo doctor [--json] [--config <file>]
+```
+CLI 参数优先级最高；缺失的开关值或非法日志级别会直接报错，而不是静默忽略。
 
 ---
 
@@ -152,7 +163,9 @@ Mubo 应用的生命周期容器，负责：
 ### Static Assets
 - 开发时：直接从 `public/` 输出；需要代理前端 dev server 时可自行接入中间件
 - 生产时：将 `dist/client`（或配置路径）内嵌到二进制中并由 Bun.serve 输出
+- 支持目录索引（`/docs` 与 `/docs/` 都会尝试 `docs/index.html`）
 - 支持 SPA fallback（例如 `/app/*` 返回 `index.html`）
+- HTML 默认 `no-cache`；带内容哈希的静态资源默认一年 immutable；支持 `ETag` / `If-None-Match` / `304` 与 HEAD
 
 ---
 
@@ -183,7 +196,9 @@ await app.stop();
 
 ### HTTP Context
 
-`ctx.req`、`ctx.url`、`ctx.method`、`ctx.params`、`ctx.query`、`ctx.requestId`、`ctx.db`、`ctx.log`、`ctx.set/get`、`ctx.body()`、`ctx.text()`、`ctx.form()`、`ctx.json()`、`ctx.ok()`、`ctx.fail()`。
+`ctx.req`、`ctx.url`、`ctx.method`、`ctx.params`、`ctx.query`、`ctx.requestId`、`ctx.state`、`ctx.db`、`ctx.log`、`ctx.set/get`、`ctx.body()`、`ctx.text()`、`ctx.formData()`（别名 `ctx.form()`）、`ctx.json()`、`ctx.ok()`、`ctx.fail()`。
+
+请求体只会被读取一次并由上下文缓存；如果业务代码已经直接消费了 `ctx.req` 的流，再调用 `ctx.body()` / `ctx.text()` 会返回明确的 `BAD_REQUEST`，而不是底层流错误。
 
 未捕获的 `MuboError` 会转换为统一 JSON：`{ error: { code, message }, requestId }`，响应头同时包含 `x-request-id`。
 
@@ -201,11 +216,13 @@ app.db.transaction((db) => {
 app.db.migrate(schema, { mode: "check" });
 ```
 
-事务回调为同步时直接返回结果，为异步时返回 Promise；嵌套事务使用 SAVEPOINT。迁移默认只允许建表、加列和加索引，破坏性变更需手写迁移。
+事务回调为同步时直接返回结果，为异步时返回 Promise；嵌套事务使用 SAVEPOINT。迁移默认只允许建表、加列和加索引，破坏性变更需手写迁移。查询会复用缓存的 prepared statement；迁移 SQL 执行失败会回滚并抛出带语句上下文的 `MIGRATION_ERROR`。
 
 ### WebSocket Context
 
 `ctx.id`、`ctx.ip`、`ctx.url`、`ctx.user`、`ctx.state`、`ctx.rooms`、`ctx.send()`、`ctx.emit()`、`ctx.publish()`、`ctx.subscribe()`、`ctx.unsubscribe()`、`ctx.close()`。`emit()` 使用 `{ t: "event", e, d, id? }` 协议。
+
+启用 `http.trustProxy` 后，HTTP 日志与 WebSocket 的 `ctx.ip` 会优先使用 `x-forwarded-for`（首个地址）或 `x-real-ip`；默认关闭以避免伪造来源。
 
 ---
 
@@ -277,14 +294,32 @@ Mubo 的迁移目标是让“私有化单文件应用”具备：
 3. `mubo.config.ts` / `mubo.config.js`
 4. 默认值
 
-常见配置项：
-- `MUBO_PORT`：监听端口
-- `MUBO_HOST`：监听地址
-- `MUBO_DATA_DIR`：数据目录（DB、日志等）
-- `MUBO_DB_PATH`：SQLite 文件路径（默认 `<dataDir>/mubo.sqlite`）
-- `MUBO_STATIC_DIR`：静态资源目录（默认 `public`）
-- `MUBO_STATIC_MODE`：静态资源模式（`embedded` / `disk` / `off`）
-- `MUBO_LOG_LEVEL`：日志级别
+配置文件可用 `--config <file>` 指定；传入任意显式配置项时默认不读取文件。
+
+常见环境变量：
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `MUBO_APP_NAME` | 应用名（会清洗为安全目录名） | `mubo-app` |
+| `MUBO_ENV` | 运行环境（`development` / `production` / `test`） | `development` |
+| `MUBO_HOST` | 监听地址 | `127.0.0.1` |
+| `MUBO_PORT` | 监听端口 | `3000` |
+| `MUBO_BODY_LIMIT` | 请求体最大字节数 | `1048576` |
+| `MUBO_DATA_DIR` | 数据目录（DB、日志等） | 用户目录下的 `.mubo/<appName>` |
+| `MUBO_DB_PATH` | SQLite 文件路径 | `<dataDir>/mubo.sqlite` |
+| `MUBO_BUSY_TIMEOUT_MS` | SQLite busy timeout | `5000` |
+| `MUBO_MIGRATIONS_MODE` | `apply` / `check` / `off` | `apply` |
+| `MUBO_MIGRATIONS_SAFE_ONLY` | 仅允许追加式自动迁移 | `true` |
+| `MUBO_MIGRATIONS_TABLE` | 迁移历史表名 | `_mubo_migrations` |
+| `MUBO_STATIC_MODE` | `embedded` / `disk` / `off` | `disk` |
+| `MUBO_STATIC_DIR` | 静态资源目录 | `public` |
+| `MUBO_STATIC_SPA_FALLBACK` | 未命中静态资源时返回 `index.html` | `true` |
+| `MUBO_WS_ENABLED` | 启用 WebSocket | `true` |
+| `MUBO_WS_MAX_PAYLOAD` | WebSocket 最大消息字节数 | `1048576` |
+| `MUBO_LOG_LEVEL` | `debug` / `info` / `warn` / `error` | `info` |
+| `MUBO_LOG_JSON` | JSON 结构化日志 | 生产环境为 `true` |
+
+数值型配置（端口、body limit、超时、心跳、缓存时间等）会在启动前校验；非法值会以 `CONFIG_ERROR` 失败。
 
 ---
 
