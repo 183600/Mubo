@@ -124,13 +124,31 @@ function weakEtag(etag: string): string {
   return etag.trim().replace(/^W\//, "");
 }
 
+function splitEtags(header: string): string[] {
+  const tags: string[] = [];
+  let start = 0;
+  let quoted = false;
+  for (let index = 0; index < header.length; index++) {
+    const char = header[index];
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (char === "," && !quoted) {
+      const tag = header.slice(start, index).trim();
+      if (tag) tags.push(tag);
+      start = index + 1;
+    }
+  }
+  const tag = header.slice(start).trim();
+  if (tag) tags.push(tag);
+  return tags;
+}
+
 function etagMatches(header: string | null, etag: string): boolean {
   if (!header) return false;
   const current = weakEtag(etag);
-  return header
-    .split(",")
-    .map((part) => part.trim())
-    .some((part) => part === "*" || weakEtag(part) === current);
+  return splitEtags(header).some((part) => part === "*" || weakEtag(part) === current);
 }
 
 function isHead(request: Request): boolean {

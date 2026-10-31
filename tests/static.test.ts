@@ -414,4 +414,24 @@ describe("static assets", () => {
       expect(response?.headers.get("etag")).toBe('W/"weak-etag"');
     }
   });
+
+  test("does not split commas inside quoted ETags", async () => {
+    const dir = tempDir();
+    const assets = new StaticAssets(
+      {
+        mode: "embedded",
+        assets: { "/quoted.js": { data: "quoted", etag: '"quoted,comma"' } },
+      },
+      dir,
+    );
+    const url = "http://localhost/quoted.js";
+    for (const header of ['"quoted,comma"', `"other", "quoted,comma"`]) {
+      const response = await assets.handle(
+        new Request(url, { headers: { "if-none-match": header } }),
+        new URL(url),
+      );
+      expect(response?.status).toBe(304);
+      expect(response?.headers.get("etag")).toBe('"quoted,comma"');
+    }
+  });
 });
