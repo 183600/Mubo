@@ -84,6 +84,20 @@ export default defineConfig({
     await app.stop();
   });
 
+  test("reloads a config file after it changes", async () => {
+    const cwd = tempDir();
+    const file = join(cwd, "mubo.config.ts");
+    writeFileSync(file, `export default { app: { name: "first-file" } };\n`);
+    expect((await loadAndResolveConfig({}, { cwd, loadFile: true, env: {}, argv: [] })).app.name).toBe(
+      "first-file",
+    );
+
+    writeFileSync(file, `export default { app: { name: "second-file" } };\n`);
+    expect((await loadAndResolveConfig({}, { cwd, loadFile: true, env: {}, argv: [] })).app.name).toBe(
+      "second-file",
+    );
+  });
+
   test("ignores --config after the CLI separator", async () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "mubo.config.ts"), `export default { app: { name: "default-file" } };\n`);
@@ -291,6 +305,52 @@ export default defineConfig({
     const config = resolveConfig({}, { env: { MUBO_ENV: "", NODE_ENV: "production" }, argv: [] });
     expect(config.app.env).toBe("production");
     expect(config.log.json).toBe(true);
+
+    const spaced = resolveConfig(
+      {},
+      { env: { MUBO_ENV: "  test  ", NODE_ENV: "production" }, argv: [] },
+    );
+    expect(spaced.app.env).toBe("test");
+  });
+
+  test("rejects invalid MUBO_ENV values but ignores unknown NODE_ENV values", () => {
+    expect(() => resolveConfig({}, { env: { MUBO_ENV: "staging" }, argv: [] })).toThrow(
+      /Invalid MUBO_ENV/,
+    );
+    expect(() => resolveConfig({}, { env: { MUBO_ENV: " production-ish " }, argv: [] })).toThrow(
+      /Invalid MUBO_ENV/,
+    );
+    expect(resolveConfig({}, { env: { NODE_ENV: "staging" }, argv: [] }).app.env).toBe("development");
+  });
+
+  test("trims whitespace around environment values", () => {
+    const config = resolveConfig(
+      {},
+      {
+        env: {
+          MUBO_PORT: " 4321 ",
+          MUBO_BODY_LIMIT: " 2048 ",
+          MUBO_LOG_JSON: " yes ",
+          MUBO_LOG_LEVEL: " debug ",
+          MUBO_MIGRATIONS_MODE: " check ",
+          MUBO_STATIC_MODE: " off ",
+          MUBO_WS_ENABLED: " false ",
+        },
+        argv: [],
+      },
+    );
+    expect(config.http).toMatchObject({ port: 4321, bodyLimit: 2048 });
+    expect(config.log).toEqual({ level: "debug", json: true });
+    expect(config.db.migrations.mode).toBe("check");
+    expect(config.static.mode).toBe("off");
+    expect(config.ws.enabled).toBe(false);
+  });
+
+  test("bounds sanitized app names to a filesystem-safe length", () => {
+    const name = sanitizeAppName(`${"a".repeat(80)}...`);
+    expect(name.length).toBeLessThanOrEqual(64);
+    expect(name.endsWith(".")).toBe(false);
+    expect(sanitizeAppName(`${"b".repeat(63)}-`)).toHaveLength(63);
   });
 
   test("rejects invalid modes and log levels from explicit config", () => {

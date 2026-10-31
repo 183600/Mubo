@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { MuboSchema } from "../db/schema.ts";
@@ -184,17 +185,37 @@ export function mergeConfig<T>(base: T, override: unknown): T {
 }
 
 function readNumber(value: string | undefined, name: string): number | undefined {
-  if (value === undefined || value === "") return undefined;
-  const parsed = Number(value);
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  const parsed = Number(trimmed);
   if (!Number.isFinite(parsed)) throw new MuboError("CONFIG_ERROR", `${name} must be a number`);
   return parsed;
 }
 
 function readBoolean(value: string | undefined): boolean | undefined {
-  if (value === undefined || value === "") return undefined;
-  if (["1", "true", "yes", "on"].includes(value.toLowerCase())) return true;
-  if (["0", "false", "no", "off"].includes(value.toLowerCase())) return false;
+  if (value === undefined) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "") return undefined;
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
   throw new MuboError("CONFIG_ERROR", `Invalid boolean value: ${value}`);
+}
+
+function resolveEnvironment(env: Record<string, string | undefined>): string | undefined {
+  const explicit = env.MUBO_ENV?.trim();
+  if (explicit) {
+    if (explicit !== "development" && explicit !== "production" && explicit !== "test") {
+      throw new MuboError(
+        "CONFIG_ERROR",
+        `Invalid MUBO_ENV: ${explicit} (expected development, production or test)`,
+      );
+    }
+    return explicit;
+  }
+  const nodeEnv = env.NODE_ENV?.trim();
+  if (nodeEnv === "development" || nodeEnv === "production" || nodeEnv === "test") return nodeEnv;
+  return undefined;
 }
 
 function argvOverrides(argv: string[]): MuboConfig {
@@ -275,10 +296,10 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
     if (value !== undefined) result[key] = value;
   };
 
-  const envName = env.MUBO_ENV || env.NODE_ENV;
+  const envName = resolveEnvironment(env);
   const app: NonNullable<MuboConfig["app"]> = {};
   if (env.MUBO_APP_NAME) app.name = env.MUBO_APP_NAME;
-  if (envName === "development" || envName === "production" || envName === "test") app.env = envName;
+  if (envName !== undefined) app.env = envName as "development" | "production" | "test";
   if (Object.keys(app).length > 0) set("app", app);
   if (env.MUBO_DATA_DIR) result.dataDir = env.MUBO_DATA_DIR;
 
@@ -291,10 +312,9 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
 
   const dbPath = env.MUBO_DB_PATH;
   const busyTimeoutMs = readNumber(env.MUBO_BUSY_TIMEOUT_MS, "MUBO_BUSY_TIMEOUT_MS");
-  const migrationMode = env.MUBO_MIGRATIONS_MODE;
+  const migrationMode = env.MUBO_MIGRATIONS_MODE?.trim() || undefined;
   if (
     migrationMode !== undefined &&
-    migrationMode !== "" &&
     migrationMode !== "apply" &&
     migrationMode !== "check" &&
     migrationMode !== "off"
@@ -321,10 +341,9 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
     };
   }
 
-  const staticMode = env.MUBO_STATIC_MODE;
+  const staticMode = env.MUBO_STATIC_MODE?.trim() || undefined;
   if (
     staticMode !== undefined &&
-    staticMode !== "" &&
     staticMode !== "embedded" &&
     staticMode !== "disk" &&
     staticMode !== "off"
@@ -357,14 +376,14 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
     result.ws = { enabled: wsEnabled, maxPayloadBytes: wsMaxPayload };
   }
 
-  const logLevel = env.MUBO_LOG_LEVEL;
+  const logLevel = env.MUBO_LOG_LEVEL?.trim() || undefined;
   const logJson = readBoolean(env.MUBO_LOG_JSON);
-  if (logLevel !== undefined && logLevel !== "" && !isLogLevel(logLevel)) {
+  if (logLevel !== undefined && !isLogLevel(logLevel)) {
     throw new MuboError("CONFIG_ERROR", `Invalid MUBO_LOG_LEVEL: ${logLevel}`);
   }
-  if ((logLevel && isLogLevel(logLevel)) || logJson !== undefined) {
+  if (logLevel !== undefined || logJson !== undefined) {
     result.log = {
-      level: logLevel && isLogLevel(logLevel) ? logLevel : undefined,
+      level: logLevel !== undefined && isLogLevel(logLevel) ? logLevel : undefined,
       json: logJson,
     };
   }
@@ -375,7 +394,9 @@ export function sanitizeAppName(name: string): string {
   const cleaned = name
     .trim()
     .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^[.-]+|[.-]+$/g, "");
+    .replace(/^[.-]+|[.-]+$/g, "")
+    .slice(0, 64)
+    .replace(/[.-]+$/g, "");
   return cleaned || "mubo-app";
 }
 
@@ -410,6 +431,8 @@ export function defaultDataDir(appName: string, env: Record<string, string | und
   return join(homedir(), ".mubo", name);
 }
 
+const configRequire = createRequire(import.meta.url);
+
 export async function loadConfigFile(
   cwd: string,
   explicitFile?: string,
@@ -421,9 +444,9 @@ export async function loadConfigFile(
   for (const candidate of candidates) {
     if (!(await Bun.file(candidate).exists())) continue;
     try {
-      const module = (await import(`${Bun.pathToFileURL(candidate).href}?t=${Date.now()}`)) as {
-        default?: MuboConfig;
-      };
+      const resolved = configRequire.resolve(candidate);
+      delete configRequire.cache[resolved];
+      const module = configRequire(resolved) as { default?: MuboConfig };
       if (!isPlainObject(module.default)) {
         throw new Error("config file must have a default export object");
       }
@@ -444,11 +467,9 @@ export function resolveConfig(
 ): ResolvedMuboConfig {
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
-  const envName = env.MUBO_ENV || env.NODE_ENV;
-  const appEnv =
-    envName === "production" || envName === "test" || envName === "development"
-      ? envName
-      : "development";
+  const envName = resolveEnvironment(env);
+  const appEnv: "development" | "production" | "test" =
+    envName === "production" || envName === "test" ? envName : "development";
 
   const defaults: ResolvedMuboConfig = {
     app: { name: "mubo-app", env: appEnv },
