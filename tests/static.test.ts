@@ -84,6 +84,24 @@ describe("static assets", () => {
     expect(await response!.text()).not.toContain("root:");
   });
 
+  test("app.static configures static serving after creation", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "static-configure-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    expect(app.static({ mode: "embedded", spaFallback: false, assets: { "/hello.txt": "hello" } })).toBe(app);
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+    expect(await (await fetch(`${root}/hello.txt`)).text()).toBe("hello");
+    expect((await fetch(`${root}/missing`)).status).toBe(404);
+  });
+
   test("serves embedded assets without touching disk", async () => {
     const app = await createMuboApp(
       {

@@ -110,12 +110,12 @@ function isHead(request: Request): boolean {
 }
 
 export class StaticAssets {
-  private readonly mode: "embedded" | "disk" | "off";
-  private readonly root: string;
-  private readonly spaFallback: boolean;
-  private readonly assets: Map<string, EmbeddedAsset | string | Uint8Array | ArrayBuffer>;
-  private readonly immutableExtensions: Set<string>;
-  private readonly defaultMaxAgeSeconds: number;
+  private mode: "embedded" | "disk" | "off";
+  private root: string;
+  private spaFallback: boolean;
+  private assets: Map<string, EmbeddedAsset | string | Uint8Array | ArrayBuffer>;
+  private immutableExtensions: Set<string>;
+  private defaultMaxAgeSeconds: number;
 
   constructor(options: StaticAssetsOptions = {}, cwd = process.cwd()) {
     this.mode = options.mode ?? "disk";
@@ -125,6 +125,20 @@ export class StaticAssets {
     this.assets = normalizeAssets(options.assets ?? globalAssets);
     this.immutableExtensions = new Set(options.cache?.immutableExtensions ?? []);
     this.defaultMaxAgeSeconds = options.cache?.defaultMaxAgeSeconds ?? 3600;
+  }
+
+  configure(options: StaticAssetsOptions = {}, cwd = process.cwd()): this {
+    if (options.mode !== undefined) this.mode = options.mode;
+    if (options.dir !== undefined) this.root = resolve(cwd, options.dir);
+    if (options.spaFallback !== undefined) this.spaFallback = options.spaFallback;
+    if (options.assets !== undefined) this.assets = normalizeAssets(options.assets);
+    if (options.cache?.immutableExtensions !== undefined) {
+      this.immutableExtensions = new Set(options.cache.immutableExtensions);
+    }
+    if (options.cache?.defaultMaxAgeSeconds !== undefined) {
+      this.defaultMaxAgeSeconds = options.cache.defaultMaxAgeSeconds;
+    }
+    return this;
   }
 
   get enabled(): boolean {

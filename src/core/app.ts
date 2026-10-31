@@ -12,7 +12,7 @@ import type { MuboSchema } from "../db/schema.ts";
 import { createRequestContext, type MuboRequestContext } from "../http/context.ts";
 import { errorPayload, errorResponse, jsonResponse, textResponse } from "../http/response.ts";
 import { Router, type HttpMethod, type RouteHandler, type RouteMatch, type RouteMiddleware } from "../http/router.ts";
-import { StaticAssets } from "../static/assets.ts";
+import { StaticAssets, type StaticAssetsOptions } from "../static/assets.ts";
 import {
   WsRoomHub,
   type MuboWsContext,
@@ -77,7 +77,13 @@ export class MuboApp {
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private startedAt?: number;
 
-  constructor(config: ResolvedMuboConfig, logger: Logger, db: MuboDatabase, staticAssets: StaticAssets) {
+  constructor(
+    config: ResolvedMuboConfig,
+    logger: Logger,
+    db: MuboDatabase,
+    staticAssets: StaticAssets,
+    private readonly cwd = process.cwd(),
+  ) {
     this.config = config;
     this.logger = logger;
     this.db = db;
@@ -138,6 +144,11 @@ export class MuboApp {
 
   migrate(schema: MuboSchema | undefined = this.config.schema): ReturnType<MuboDatabase["migrate"]> {
     return this.db.migrate(schema ?? { tables: {} }, this.config.db.migrations);
+  }
+
+  static(options: StaticAssetsOptions = {}): this {
+    this.staticAssets.configure(options, this.cwd);
+    return this;
   }
 
   private async runMiddlewares(ctx: MuboRequestContext, terminal: () => Promise<Response>): Promise<Response> {
@@ -507,8 +518,9 @@ export async function createMuboApp(
     logger,
     schema: resolved.schema,
   });
-  const staticAssets = new StaticAssets(resolved.static, options.cwd ?? process.cwd());
-  return new MuboApp(resolved, logger, db, staticAssets);
+  const cwd = options.cwd ?? process.cwd();
+  const staticAssets = new StaticAssets(resolved.static, cwd);
+  return new MuboApp(resolved, logger, db, staticAssets, cwd);
 }
 
 export type { MuboConfig, ResolvedMuboConfig };
