@@ -220,7 +220,7 @@ export class MuboApp {
       try {
         user = await route.handlers.authorize(request, { path: route.path });
       } catch (error) {
-        this.logger.warn("WebSocket authorization failed", {
+        this.logger.child({ requestId }).warn("WebSocket authorization failed", {
           path: route.path,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -253,7 +253,7 @@ export class MuboApp {
       return;
     }
     const ctx = this.wsHub.add(ws, this, this.logger.child({ requestId: ws.data.requestId }), ws.data.ip);
-    this.logger.debug("WebSocket connected", { id: ctx.id, path: route.path, ip: ctx.ip });
+    ctx.log.debug("WebSocket connected", { id: ctx.id, path: route.path, ip: ctx.ip });
     if (route.handlers.onConnect) {
       this.runWsHandler(ctx, route.handlers, () => route.handlers.onConnect!(ctx));
     }
@@ -272,13 +272,15 @@ export class MuboApp {
     if (ctx && route?.handlers.onClose) {
       this.runWsHandler(ctx, route.handlers, () => route.handlers.onClose!(ctx, code, reason));
     }
-    this.logger.debug("WebSocket disconnected", { code, reason, path: ws.data.routePath });
+    const log = ctx?.log ?? this.logger.child({ requestId: ws.data.requestId });
+    log.debug("WebSocket disconnected", { code, reason, path: ws.data.routePath });
   }
 
   private handleWsError(ws: ServerWebSocket<WsSocketData>, error: Error): void {
     const route = this.wsRoutes.get(ws.data.routePath);
     const ctx = this.wsHub.getContext(ws);
-    this.logger.error("WebSocket error", {
+    const log = ctx?.log ?? this.logger.child({ requestId: ws.data.requestId });
+    log.error("WebSocket error", {
       path: ws.data.routePath,
       error: error.message,
     });
@@ -293,7 +295,7 @@ export class MuboApp {
     invoke: () => unknown | Promise<unknown>,
   ): void {
     const report = (error: unknown) => {
-      this.logger.error("WebSocket handler failed", {
+      ctx.log.error("WebSocket handler failed", {
         id: ctx.id,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -302,11 +304,11 @@ export class MuboApp {
         const handled = handlers.onError(ctx, error);
         if (handled instanceof Promise) {
           handled.catch((nested) =>
-            this.logger.error("WebSocket onError failed", { error: String(nested) }),
+            ctx.log.error("WebSocket onError failed", { error: String(nested) }),
           );
         }
       } catch (nested) {
-        this.logger.error("WebSocket onError failed", { error: String(nested) });
+        ctx.log.error("WebSocket onError failed", { error: String(nested) });
       }
     };
     try {
