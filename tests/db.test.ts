@@ -1090,6 +1090,7 @@ describe("database and automatic migrations", () => {
             id: { type: "integer", primaryKey: true },
             note: { type: "text", sqlDefault: "((')'))" },
             label: { type: "text", sqlDefault: "(replace('a)b', 'x', 'y'))" },
+            rank: { type: "text", sqlDefault: "((1 /* ) */))" },
           },
         },
       },
@@ -1144,6 +1145,35 @@ describe("database and automatic migrations", () => {
     });
     expect((await db.migrate(withAutoIncrement)).status).toBe("applied");
     expect((await db.migrate(withAutoIncrement)).status).toBe("none");
+
+    db.exec("CREATE TABLE commented (id INTEGER PRIMARY KEY /* AUTOINCREMENT */)");
+    const commented = defineSchema({
+      tables: { commented: { columns: { id: { type: "integer", primaryKey: true } } } },
+    });
+    expect((await db.migrate(commented)).status).toBe("none");
+    db.close();
+  });
+
+  test("ignores WHERE keywords inside index comments", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(
+      "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT); " +
+        "CREATE INDEX idx_users_email ON users(email) /* WHERE ignored */ WHERE email IS NOT NULL;",
+    );
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text" },
+          },
+          indexes: [
+            { name: "idx_users_email", columns: ["email"], where: "email IS NOT NULL" },
+          ],
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("none");
     db.close();
   });
 

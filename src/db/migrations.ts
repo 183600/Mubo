@@ -307,27 +307,41 @@ function indexOwner(db: MuboDatabase, index: string): string | undefined {
     .get(index)?.tbl_name;
 }
 
+function skipSqlIgnored(sql: string, index: number): number | undefined {
+  const char = sql[index];
+  if (char === "'" || char === '"' || char === "`") {
+    for (let cursor = index + 1; cursor < sql.length; cursor++) {
+      if (sql[cursor] !== char) continue;
+      if (sql[cursor + 1] === char) {
+        cursor++;
+        continue;
+      }
+      return cursor;
+    }
+    return sql.length - 1;
+  }
+  if (char === "[") {
+    const close = sql.indexOf("]", index + 1);
+    return close === -1 ? sql.length - 1 : close;
+  }
+  if (char === "-" && sql[index + 1] === "-") {
+    const newline = sql.indexOf("\n", index + 2);
+    return newline === -1 ? sql.length - 1 : newline;
+  }
+  if (char === "/" && sql[index + 1] === "*") {
+    const close = sql.indexOf("*/", index + 2);
+    return close === -1 ? sql.length - 1 : close + 1;
+  }
+  return undefined;
+}
+
 function hasKeyword(sql: string | null | undefined, keyword: string): boolean {
   if (!sql) return false;
   const target = keyword.toUpperCase();
-  let quote: string | undefined;
   for (let index = 0; index < sql.length; index++) {
-    const char = sql[index]!;
-    if (quote) {
-      if (char !== quote) continue;
-      if (sql[index + 1] === quote) {
-        index++;
-        continue;
-      }
-      quote = undefined;
-      continue;
-    }
-    if (char === "'" || char === '"' || char === "`") {
-      quote = char;
-      continue;
-    }
-    if (char === "[") {
-      quote = "]";
+    const skip = skipSqlIgnored(sql, index);
+    if (skip !== undefined) {
+      index = skip;
       continue;
     }
     if (sql.slice(index, index + target.length).toUpperCase() !== target) continue;
@@ -390,27 +404,14 @@ function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string
 
 function indexWhere(sql: string | null | undefined): string | undefined {
   if (!sql) return undefined;
-  let quote: string | undefined;
   let depth = 0;
   for (let index = 0; index < sql.length; index++) {
-    const char = sql[index]!;
-    if (quote) {
-      if (char !== quote) continue;
-      if (sql[index + 1] === quote) {
-        index++;
-        continue;
-      }
-      quote = undefined;
+    const skip = skipSqlIgnored(sql, index);
+    if (skip !== undefined) {
+      index = skip;
       continue;
     }
-    if (char === "'" || char === '"' || char === "`") {
-      quote = char;
-      continue;
-    }
-    if (char === "[") {
-      quote = "]";
-      continue;
-    }
+    const char = sql[index];
     if (char === "(") {
       depth++;
       continue;
@@ -441,27 +442,14 @@ function normalizeDefault(value: string | null | undefined): string | null {
   if (!text || text.toUpperCase() === "NULL") return null;
   while (text.startsWith("(") && text.endsWith(")")) {
     let depth = 0;
-    let quote: string | undefined;
     let wrapped = true;
     for (let index = 0; index < text.length; index++) {
-      const char = text[index]!;
-      if (quote) {
-        if (char !== quote) continue;
-        if (text[index + 1] === quote) {
-          index++;
-          continue;
-        }
-        quote = undefined;
+      const skip = skipSqlIgnored(text, index);
+      if (skip !== undefined) {
+        index = skip;
         continue;
       }
-      if (char === "'" || char === '"' || char === "`") {
-        quote = char;
-        continue;
-      }
-      if (char === "[") {
-        quote = "]";
-        continue;
-      }
+      const char = text[index];
       if (char === "(") depth++;
       else if (char === ")") depth--;
       if (depth === 0 && index > 0 && index < text.length - 1) {
