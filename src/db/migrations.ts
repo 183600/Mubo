@@ -124,6 +124,19 @@ function validateTable(name: string, table: TableDefinition): void {
     if (column.references) {
       quoteIdentifier(column.references.table);
       quoteIdentifier(column.references.column ?? "id");
+      const actions = ["CASCADE", "SET NULL", "RESTRICT", "NO ACTION"];
+      if (column.references.onDelete && !actions.includes(column.references.onDelete)) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Invalid ON DELETE action for ${name}.${columnName}: ${column.references.onDelete}`,
+        );
+      }
+      if (column.references.onUpdate && !actions.includes(column.references.onUpdate)) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Invalid ON UPDATE action for ${name}.${columnName}: ${column.references.onUpdate}`,
+        );
+      }
     }
   }
   for (const index of table.indexes ?? []) validateIndex(name, index);

@@ -298,6 +298,30 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects invalid foreign-key actions", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const invalid = defineSchema({
+      tables: {
+        parents: { columns: { id: { type: "integer", primaryKey: true } } },
+        children: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            parent_id: {
+              type: "integer",
+              references: {
+                table: "parents",
+                onDelete: "CASCADE; DROP TABLE parents" as never,
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(() => db.migrate(invalid)).toThrow(/Invalid ON DELETE action/);
+    expect(() => db.plan(invalid)).toThrow(/Invalid ON DELETE action/);
+    db.close();
+  });
+
   test("detects auto-increment changes on existing primary keys", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const plain = defineSchema({
