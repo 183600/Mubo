@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { createMuboApp, loadAndResolveConfig, resolveConfig } from "../src/index.ts";
 import { defaultDataDir, mergeConfig, sanitizeAppName } from "../src/core/config.ts";
 
@@ -96,6 +96,39 @@ export default defineConfig({
     expect((await loadAndResolveConfig({}, { cwd, loadFile: true, env: {}, argv: [] })).app.name).toBe(
       "second-file",
     );
+  });
+
+  test("loads config files and resolves defaults from a relative cwd", async () => {
+    const cwd = tempDir();
+    const relativeCwd = relative(process.cwd(), cwd);
+    writeFileSync(
+      join(cwd, "mubo.config.ts"),
+      `export default { app: { name: "relative-file" }, db: { path: ":memory:" } };\n`,
+    );
+    writeFileSync(
+      join(cwd, "custom.config.ts"),
+      `export default { app: { name: "relative-custom" }, db: { path: ":memory:" } };\n`,
+    );
+
+    const loaded = await loadAndResolveConfig(
+      {},
+      { cwd: relativeCwd, loadFile: true, env: { HOME: cwd }, argv: [] },
+    );
+    expect(loaded.app.name).toBe("relative-file");
+    expect(loaded.dataDir).toBe(defaultDataDir("relative-file", { HOME: cwd }));
+    expect(loaded.static.dir).toBe(join(cwd, "public"));
+
+    const custom = await loadAndResolveConfig(
+      {},
+      {
+        cwd: relativeCwd,
+        loadFile: true,
+        configFile: "custom.config.ts",
+        env: { HOME: cwd },
+        argv: [],
+      },
+    );
+    expect(custom.app.name).toBe("relative-custom");
   });
 
   test("ignores --config after the CLI separator", async () => {

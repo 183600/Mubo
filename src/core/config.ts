@@ -426,9 +426,10 @@ export async function loadConfigFile(
   cwd: string,
   explicitFile?: string,
 ): Promise<{ config: MuboConfig; path?: string }> {
+  const base = resolve(cwd);
   const candidates = explicitFile
-    ? [isAbsolute(explicitFile) ? explicitFile : resolve(cwd, explicitFile)]
-    : ["mubo.config.ts", "mubo.config.js", "mubo.config.mjs"].map((file) => join(cwd, file));
+    ? [isAbsolute(explicitFile) ? explicitFile : resolve(base, explicitFile)]
+    : ["mubo.config.ts", "mubo.config.js", "mubo.config.mjs"].map((file) => join(base, file));
 
   for (const candidate of candidates) {
     if (!(await Bun.file(candidate).exists())) continue;
@@ -454,7 +455,7 @@ export function resolveConfig(
   overrides: MuboConfig = {},
   options: ResolveConfigOptions & { fileConfig?: MuboConfig } = {},
 ): ResolvedMuboConfig {
-  const cwd = options.cwd ?? process.cwd();
+  const cwd = resolve(options.cwd ?? process.cwd());
   const env = options.env ?? process.env;
   const envName = resolveEnvironment(env);
   const appEnv: "development" | "production" | "test" =
