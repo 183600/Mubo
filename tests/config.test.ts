@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createMuboApp, resolveConfig } from "../src/index.ts";
+import { defaultDataDir, sanitizeAppName } from "../src/core/config.ts";
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -88,5 +89,47 @@ export default defineConfig({
     expect(() =>
       resolveConfig({ db: { migrations: { table: "bad-name;" } } }, { env: {}, argv: [] }),
     ).toThrow(/Invalid migrations table/);
+  });
+
+  test("sanitizes app names that could escape the default data directory", () => {
+    expect(sanitizeAppName("..")).toBe("mubo-app");
+    expect(sanitizeAppName("...")).toBe("mubo-app");
+    expect(sanitizeAppName("../escape")).toBe("escape");
+    expect(sanitizeAppName("---")).toBe("mubo-app");
+    expect(sanitizeAppName("  My App  ")).toBe("My-App");
+
+    const config = resolveConfig({ app: { name: ".." } }, { cwd: "/tmp", env: {}, argv: [] });
+    expect(config.app.name).toBe("mubo-app");
+    expect(config.dataDir).toBe(defaultDataDir("mubo-app", {}));
+  });
+
+  test("rejects out-of-range numeric settings", () => {
+    expect(() => resolveConfig({ http: { bodyLimit: 0 } }, { env: {}, argv: [] })).toThrow(
+      /Invalid body limit/,
+    );
+    expect(() => resolveConfig({ http: { cors: { origin: "*", maxAgeSeconds: -1 } } }, { env: {}, argv: [] })).toThrow(
+      /Invalid CORS max age/,
+    );
+    expect(() => resolveConfig({ db: { busyTimeoutMs: -1 } }, { env: {}, argv: [] })).toThrow(
+      /Invalid busy timeout/,
+    );
+    expect(() => resolveConfig({ db: { slowQueryMs: -1 } }, { env: {}, argv: [] })).toThrow(
+      /Invalid slow query threshold/,
+    );
+    expect(() => resolveConfig({ static: { cache: { defaultMaxAgeSeconds: -1 } } }, { env: {}, argv: [] })).toThrow(
+      /Invalid static max age/,
+    );
+    expect(() => resolveConfig({ ws: { maxPayloadBytes: 0 } }, { env: {}, argv: [] })).toThrow(
+      /Invalid WebSocket max payload/,
+    );
+    expect(() =>
+      resolveConfig({ ws: { heartbeat: { intervalMs: -1 } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid WebSocket heartbeat interval/);
+    expect(() => resolveConfig({ ws: { heartbeat: { timeoutMs: 0 } } }, { env: {}, argv: [] })).toThrow(
+      /Invalid WebSocket heartbeat timeout/,
+    );
+    expect(() => resolveConfig({ db: { busyTimeoutMs: 1.5 } }, { env: {}, argv: [] })).toThrow(
+      /Invalid busy timeout/,
+    );
   });
 });

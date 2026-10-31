@@ -289,8 +289,33 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
 }
 
 export function sanitizeAppName(name: string): string {
-  const cleaned = name.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  const cleaned = name
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "");
   return cleaned || "mubo-app";
+}
+
+function requireInteger(
+  name: string,
+  value: number,
+  constraints: { min?: number; exclusiveMin?: number; max?: number } = {},
+): void {
+  if (!Number.isInteger(value)) {
+    throw new MuboError("CONFIG_ERROR", `Invalid ${name}: ${value}`);
+  }
+  if (constraints.min !== undefined && value < constraints.min) {
+    throw new MuboError("CONFIG_ERROR", `Invalid ${name}: ${value} (must be >= ${constraints.min})`);
+  }
+  if (constraints.exclusiveMin !== undefined && value <= constraints.exclusiveMin) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      `Invalid ${name}: ${value} (must be > ${constraints.exclusiveMin})`,
+    );
+  }
+  if (constraints.max !== undefined && value > constraints.max) {
+    throw new MuboError("CONFIG_ERROR", `Invalid ${name}: ${value} (must be <= ${constraints.max})`);
+  }
 }
 
 export function defaultDataDir(appName: string, env: Record<string, string | undefined> = process.env): string {
@@ -392,9 +417,18 @@ export function resolveConfig(
   if (!Number.isInteger(merged.http.bodyLimit) || merged.http.bodyLimit <= 0) {
     throw new MuboError("CONFIG_ERROR", `Invalid body limit: ${merged.http.bodyLimit}`);
   }
+  if (merged.http.cors && merged.http.cors.maxAgeSeconds !== undefined) {
+    requireInteger("CORS max age", merged.http.cors.maxAgeSeconds, { min: 0 });
+  }
+  requireInteger("busy timeout", merged.db.busyTimeoutMs, { min: 0 });
+  requireInteger("slow query threshold", merged.db.slowQueryMs, { min: 0 });
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(merged.db.migrations.table)) {
     throw new MuboError("CONFIG_ERROR", `Invalid migrations table name: ${merged.db.migrations.table}`);
   }
+  requireInteger("static max age", merged.static.cache.defaultMaxAgeSeconds, { min: 0 });
+  requireInteger("WebSocket max payload", merged.ws.maxPayloadBytes, { exclusiveMin: 0 });
+  requireInteger("WebSocket heartbeat interval", merged.ws.heartbeat.intervalMs, { min: 0 });
+  requireInteger("WebSocket heartbeat timeout", merged.ws.heartbeat.timeoutMs, { exclusiveMin: 0 });
   return merged;
 }
 
