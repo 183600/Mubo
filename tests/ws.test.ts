@@ -261,6 +261,16 @@ describe("WebSocket rooms and broadcasting", () => {
     expect(notUpgrade.status).toBe(426);
     expect(notUpgrade.headers.get("x-request-id")).toBe("ws-not-upgrade");
 
+    app.ws("/ws-http", {});
+    app.get("/ws-http", () => new Response("http"));
+    const wrongMethod = await fetch(`${base}/ws-http`, {
+      method: "POST",
+      headers: { "x-request-id": "ws-wrong-method" },
+    });
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.get("allow")).toContain("GET");
+    expect(wrongMethod.headers.get("x-request-id")).toBe("ws-wrong-method");
+
     const disabled = await createMuboApp(
       {
         app: { name: "ws-disabled-test", env: "test" },

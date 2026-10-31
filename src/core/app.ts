@@ -219,7 +219,7 @@ export class MuboApp {
     if (!route) return null;
     const upgrade = (request.headers.get("upgrade") ?? "").toLowerCase();
     if (upgrade !== "websocket") {
-      if (this.router.match(request.method, url.pathname).type === "match") return null;
+      if (this.router.match(request.method, url.pathname).type !== "not-found") return null;
       return textResponse("Expected WebSocket upgrade", {
         status: 426,
         headers: { upgrade: "websocket" },
