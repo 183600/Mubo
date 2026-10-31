@@ -48,6 +48,24 @@ export default defineConfig({
     expect(cliOverride.http.port).toBe(4300);
   });
 
+  test("honors --config when creating an app", async () => {
+    const cwd = tempDir();
+    writeFileSync(
+      join(cwd, "mubo.config.ts"),
+      `export default { app: { name: "default-file" } };\n`,
+    );
+    writeFileSync(
+      join(cwd, "custom.config.ts"),
+      `export default { app: { name: "custom-file" }, dataDir: ${JSON.stringify(join(cwd, "custom-data"))}, db: { path: ":memory:" }, static: { mode: "off" } };\n`,
+    );
+    const app = await createMuboApp(
+      {},
+      { cwd, argv: ["--config", "custom.config.ts"], env: { MUBO_LOG_LEVEL: "error" } },
+    );
+    expect(app.config.app.name).toBe("custom-file");
+    await app.stop();
+  });
+
   test("rejects invalid ports and migration table names", () => {
     expect(() => resolveConfig({ http: { port: 70000 } }, { env: {}, argv: [] })).toThrow(/Invalid HTTP port/);
     expect(() =>

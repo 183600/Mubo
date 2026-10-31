@@ -398,14 +398,30 @@ export function resolveConfig(
   return merged;
 }
 
+function configFileFromArgv(argv: string[]): string | undefined {
+  for (let index = 0; index < argv.length; index++) {
+    const token = argv[index];
+    if (token === undefined) continue;
+    if (token === "--config") {
+      const value = argv[index + 1];
+      if (value !== undefined && !value.startsWith("-")) return value;
+    } else if (token.startsWith("--config=")) {
+      return token.slice("--config=".length) || undefined;
+    }
+  }
+  return undefined;
+}
+
 export async function loadAndResolveConfig(
   overrides: MuboConfig = {},
   options: ResolveConfigOptions = {},
 ): Promise<ResolvedMuboConfig> {
   const cwd = options.cwd ?? process.cwd();
   if (!options.loadFile) return resolveConfig(overrides, options);
-  const { config: fileConfig } = await loadConfigFile(cwd, options.configFile);
-  return resolveConfig(overrides, { ...options, cwd, fileConfig });
+  const argv = options.argv ?? process.argv.slice(2);
+  const explicitFile = options.configFile ?? configFileFromArgv(argv);
+  const { config: fileConfig } = await loadConfigFile(cwd, explicitFile);
+  return resolveConfig(overrides, { ...options, cwd, argv, fileConfig });
 }
 
 export function ensureDataDir(dbPath: string, dataDir: string): void {
