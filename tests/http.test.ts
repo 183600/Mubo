@@ -61,6 +61,11 @@ describe("HTTP routing and middleware", () => {
       }),
     );
     app.post("/echo", async (ctx) => ctx.json({ body: await ctx.body() }));
+    app.post("/form", async (ctx) => {
+      const form = await ctx.form();
+      return ctx.json({ value: form.get("value") });
+    });
+    app.get("/files/*", (ctx) => ctx.json({ path: ctx.params["*"] }));
     app.get("/failure", () => {
       throw new MuboError("VALIDATION_ERROR", "broken input");
     });
@@ -81,6 +86,20 @@ describe("HTTP routing and middleware", () => {
       body: JSON.stringify({ hello: "world" }),
     });
     expect(await echo.json()).toEqual({ body: { hello: "world" } });
+
+    const form = await fetch(`${base(app)}/form`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "value=hello",
+    });
+    expect(await form.json()).toEqual({ value: "hello" });
+
+    const wildcard = await fetch(`${base(app)}/files/a/b.txt`);
+    expect(await wildcard.json()).toEqual({ path: "a/b.txt" });
+
+    const head = await fetch(`${base(app)}/users/42`, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
 
     const invalid = await fetch(`${base(app)}/echo`, {
       method: "POST",

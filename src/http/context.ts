@@ -19,6 +19,7 @@ export interface MuboRequestContext {
   body<T = unknown>(): Promise<T>;
   text(): Promise<string>;
   formData(): Promise<FormData>;
+  form(): Promise<FormData>;
   json(data: unknown, init?: ResponseInit): Response;
   textResponse(text: string, init?: ResponseInit): Response;
   ok(data: unknown, init?: ResponseInit): Response;
@@ -131,6 +132,9 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
     async formData() {
       const bytes = await readBytes();
       return (await new Response(bytes, { headers: deps.req.headers }).formData()) as unknown as FormData;
+    },
+    async form() {
+      return context.formData();
     },
     json(data, init) {
       return jsonResponse(data, init);
