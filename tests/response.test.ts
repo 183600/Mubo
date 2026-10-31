@@ -76,6 +76,28 @@ describe("response helpers", () => {
     expect(await html.text()).toBe("<h1>hello</h1>");
   });
 
+  test("fall back safely for unserializable details and invalid statuses", async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    for (const details of [circular, { value: 1n }]) {
+      const response = errorResponse(
+        "req-safe",
+        new MuboError("VALIDATION_ERROR", "bad input", { details }),
+      );
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({
+        error: { code: "VALIDATION_ERROR", message: "bad input" },
+        requestId: "req-safe",
+      });
+    }
+
+    const invalidStatus = errorResponse(
+      "req-status",
+      new MuboError("BAD_REQUEST", "bad", { status: 204 }),
+    );
+    expect(invalidStatus.status).toBe(500);
+  });
+
   test("turn errors into tagged JSON responses", async () => {
     const response = errorResponse("req-6", new MuboError("BAD_REQUEST", "bad"));
     expect(response.status).toBe(400);

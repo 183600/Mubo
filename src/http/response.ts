@@ -47,6 +47,30 @@ export function errorPayload(requestId: string, error: unknown, production = fal
 
 export function errorResponse(requestId: string, error: unknown, production = false): Response {
   const known = isMuboError(error);
-  const status = known ? error.status : 500;
-  return jsonResponse(errorPayload(requestId, error, production), { status });
+  const status =
+    known && Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
+      ? error.status
+      : 500;
+  let payload: ErrorPayload;
+  try {
+    payload = errorPayload(requestId, error, production);
+  } catch {
+    payload = { error: { code: "INTERNAL_ERROR", message: "Internal server error" }, requestId };
+  }
+  try {
+    return jsonResponse(payload, { status });
+  } catch {
+    const safe: ErrorPayload = {
+      error: { code: payload.error.code, message: payload.error.message },
+      requestId,
+    };
+    try {
+      return jsonResponse(safe, { status });
+    } catch {
+      return jsonResponse(
+        { error: { code: "INTERNAL_ERROR", message: "Internal server error" }, requestId },
+        { status },
+      );
+    }
+  }
 }
