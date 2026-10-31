@@ -121,6 +121,12 @@ function validateTable(name: string, table: TableDefinition): void {
     if (!column.type || !/^[A-Za-z][A-Za-z0-9 _()]*$/.test(String(column.type))) {
       throw new MuboError("MIGRATION_ERROR", `Invalid column type for ${name}.${columnName}: ${column.type}`);
     }
+    if (column.autoIncrement && !column.primaryKey) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `AUTOINCREMENT requires a primary key for ${name}.${columnName}`,
+      );
+    }
     if (column.references) {
       quoteIdentifier(column.references.table);
       quoteIdentifier(column.references.column ?? "id");
@@ -277,11 +283,29 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
   return { columns, indexes, foreignKeys, autoIncrement };
 }
 
+function validateSchema(schema: MuboSchema): void {
+  const indexOwners = new Map<string, string>();
+  for (const [tableName, table] of Object.entries(schema.tables)) {
+    validateTable(tableName, table);
+    for (const index of table.indexes ?? []) {
+      const owner = indexOwners.get(index.name);
+      if (owner !== undefined) {
+        const detail =
+          owner === tableName
+            ? `Index name ${index.name} is defined more than once on table ${tableName}`
+            : `Index name ${index.name} is used by both ${owner} and ${tableName}`;
+        throw new MuboError("MIGRATION_ERROR", detail);
+      }
+      indexOwners.set(index.name, tableName);
+    }
+  }
+}
+
 function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean): { statements: string[]; changes: string[] } {
   const statements: string[] = [];
   const changes: string[] = [];
+  validateSchema(schema);
   for (const [tableName, table] of Object.entries(schema.tables)) {
-    validateTable(tableName, table);
     if (!tableExists(db, tableName)) {
       statements.push(createTableSql(tableName, table));
       changes.push(`create table ${tableName}`);
@@ -387,7 +411,6 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
     }
 
     for (const index of table.indexes ?? []) {
-      validateIndex(tableName, index);
       const current = existing.indexes.get(index.name);
       if (!current) {
         statements.push(createIndexSql(tableName, index));

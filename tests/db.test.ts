@@ -325,6 +325,10 @@ describe("database and automatic migrations", () => {
         message: /Invalid column type/,
       },
       {
+        schema: { tables: { items: { columns: { id: { type: "integer", autoIncrement: true } } } } },
+        message: /AUTOINCREMENT requires a primary key/,
+      },
+      {
         schema: {
           tables: {
             items: {
@@ -355,6 +359,21 @@ describe("database and automatic migrations", () => {
           },
         },
         message: /Invalid SQL identifier/,
+      },
+      {
+        schema: {
+          tables: {
+            first: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "shared_idx", columns: ["id"] }],
+            },
+            second: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "shared_idx", columns: ["id"] }],
+            },
+          },
+        },
+        message: /Index name shared_idx is used by both first and second/,
       },
     ];
 
