@@ -61,6 +61,18 @@ describe("single-file build", () => {
     );
   });
 
+  test("uses dist/client when an equivalent configured public directory is missing", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "console.log('fallback');\n");
+    writeFileSync(join(cwd, "mubo.config.ts"), `export default { static: { dir: "./public" } };\n`);
+    mkdirSync(join(cwd, "dist", "client"), { recursive: true });
+    writeFileSync(join(cwd, "dist", "client", "index.html"), "built client");
+
+    const result = await buildProject({ cwd, outfile: "dist/fallback-app" });
+    expect(result.staticDir).toBe(join(cwd, "dist", "client"));
+    expect(result.assets).toBe(1);
+  }, 60_000);
+
   test("honors environment overrides for app name, static mode and directory", async () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "index.ts"), "console.log('env config');\n");

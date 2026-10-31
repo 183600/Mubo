@@ -89,7 +89,7 @@ function findStaticDir(
   const absolute = resolve(cwd, resolved.dir);
   if (isDirectory(absolute)) return absolute;
   if (configuredDir) {
-    if (configuredDir === "public") {
+    if (resolve(cwd, configuredDir) === resolve(cwd, "public")) {
       const fallback = resolve(cwd, "dist/client");
       if (isDirectory(fallback)) return fallback;
       return undefined;
