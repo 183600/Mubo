@@ -54,7 +54,7 @@ Mubo 的目标是：**把这些“基础设施成本”压到接近 0**，让一
 
 ## 快速开始
 
-> 说明：以下命令与脚手架在 `PLAN.md` 中定义；README 展示最终期望用法。
+> 说明：以下命令已由仓库内 CLI 实现；可直接参考 `examples/minimal` 的完整示例。
 
 ### 安装（开发者）
 ```bash
@@ -84,7 +84,16 @@ bun run build
 ### 运行发布产物
 ```bash
 ./dist/my-app
+# 指定数据目录（数据库会自动创建并迁移）
+./dist/my-app --data-dir /var/lib/my-app
 # 或 Windows 双击运行
+```
+
+### 诊断与迁移
+```bash
+bunx mubo doctor          # Bun/SQLite/数据目录/端口检查
+bunx mubo migrate --check # 只检查是否有待执行的迁移
+bunx mubo migrate         # 显式执行迁移（应用启动时也会自动执行）
 ```
 
 ---
@@ -217,6 +226,9 @@ Mubo 的迁移目标是让“私有化单文件应用”具备：
 - `MUBO_PORT`：监听端口
 - `MUBO_HOST`：监听地址
 - `MUBO_DATA_DIR`：数据目录（DB、日志等）
+- `MUBO_DB_PATH`：SQLite 文件路径（默认 `<dataDir>/mubo.sqlite`）
+- `MUBO_STATIC_DIR`：静态资源目录（默认 `public`）
+- `MUBO_STATIC_MODE`：静态资源模式（`embedded` / `disk` / `off`）
 - `MUBO_LOG_LEVEL`：日志级别
 
 ---
@@ -226,7 +238,8 @@ Mubo 的迁移目标是让“私有化单文件应用”具备：
 ### 单机私有化
 - 将编译出的单文件复制到目标机器
 - 双击或以 service 方式运行
-- 数据默认写入用户目录或应用目录（可配置）
+- 数据默认写入用户目录或应用目录（`--data-dir` / `MUBO_DATA_DIR` 可配置）
+- 首次启动自动创建数据库并执行迁移，升级时替换二进制即可
 
 ### 边缘环境
 - 适合部署到具备文件系统的边缘节点
