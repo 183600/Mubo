@@ -178,26 +178,37 @@ function argvOverrides(argv: string[]): MuboConfig {
     const equal = token.indexOf("=");
     const name = equal === -1 ? token.slice(2) : token.slice(2, equal);
     const inline = equal === -1 ? undefined : token.slice(equal + 1);
-    const next = () => inline ?? argv[++i];
+    const next = (flagName: string): string => {
+      if (inline !== undefined) return inline;
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith("-")) {
+        throw new MuboError("CONFIG_ERROR", `Missing value for --${flagName}`);
+      }
+      i++;
+      return value;
+    };
     switch (name) {
       case "data-dir":
-        result.dataDir = next();
+        result.dataDir = next(name);
         break;
       case "port":
-        result.http = { ...result.http, port: readNumber(next(), "--port") };
+        result.http = { ...result.http, port: readNumber(next(name), "--port") };
         break;
       case "host":
-        result.http = { ...result.http, host: next() };
+        result.http = { ...result.http, host: next(name) };
         break;
       case "db":
-        result.db = { ...result.db, path: next() };
+        result.db = { ...result.db, path: next(name) };
         break;
       case "static-dir":
-        result.static = { ...result.static, dir: next() };
+        result.static = { ...result.static, dir: next(name) };
         break;
       case "log-level": {
-        const level = next();
-        if (level !== undefined && isLogLevel(level)) result.log = { ...result.log, level };
+        const level = next(name);
+        if (!isLogLevel(level)) {
+          throw new MuboError("CONFIG_ERROR", `Invalid log level: ${level}`);
+        }
+        result.log = { ...result.log, level };
         break;
       }
       case "no-static":
@@ -279,6 +290,9 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
 
   const logLevel = env.MUBO_LOG_LEVEL;
   const logJson = readBoolean(env.MUBO_LOG_JSON);
+  if (logLevel !== undefined && logLevel !== "" && !isLogLevel(logLevel)) {
+    throw new MuboError("CONFIG_ERROR", `Invalid MUBO_LOG_LEVEL: ${logLevel}`);
+  }
   if ((logLevel && isLogLevel(logLevel)) || logJson !== undefined) {
     result.log = {
       level: logLevel && isLogLevel(logLevel) ? logLevel : undefined,
@@ -438,7 +452,10 @@ function configFileFromArgv(argv: string[]): string | undefined {
     if (token === undefined) continue;
     if (token === "--config") {
       const value = argv[index + 1];
-      if (value !== undefined && !value.startsWith("-")) return value;
+      if (value === undefined || value.startsWith("-")) {
+        throw new MuboError("CONFIG_ERROR", "Missing value for --config");
+      }
+      return value;
     } else if (token.startsWith("--config=")) {
       return token.slice("--config=".length) || undefined;
     }

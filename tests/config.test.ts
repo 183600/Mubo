@@ -103,6 +103,22 @@ export default defineConfig({
     expect(config.dataDir).toBe(defaultDataDir("mubo-app", {}));
   });
 
+  test("rejects missing flag values and invalid log levels", async () => {
+    expect(() => resolveConfig({}, { env: {}, argv: ["--port"] })).toThrow(/Missing value for --port/);
+    expect(() => resolveConfig({}, { env: {}, argv: ["--data-dir", "--port", "4000"] })).toThrow(
+      /Missing value for --data-dir/,
+    );
+    expect(() => resolveConfig({}, { env: {}, argv: ["--log-level", "verbose"] })).toThrow(
+      /Invalid log level/,
+    );
+    expect(() => resolveConfig({}, { env: { MUBO_LOG_LEVEL: "verbose" }, argv: [] })).toThrow(
+      /Invalid MUBO_LOG_LEVEL/,
+    );
+    await expect(createMuboApp({}, { cwd: tempDir(), argv: ["--config"], env: {} })).rejects.toThrow(
+      /Missing value for --config/,
+    );
+  });
+
   test("rejects out-of-range numeric settings", () => {
     expect(() => resolveConfig({ http: { bodyLimit: 0 } }, { env: {}, argv: [] })).toThrow(
       /Invalid body limit/,
