@@ -58,6 +58,18 @@ describe("logger", () => {
     expect(lines[0]).toContain('empty=""');
   });
 
+  test("escapes line separators in human-readable messages and field names", () => {
+    const logger = createLogger({ level: "debug", json: false });
+    const lines = captureLogs(() => {
+      logger.info("first\nsecond\u2028third", { "bad\nkey": "value" });
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("first\\nsecond\\u2028third");
+    expect(lines[0]).toContain("bad\\nkey=value");
+    expect(lines[0]!.split("\n")).toHaveLength(1);
+  });
+
   test("falls back to a serializable log entry when a field cannot be converted", () => {
     const logger = createLogger({ level: "debug", json: true });
     const bad = {

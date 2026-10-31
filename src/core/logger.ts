@@ -28,11 +28,19 @@ function formatValue(value: unknown): string {
   }
 }
 
+function oneLine(value: string): string {
+  return value
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 function humanLine(level: LogLevel, message: string, fields: Record<string, unknown>): string {
-  const parts = [new Date().toISOString(), level.toUpperCase().padEnd(5), message];
+  const parts = [new Date().toISOString(), level.toUpperCase().padEnd(5), oneLine(message)];
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined) continue;
-    parts.push(`${key}=${formatValue(value)}`);
+    parts.push(`${oneLine(key)}=${formatValue(value)}`);
   }
   return parts.join(" ");
 }
