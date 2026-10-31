@@ -60,11 +60,16 @@ function isRawPayload(data: unknown): data is string | ArrayBuffer | ArrayBuffer
 
 export function serializePayload(data: unknown): string | ArrayBuffer | ArrayBufferView | Blob {
   if (isRawPayload(data)) return data;
+  let json: string | undefined;
   try {
-    return JSON.stringify(data);
+    json = JSON.stringify(data);
   } catch (error) {
     throw new MuboError("VALIDATION_ERROR", "WebSocket payload is not JSON serializable", { cause: error });
   }
+  if (json === undefined) {
+    throw new MuboError("VALIDATION_ERROR", "WebSocket payload is not JSON serializable");
+  }
+  return json;
 }
 
 function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Logger): void {

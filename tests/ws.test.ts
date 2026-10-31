@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createMuboApp, type MuboApp } from "../src/index.ts";
+import { createMuboApp, serializePayload, type MuboApp } from "../src/index.ts";
+import { MuboError } from "../src/core/errors.ts";
 
 const apps: MuboApp[] = [];
 afterEach(async () => {
@@ -75,6 +76,22 @@ function closed(socket: WebSocket): Promise<{ code: number; reason: string }> {
     socket.addEventListener("close", (event) => resolve({ code: event.code, reason: event.reason }));
   });
 }
+
+describe("WebSocket payload serialization", () => {
+  test("passes raw payloads through and rejects values without JSON representations", () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    expect(serializePayload("raw")).toBe("raw");
+    expect(serializePayload(bytes)).toBe(bytes);
+    expect(serializePayload({ a: 1 })).toBe('{"a":1}');
+
+    expect(() => serializePayload(undefined)).toThrow(MuboError);
+    expect(() => serializePayload(() => undefined)).toThrow(MuboError);
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(() => serializePayload(circular)).toThrow(MuboError);
+  });
+});
 
 describe("WebSocket rooms and broadcasting", () => {
   test("authenticates, tracks rooms, broadcasts, and releases clients on close", async () => {
