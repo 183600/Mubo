@@ -1081,6 +1081,24 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("normalizes parenthesized defaults containing quoted parentheses", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            note: { type: "text", sqlDefault: "((')'))" },
+            label: { type: "text", sqlDefault: "(replace('a)b', 'x', 'y'))" },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("applied");
+    expect((await db.migrate(schema)).status).toBe("none");
+    db.close();
+  });
+
   test("treats parenthesized NULL sql defaults as no default", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const schema = defineSchema({

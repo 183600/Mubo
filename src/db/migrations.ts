@@ -441,9 +441,27 @@ function normalizeDefault(value: string | null | undefined): string | null {
   if (!text || text.toUpperCase() === "NULL") return null;
   while (text.startsWith("(") && text.endsWith(")")) {
     let depth = 0;
+    let quote: string | undefined;
     let wrapped = true;
     for (let index = 0; index < text.length; index++) {
-      const char = text[index];
+      const char = text[index]!;
+      if (quote) {
+        if (char !== quote) continue;
+        if (text[index + 1] === quote) {
+          index++;
+          continue;
+        }
+        quote = undefined;
+        continue;
+      }
+      if (char === "'" || char === '"' || char === "`") {
+        quote = char;
+        continue;
+      }
+      if (char === "[") {
+        quote = "]";
+        continue;
+      }
       if (char === "(") depth++;
       else if (char === ")") depth--;
       if (depth === 0 && index > 0 && index < text.length - 1) {
@@ -455,7 +473,7 @@ function normalizeDefault(value: string | null | undefined): string | null {
         break;
       }
     }
-    if (!wrapped) break;
+    if (!wrapped || depth !== 0) break;
     text = text.slice(1, -1).trim();
   }
   if (!text || text.toUpperCase() === "NULL") return null;
