@@ -65,6 +65,16 @@ function normalizeType(type: string): string {
   return type.trim().toUpperCase();
 }
 
+function findCaseInsensitive<T>(map: Map<string, T>, name: string): T | undefined {
+  const exact = map.get(name);
+  if (exact !== undefined) return exact;
+  const key = name.toLowerCase();
+  for (const [candidate, value] of map) {
+    if (candidate.toLowerCase() === key) return value;
+  }
+  return undefined;
+}
+
 function defaultSql(column: ColumnDefinition): string | null {
   if (column.sqlDefault !== undefined) return column.sqlDefault;
   if (column.default === undefined) return null;
@@ -121,6 +131,14 @@ function validateTable(name: string, table: TableDefinition): void {
   const entries = Object.entries(table.columns);
   if (entries.length === 0) {
     throw new MuboError("MIGRATION_ERROR", `Table ${name} must define at least one column`);
+  }
+  const columnKeys = new Set<string>();
+  for (const [columnName] of entries) {
+    const key = columnName.toLowerCase();
+    if (columnKeys.has(key)) {
+      throw new MuboError("MIGRATION_ERROR", `Table ${name} defines column ${columnName} more than once`);
+    }
+    columnKeys.add(key);
   }
   for (const [columnName, column] of entries) {
     if (!isObject(column)) {
@@ -202,7 +220,7 @@ function validateTable(name: string, table: TableDefinition): void {
   if (table.indexes !== undefined && !Array.isArray(table.indexes)) {
     throw new MuboError("MIGRATION_ERROR", `Indexes for ${name} must be an array`);
   }
-  const columnNames = new Set(entries.map(([columnName]) => columnName));
+  const columnNames = new Set(entries.map(([columnName]) => columnName.toLowerCase()));
   for (const index of table.indexes ?? []) validateIndex(name, index, columnNames);
 }
 
@@ -234,7 +252,7 @@ function validateIndex(table: string, index: IndexDefinition, columnNames: Set<s
       throw new MuboError("MIGRATION_ERROR", `Invalid SQL identifier: ${String(column)}`);
     }
     quoteIdentifier(column);
-    if (!columnNames.has(column)) {
+    if (!columnNames.has(column.toLowerCase())) {
       throw new MuboError(
         "MIGRATION_ERROR",
         `Index ${index.name} on ${table} references unknown column ${column}`,
@@ -259,20 +277,25 @@ function createIndexSql(table: string, index: IndexDefinition): string {
 
 function tableExists(db: MuboDatabase, table: string): boolean {
   return (
-    db.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !==
-    null
+    db
+      .query<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name COLLATE NOCASE = ?",
+      )
+      .get(table) !== null
   );
 }
 
 function indexOwner(db: MuboDatabase, index: string): string | undefined {
   return db
-    .query<{ tbl_name: string }>("SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = ?")
+    .query<{ tbl_name: string }>(
+      "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name COLLATE NOCASE = ?",
+    )
     .get(index)?.tbl_name;
 }
 
 function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string): void {
   const owner = indexOwner(db, index);
-  if (owner !== undefined && owner !== table) {
+  if (owner !== undefined && owner.toLowerCase() !== table.toLowerCase()) {
     throw new MuboError(
       "MIGRATION_ERROR",
       `Index ${index} already exists on table ${owner}; use a different name or a manual migration`,
@@ -362,7 +385,7 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
       .all()
       .map((item) => item.name ?? "");
     if (row.origin === "u" && row.unique === 1 && row.partial === 0 && indexColumns.length === 1) {
-      const column = columns.get(indexColumns[0]!);
+      const column = findCaseInsensitive(columns, indexColumns[0]!);
       if (column) column.unique = true;
     }
     if (row.origin === "pk" || row.name.startsWith("sqlite_autoindex")) continue;
@@ -395,7 +418,9 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
     foreignKeys.set(row.from, list);
   }
   const definition = db
-    .query<{ sql: string | null }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .query<{ sql: string | null }>(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name COLLATE NOCASE = ?",
+    )
     .get(table);
   const autoIncrement = /\bAUTOINCREMENT\b/i.test(definition?.sql ?? "");
   return { columns, indexes, foreignKeys, autoIncrement };
@@ -406,18 +431,25 @@ function validateSchema(schema: MuboSchema): void {
     throw new MuboError("MIGRATION_ERROR", "Invalid schema definition");
   }
   const indexOwners = new Map<string, string>();
+  const tableNames = new Set<string>();
   for (const [tableName, table] of Object.entries(schema.tables)) {
+    const tableKey = tableName.toLowerCase();
+    if (tableNames.has(tableKey)) {
+      throw new MuboError("MIGRATION_ERROR", `Table ${tableName} is defined more than once`);
+    }
+    tableNames.add(tableKey);
     validateTable(tableName, table);
     for (const index of table.indexes ?? []) {
-      const owner = indexOwners.get(index.name);
+      const key = index.name.toLowerCase();
+      const owner = indexOwners.get(key);
       if (owner !== undefined) {
         const detail =
-          owner === tableName
+          owner.toLowerCase() === tableKey
             ? `Index name ${index.name} is defined more than once on table ${tableName}`
             : `Index name ${index.name} is used by both ${owner} and ${tableName}`;
         throw new MuboError("MIGRATION_ERROR", detail);
       }
-      indexOwners.set(index.name, tableName);
+      indexOwners.set(key, tableName);
     }
   }
 }
@@ -440,7 +472,7 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
 
     const existing = introspectTable(db, tableName);
     for (const [columnName, column] of Object.entries(table.columns)) {
-      const current = existing.columns.get(columnName);
+      const current = findCaseInsensitive(existing.columns, columnName);
       if (!current) {
         if (column.primaryKey || column.autoIncrement || column.unique) {
           throw new MuboError(
@@ -480,15 +512,15 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
         );
       }
       const references = column.references;
-      const currentReferences = existing.foreignKeys.get(columnName) ?? [];
+      const currentReferences = findCaseInsensitive(existing.foreignKeys, columnName) ?? [];
       if (references) {
         const expectedColumn = references.column ?? "id";
         const expectedDelete = references.onDelete ?? "NO ACTION";
         const expectedUpdate = references.onUpdate ?? "NO ACTION";
         const sameReference = currentReferences.some(
           (reference) =>
-            reference.table === references.table &&
-            reference.column === expectedColumn &&
+            reference.table.toLowerCase() === references.table.toLowerCase() &&
+            reference.column.toLowerCase() === expectedColumn.toLowerCase() &&
             reference.onDelete === expectedDelete &&
             reference.onUpdate === expectedUpdate,
         );
@@ -532,7 +564,7 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
     }
 
     for (const index of table.indexes ?? []) {
-      const current = existing.indexes.get(index.name);
+      const current = findCaseInsensitive(existing.indexes, index.name);
       if (!current) {
         ensureIndexNameAvailable(db, tableName, index.name);
         statements.push(createIndexSql(tableName, index));
@@ -541,7 +573,9 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
       }
       const sameColumns =
         current.columns.length === index.columns.length &&
-        current.columns.every((column, position) => column === index.columns[position]);
+        current.columns.every(
+          (column, position) => column.toLowerCase() === index.columns[position]!.toLowerCase(),
+        );
       const sameWhere = normalizeWhere(current.where) === normalizeWhere(index.where);
       if (
         !sameColumns ||

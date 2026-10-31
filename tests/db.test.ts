@@ -264,6 +264,39 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("treats SQLite identifiers case-insensitively during planning", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    await db.migrate(
+      defineSchema({
+        tables: {
+          Users: {
+            columns: {
+              ID: { type: "integer", primaryKey: true, autoIncrement: true },
+              EMAIL: { type: "text", notNull: true },
+              CREATED_AT: { type: "integer", notNull: true },
+            },
+            indexes: [{ name: "IDX_USERS_CREATED", columns: ["CREATED_AT"] }],
+          },
+        },
+      }),
+    );
+
+    const equivalent = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true, autoIncrement: true },
+            email: { type: "text", notNull: true },
+            created_at: { type: "integer", notNull: true },
+          },
+          indexes: [{ name: "idx_users_created", columns: ["created_at"] }],
+        },
+      },
+    });
+    expect((await db.migrate(equivalent)).status).toBe("none");
+    db.close();
+  });
+
   test("rejects primary-key and foreign-key changes on existing columns", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const initial = defineSchema({
@@ -411,6 +444,36 @@ describe("database and automatic migrations", () => {
         message: /needs a columns array/,
       },
       { schema: { tables: { empty: { columns: {} } } }, message: /at least one column/ },
+      {
+        schema: {
+          tables: { items: { columns: { id: { type: "text" }, ID: { type: "text" } } } },
+        },
+        message: /defines column ID more than once/,
+      },
+      {
+        schema: {
+          tables: {
+            items: { columns: { id: { type: "text" } } },
+            Items: { columns: { id: { type: "text" } } },
+          },
+        },
+        message: /Table Items is defined more than once/,
+      },
+      {
+        schema: {
+          tables: {
+            first: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "shared_idx", columns: ["id"] }],
+            },
+            second: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "SHARED_IDX", columns: ["id"] }],
+            },
+          },
+        },
+        message: /Index name SHARED_IDX is used by both first and second/,
+      },
       {
         schema: {
           tables: {
