@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { MuboDatabase } from "../src/db/database.ts";
 import { defineSchema } from "../src/db/schema.ts";
 import { MuboError } from "../src/core/errors.ts";
+import { createLogger } from "../src/core/logger.ts";
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -296,6 +297,99 @@ describe("database and automatic migrations", () => {
       ),
     ).toThrow(/Primary-key change/);
     db.close();
+  });
+
+  test("rejects malformed schema definitions", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const cases: Array<{ schema: unknown; message: RegExp }> = [
+      { schema: { tables: { empty: { columns: {} } } }, message: /at least one column/ },
+      {
+        schema: {
+          tables: {
+            multi: {
+              columns: {
+                a: { type: "text", primaryKey: true },
+                b: { type: "text", primaryKey: true },
+              },
+            },
+          },
+        },
+        message: /multiple primary keys/,
+      },
+      {
+        schema: { tables: { "bad-name": { columns: { id: { type: "text" } } } } },
+        message: /Invalid SQL identifier/,
+      },
+      {
+        schema: { tables: { items: { columns: { id: { type: "text!" } } } } },
+        message: /Invalid column type/,
+      },
+      {
+        schema: {
+          tables: {
+            items: {
+              columns: { id: { type: "text", primaryKey: true, autoIncrement: true } },
+            },
+          },
+        },
+        message: /AUTOINCREMENT requires an INTEGER primary key/,
+      },
+      {
+        schema: {
+          tables: {
+            items: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "idx_items", columns: [] }],
+            },
+          },
+        },
+        message: /needs at least one column/,
+      },
+      {
+        schema: {
+          tables: {
+            items: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "bad name", columns: ["id"] }],
+            },
+          },
+        },
+        message: /Invalid SQL identifier/,
+      },
+    ];
+
+    for (const item of cases) {
+      expect(() => db.plan(item.schema as never)).toThrow(item.message);
+    }
+    db.close();
+  });
+
+  test("logs slow queries and rejects operations after close", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map((arg) => String(arg)).join(" "));
+    };
+    const db = new MuboDatabase({
+      path: ":memory:",
+      slowQueryMs: 0,
+      logger: createLogger({ level: "warn", json: true }),
+    });
+    try {
+      expect(db.query("SELECT 1 AS ok").get()).toEqual({ ok: 1 });
+    } finally {
+      console.warn = originalWarn;
+    }
+    expect(warnings).toHaveLength(1);
+    const entry = JSON.parse(warnings[0]!);
+    expect(entry.message).toBe("Slow SQL query");
+    expect(entry.sql).toBe("SELECT 1 AS ok");
+
+    db.close();
+    expect(() => db.query("SELECT 1").get()).toThrow(/Database is closed/);
+    expect(() => db.query("SELECT 1").iterate()).toThrow(/Database is closed/);
+    expect(() => db.exec("SELECT 1")).toThrow(/Database is closed/);
+    expect(db.ping()).toBe(false);
   });
 
   test("rejects invalid foreign-key actions", () => {
