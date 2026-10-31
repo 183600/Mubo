@@ -287,7 +287,8 @@ export class StaticAssets {
     const relativePath = decoded.replace(/^\/+/, "").replace(/\\/g, "/");
     const directory = relativePath === "" || relativePath.endsWith("/");
     const target = resolve(this.root, relativePath || ".");
-    if (target !== this.root && !target.startsWith(`${this.root}${sep}`)) {
+    const rootPrefix = this.root.endsWith(sep) ? this.root : `${this.root}${sep}`;
+    if (target !== this.root && !target.startsWith(rootPrefix)) {
       return { path: "", directory: false, error: textResponse("Forbidden", { status: 403 }) };
     }
     return { path: target, directory };

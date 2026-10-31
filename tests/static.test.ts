@@ -41,6 +41,17 @@ async function startStatic(dir: string, spaFallback = true): Promise<MuboApp> {
 }
 
 describe("static assets", () => {
+  test("accepts a filesystem root as the static directory", () => {
+    const assets = new StaticAssets({ mode: "disk", dir: "/" });
+    const resolved = (
+      assets as unknown as {
+        safeDiskPath(path: string): { path: string; error?: Response };
+      }
+    ).safeDiskPath("/etc/hosts");
+    expect(resolved.error).toBeUndefined();
+    expect(resolved.path).toBe("/etc/hosts");
+  });
+
   test("serves files with ETag, cache headers, 304 and SPA fallback", async () => {
     const dir = publicDir();
     const app = await startStatic(dir);
