@@ -446,6 +446,31 @@ export function resolveConfig(
   ) as ResolvedMuboConfig;
 
   if (!logJsonConfigured) merged.log.json = merged.app.env === "production";
+  if (merged.app.env !== "development" && merged.app.env !== "production" && merged.app.env !== "test") {
+    throw new MuboError("CONFIG_ERROR", `Invalid app environment: ${String(merged.app.env)}`);
+  }
+  if (!isLogLevel(merged.log.level)) {
+    throw new MuboError("CONFIG_ERROR", `Invalid log level: ${String(merged.log.level)}`);
+  }
+  if (
+    merged.db.migrations.mode !== "apply" &&
+    merged.db.migrations.mode !== "check" &&
+    merged.db.migrations.mode !== "off"
+  ) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      `Invalid migrations mode: ${String(merged.db.migrations.mode)}`,
+    );
+  }
+  if (merged.db.migrations.lock !== "file" && merged.db.migrations.lock !== "sqlite") {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      `Invalid migrations lock: ${String(merged.db.migrations.lock)}`,
+    );
+  }
+  if (merged.static.mode !== "embedded" && merged.static.mode !== "disk" && merged.static.mode !== "off") {
+    throw new MuboError("CONFIG_ERROR", `Invalid static mode: ${String(merged.static.mode)}`);
+  }
   merged.app.name = sanitizeAppName(merged.app.name);
   merged.dataDir = resolve(cwd, merged.dataDir || defaultDataDir(merged.app.name, env));
   if (!merged.db.path) merged.db.path = join(merged.dataDir, "mubo.sqlite");

@@ -215,6 +215,24 @@ export default defineConfig({
     );
   });
 
+  test("rejects invalid modes and log levels from explicit config", () => {
+    expect(() => resolveConfig({ app: { env: "staging" as never } }, { env: {}, argv: [] })).toThrow(
+      /Invalid app environment/,
+    );
+    expect(() => resolveConfig({ log: { level: "verbose" as never } }, { env: {}, argv: [] })).toThrow(
+      /Invalid log level/,
+    );
+    expect(() =>
+      resolveConfig({ db: { migrations: { mode: "sometimes" as never } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid migrations mode/);
+    expect(() =>
+      resolveConfig({ db: { migrations: { lock: "redis" as never } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid migrations lock/);
+    expect(() => resolveConfig({ static: { mode: "cdn" as never } }, { env: {}, argv: [] })).toThrow(
+      /Invalid static mode/,
+    );
+  });
+
   test("rejects invalid environment modes", () => {
     expect(() => resolveConfig({}, { env: { MUBO_MIGRATIONS_MODE: "sometimes" }, argv: [] })).toThrow(
       /Invalid MUBO_MIGRATIONS_MODE/,
