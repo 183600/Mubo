@@ -299,6 +299,26 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("accepts common parameterized column types", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const result = db.migrate(
+      defineSchema({
+        tables: {
+          prices: {
+            columns: {
+              id: { type: "integer", primaryKey: true },
+              amount: { type: "decimal(10,2)", notNull: true },
+            },
+          },
+        },
+      }),
+    );
+    expect(result.status).toBe("applied");
+    const columns = db.query<{ name: string; type: string }>('PRAGMA table_info("prices")').all();
+    expect(columns.find((column) => column.name === "amount")?.type).toBe("DECIMAL(10,2)");
+    db.close();
+  });
+
   test("rejects malformed schema definitions", () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const cases: Array<{ schema: unknown; message: RegExp }> = [

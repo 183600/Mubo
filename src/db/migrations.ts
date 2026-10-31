@@ -118,7 +118,7 @@ function validateTable(name: string, table: TableDefinition): void {
   }
   for (const [columnName, column] of entries) {
     quoteIdentifier(columnName);
-    if (!column.type || !/^[A-Za-z][A-Za-z0-9 _()]*$/.test(String(column.type))) {
+    if (!column.type || !/^[A-Za-z][A-Za-z0-9 _(),]*$/.test(String(column.type))) {
       throw new MuboError("MIGRATION_ERROR", `Invalid column type for ${name}.${columnName}: ${column.type}`);
     }
     if (column.autoIncrement && !column.primaryKey) {
