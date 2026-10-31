@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
-import { parseCliArgs } from "../src/cli/args.ts";
+import { boolFlag, parseCliArgs, stringFlag } from "../src/cli/args.ts";
 import { initProject } from "../src/cli/init.ts";
 
 const tempDirs: string[] = [];
@@ -74,6 +74,21 @@ describe("CLI", () => {
     expect(beforePositional.positionals).toEqual(["my-app"]);
     expect(beforePositional.flags.get("force")).toBe(true);
     expect(beforePositional.flags.get("install")).toBe(true);
+
+    const booleans = parseCliArgs(["dev", "--json=false", "--host", "127.0.0.1"]);
+    expect(boolFlag(booleans, "json")).toBe(false);
+    expect(boolFlag(booleans, "force")).toBe(false);
+    expect(stringFlag(booleans, "host")).toBe("127.0.0.1");
+    expect(stringFlag(booleans, "force")).toBeUndefined();
+
+    const separator = parseCliArgs(["migrate", "--", "--check", "file"]);
+    expect(separator.command).toBe("migrate");
+    expect(separator.positionals).toEqual(["--check", "file"]);
+    expect(separator.flags.size).toBe(0);
+
+    const empty = parseCliArgs([]);
+    expect(empty.command).toBeUndefined();
+    expect(empty.positionals).toEqual([]);
   });
 
   test("init creates a complete project and refuses to overwrite non-empty dirs", async () => {
