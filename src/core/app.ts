@@ -24,12 +24,16 @@ export interface CreateMuboAppOptions extends ResolveConfigOptions {}
 
 type WsRoute = { path: string; handlers: WsHandlers };
 
+function normalizeLookupPath(path: string): string {
+  const trimmed = path.replace(/^\/+|\/+$/g, "");
+  return trimmed ? `/${trimmed}` : "/";
+}
+
 function normalizeRoutePath(path: string): string {
   if (path.includes("?") || path.includes("#")) {
     throw new MuboError("CONFIG_ERROR", `WebSocket path must not contain a query or fragment: ${path}`);
   }
-  const trimmed = path.replace(/^\/+|\/+$/g, "");
-  return trimmed ? `/${trimmed}` : "/";
+  return normalizeLookupPath(path);
 }
 
 function decodeRoutePath(path: string): string {
@@ -236,8 +240,8 @@ export class MuboApp {
   ): Promise<Response | null> {
     if (this.wsRoutes.size === 0) return null;
     const route =
-      this.wsRoutes.get(normalizeRoutePath(url.pathname)) ??
-      this.wsRoutes.get(normalizeRoutePath(decodeRoutePath(url.pathname)));
+      this.wsRoutes.get(normalizeLookupPath(url.pathname)) ??
+      this.wsRoutes.get(normalizeLookupPath(decodeRoutePath(url.pathname)));
     if (!route) return null;
     const upgrade = (request.headers.get("upgrade") ?? "").toLowerCase();
     if (upgrade !== "websocket") {

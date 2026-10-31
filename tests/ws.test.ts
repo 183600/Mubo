@@ -183,6 +183,34 @@ describe("WebSocket route registration", () => {
     expect(await socket.next()).toEqual({ type: "ready" });
     socket.socket.close();
   });
+
+  test("does not intercept HTTP paths with encoded query or fragment characters", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-http-path-test", env: "test" },
+        db: { path: ":memory:" },
+        http: { port: 0 },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {});
+    app.get("/encoded%3Fpath", () => new Response("ok"));
+    await app.start();
+    apps.push(app);
+
+    const base = `http://127.0.0.1:${app.port}`;
+    const encoded = await fetch(`${base}/encoded%3Fpath`);
+    expect(encoded.status).toBe(200);
+    expect(await encoded.text()).toBe("ok");
+
+    for (const path of ["/ws%3Ffoo", "/anything%23frag"]) {
+      const response = await fetch(`${base}${path}`);
+      expect(response.status).toBe(404);
+    }
+  });
 });
 
 describe("WebSocket rooms and broadcasting", () => {
