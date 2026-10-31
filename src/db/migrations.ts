@@ -405,17 +405,21 @@ export function applyMigrations(
     () => {
       const fresh = planMigrations(db, schema, { table, safeOnly });
       if (fresh.statements.length === 0 || fresh.id === null) return;
+      for (const statement of fresh.statements) db.exec(statement);
+      const appliedAt = Date.now();
+      const meta = JSON.stringify({ statements: fresh.statements, changes: fresh.changes });
       const alreadyApplied = db
         .query<{ id: string }>(`SELECT id FROM ${quoteIdentifier(table)} WHERE id = ?`)
         .get(fresh.id);
-      if (alreadyApplied) return;
-      for (const statement of fresh.statements) db.exec(statement);
-      db.query(`INSERT INTO ${quoteIdentifier(table)} (id, applied_at, checksum, meta) VALUES (?, ?, ?, ?)`).run(
-        fresh.id,
-        Date.now(),
-        fresh.id,
-        JSON.stringify({ statements: fresh.statements, changes: fresh.changes }),
-      );
+      if (alreadyApplied) {
+        db.query(
+          `UPDATE ${quoteIdentifier(table)} SET applied_at = ?, checksum = ?, meta = ? WHERE id = ?`,
+        ).run(appliedAt, fresh.id, meta, fresh.id);
+      } else {
+        db.query(
+          `INSERT INTO ${quoteIdentifier(table)} (id, applied_at, checksum, meta) VALUES (?, ?, ?, ?)`,
+        ).run(fresh.id, appliedAt, fresh.id, meta);
+      }
       applied = fresh;
     },
     { immediate: true },

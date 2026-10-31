@@ -297,6 +297,40 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("repairs missing schema objects even when a plan was applied before", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text", notNull: true },
+          },
+          indexes: [{ name: "idx_users_email", columns: ["email"], unique: true }],
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("applied");
+    db.exec("DROP TABLE users");
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").get(),
+    ).toBeNull();
+
+    const repaired = await db.migrate(schema);
+    expect(repaired.status).toBe("applied");
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").get(),
+    ).toBeTruthy();
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_users_email'").get(),
+    ).toBeTruthy();
+    const history = db
+      .query<{ count: number }>("SELECT COUNT(*) AS count FROM _mubo_migrations")
+      .get();
+    expect(history?.count).toBe(1);
+    db.close();
+  });
+
   test("check mode reports pending migrations without applying them", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(baseSchema);
