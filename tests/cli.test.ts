@@ -88,10 +88,19 @@ describe("CLI", () => {
     for (const value of ["0", "false", "FALSE", "no", "off"]) {
       expect(boolFlag(parseCliArgs(["build", `--minify=${value}`]), "minify")).toBe(false);
     }
+    for (const value of [" 1 ", " TRUE ", "yes\t", " on "]) {
+      expect(boolFlag(parseCliArgs(["build", `--minify=${value}`]), "minify")).toBe(true);
+    }
+    for (const value of [" 0 ", " FALSE ", "no\t", " off "]) {
+      expect(boolFlag(parseCliArgs(["build", `--minify=${value}`]), "minify")).toBe(false);
+    }
     expect(() => boolFlag(parseCliArgs(["build", "--minify=maybe"]), "minify")).toThrow(
       /Invalid boolean value/,
     );
     expect(() => boolFlag(parseCliArgs(["build", "--minify="]), "minify")).toThrow(
+      /Missing value for --minify/,
+    );
+    expect(() => boolFlag(parseCliArgs(["build", "--minify=   "]), "minify")).toThrow(
       /Missing value for --minify/,
     );
 
