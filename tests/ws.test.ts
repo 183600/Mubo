@@ -195,13 +195,19 @@ describe("WebSocket rooms and broadcasting", () => {
     await app.start();
     apps.push(app);
 
-    const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
-    expect(await socket.next()).toEqual({ type: "ready" });
-    expect(await socket.next()).toEqual({ type: "error", message: "connect exploded" });
-    socket.socket.send("hi");
-    expect(await socket.next()).toEqual({ type: "message-seen" });
-    expect(await socket.next()).toEqual({ type: "error", message: "message exploded" });
-    expect(errors).toEqual(["connect exploded", "message exploded"]);
-    socket.socket.close();
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+      expect(await socket.next()).toEqual({ type: "ready" });
+      expect(await socket.next()).toEqual({ type: "error", message: "connect exploded" });
+      socket.socket.send("hi");
+      expect(await socket.next()).toEqual({ type: "message-seen" });
+      expect(await socket.next()).toEqual({ type: "error", message: "message exploded" });
+      expect(errors).toEqual(["connect exploded", "message exploded"]);
+      socket.socket.close();
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 });
