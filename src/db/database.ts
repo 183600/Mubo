@@ -60,7 +60,7 @@ export class MuboDatabase {
   private closed = false;
   private readonly statementCache = new Map<string, Statement<unknown, QueryArgument[]>>();
   private readonly transactionContext = new AsyncLocalStorage<TransactionContext>();
-  private readonly transactionQueue: Array<() => void> = [];
+  private readonly transactionQueue: QueuedTransaction[] = [];
   private transactionActive = false;
 
   constructor(options: MuboDatabaseOptions) {
@@ -381,31 +381,34 @@ export class MuboDatabase {
     immediate: boolean,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      this.transactionQueue.push(() => {
-        let result: T | Promise<T>;
-        try {
-          this.assertOpen();
-          result = this.executeTransaction(fn, 0, immediate);
-        } catch (error) {
-          reject(error);
-          this.finishTransaction();
-          return;
-        }
-        if (result instanceof Promise) {
-          result.then(
-            (value) => {
-              resolve(value);
-              this.finishTransaction();
-            },
-            (error) => {
-              reject(error);
-              this.finishTransaction();
-            },
-          );
-        } else {
-          resolve(result);
-          this.finishTransaction();
-        }
+      this.transactionQueue.push({
+        run: () => {
+          let result: T | Promise<T>;
+          try {
+            this.assertOpen();
+            result = this.executeTransaction(fn, 0, immediate);
+          } catch (error) {
+            reject(error);
+            this.finishTransaction();
+            return;
+          }
+          if (result instanceof Promise) {
+            result.then(
+              (value) => {
+                resolve(value);
+                this.finishTransaction();
+              },
+              (error) => {
+                reject(error);
+                this.finishTransaction();
+              },
+            );
+          } else {
+            resolve(result);
+            this.finishTransaction();
+          }
+        },
+        cancel: (error) => reject(error),
       });
       this.drainTransactions();
     });
@@ -416,7 +419,7 @@ export class MuboDatabase {
     const next = this.transactionQueue.shift();
     if (!next) return;
     this.transactionActive = true;
-    next();
+    next.run();
   }
 
   private finishTransaction(): void {
@@ -450,6 +453,11 @@ export class MuboDatabase {
     if (this.closed) return;
     this.closed = true;
     this.statementCache.clear();
+    const pending = this.transactionQueue.splice(0);
+    if (pending.length > 0) {
+      const error = new MuboError("MIGRATION_ERROR", "Database is closed");
+      for (const task of pending) task.cancel(error);
+    }
     this.raw.close(force);
   }
 }

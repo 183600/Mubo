@@ -1643,6 +1643,26 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects queued transactions when the database closes", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const active = db.transaction(async () => {
+      await gate;
+      return "active";
+    });
+    const queued = db.transaction(() => "queued");
+
+    db.close();
+    await expect(queued).rejects.toThrow(/Database is closed/);
+    release();
+    await expect(active).rejects.toThrow();
+  });
+
   test("isolates concurrent sibling nested transactions", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
