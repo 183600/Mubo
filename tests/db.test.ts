@@ -1339,6 +1339,54 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects non-constant defaults on added columns when the table has rows", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const initial = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+          },
+        },
+      },
+    });
+    await db.migrate(initial);
+    db.exec("INSERT INTO settings (id) VALUES (1)");
+
+    for (const sqlDefault of ["CURRENT_TIMESTAMP", "(lower('X'))", "(1 + 2)"]) {
+      const next = defineSchema({
+        tables: {
+          settings: {
+            columns: {
+              id: { type: "integer", primaryKey: true },
+              created: { type: "text", sqlDefault },
+            },
+          },
+        },
+      });
+      expect(() => db.plan(next)).toThrow(/non-constant default/);
+    }
+    db.close();
+
+    const empty = new MuboDatabase({ path: ":memory:" });
+    await empty.migrate(initial);
+    const next = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            created: { type: "text", sqlDefault: "CURRENT_TIMESTAMP" },
+          },
+        },
+      },
+    });
+    expect((await empty.migrate(next)).status).toBe("applied");
+    expect(
+      empty.query<{ name: string }>("PRAGMA table_info(settings)").all().map((column) => column.name),
+    ).toContain("created");
+    empty.close();
+  });
+
   test("rejects added NOT NULL columns when the SQL default is NULL", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(

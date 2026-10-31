@@ -530,6 +530,24 @@ function normalizeDefault(value: string | null | undefined): string | null {
   return text;
 }
 
+function isConstantAddColumnDefault(value: string): boolean {
+  const text = stripOuterParentheses(value);
+  if (/^(?:NULL|TRUE|FALSE)$/i.test(text)) return true;
+  if (
+    /^[+-]?(?:0x[0-9a-f]+|\d[\d_]*(?:\.[\d_]*)?(?:[eE][+-]?\d[\d_]*)?|\.[\d_]+(?:[eE][+-]?\d[\d_]*)?)$/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  if (/^'(?:[^']|'')*'$/s.test(text)) return true;
+  return /^[xX]'(?:[0-9a-fA-F]{2})*'$/.test(text);
+}
+
+function tableHasRows(db: MuboDatabase, table: string): boolean {
+  return db.query<{ present: number }>(`SELECT 1 AS present FROM ${quoteIdentifier(table)} LIMIT 1`).get() !== null;
+}
+
 function introspectTable(db: MuboDatabase, table: string): ExistingTable {
   const columns = new Map<string, ExistingColumn>();
   for (const row of db.query<{
@@ -700,13 +718,22 @@ function planForSchema(
             `Cannot automatically add primary-key, auto-increment or UNIQUE column ${tableName}.${columnName}; use a manual migration`,
           );
         }
-        const fallback = normalizeDefault(
-          column.sqlDefault === undefined ? defaultSql(column) : column.sqlDefault,
-        );
+        const defaultExpression = column.sqlDefault === undefined ? defaultSql(column) : column.sqlDefault;
+        const fallback = normalizeDefault(defaultExpression);
         if (column.notNull && fallback === null) {
           throw new MuboError(
             "MIGRATION_ERROR",
             `Cannot automatically add NOT NULL column ${tableName}.${columnName} without a default value`,
+          );
+        }
+        if (
+          defaultExpression !== null &&
+          !isConstantAddColumnDefault(defaultExpression) &&
+          tableHasRows(db, tableName)
+        ) {
+          throw new MuboError(
+            "MIGRATION_ERROR",
+            `Cannot automatically add column ${tableName}.${columnName} with a non-constant default to a non-empty table; use a manual migration`,
           );
         }
         statements.push(`ALTER TABLE ${quoteIdentifier(tableName)} ADD COLUMN ${columnSql(columnName, column, false)}`);
