@@ -38,17 +38,12 @@ export interface ContextDependencies {
 }
 
 export function createRequestContext(deps: ContextDependencies): MuboRequestContext {
-  let rawBody: Uint8Array | undefined;
-  let parsedBody: unknown;
-  let bodyParsed = false;
+  let rawBodyPromise: Promise<Uint8Array> | undefined;
+  let parsedBodyPromise: Promise<unknown> | undefined;
   const state: Record<string, unknown> = {};
 
-  const readBytes = async (): Promise<Uint8Array> => {
-    if (rawBody) return rawBody;
-    if (!deps.req.body) {
-      rawBody = new Uint8Array();
-      return rawBody;
-    }
+  const readBodyBytes = async (): Promise<Uint8Array> => {
+    if (!deps.req.body) return new Uint8Array();
     const declared = Number(deps.req.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > deps.bodyLimit) {
       throw new MuboError("PAYLOAD_TOO_LARGE", `Request body exceeds ${deps.bodyLimit} bytes`, {
@@ -76,34 +71,36 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
       merged.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    rawBody = merged;
     return merged;
   };
 
-  const parseBody = async (): Promise<unknown> => {
-    if (bodyParsed) return parsedBody;
-    bodyParsed = true;
+  const readBytes = (): Promise<Uint8Array> => {
+    rawBodyPromise ??= readBodyBytes();
+    return rawBodyPromise;
+  };
+
+  const parseBodyValue = async (): Promise<unknown> => {
     const bytes = await readBytes();
-    if (bytes.byteLength === 0) {
-      parsedBody = null;
-      return parsedBody;
-    }
+    if (bytes.byteLength === 0) return null;
     const contentType = (deps.req.headers.get("content-type") ?? "").toLowerCase();
     const text = new TextDecoder().decode(bytes);
     if (contentType.includes("application/json") || contentType.includes("+json")) {
       try {
-        parsedBody = JSON.parse(text);
+        return JSON.parse(text);
       } catch (error) {
         throw new MuboError("VALIDATION_ERROR", "Invalid JSON body", { cause: error });
       }
-    } else if (contentType.includes("application/x-www-form-urlencoded")) {
-      parsedBody = Object.fromEntries(new URLSearchParams(text));
-    } else if (contentType.startsWith("text/") || contentType === "") {
-      parsedBody = text;
-    } else {
-      parsedBody = bytes;
     }
-    return parsedBody;
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      return Object.fromEntries(new URLSearchParams(text));
+    }
+    if (contentType.startsWith("text/") || contentType === "") return text;
+    return bytes;
+  };
+
+  const parseBody = (): Promise<unknown> => {
+    parsedBodyPromise ??= parseBodyValue();
+    return parsedBodyPromise;
   };
 
   const context: MuboRequestContext = {

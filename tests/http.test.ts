@@ -148,6 +148,36 @@ describe("HTTP routing and middleware", () => {
     expect(response.headers.get("x-request-id")).toBe("malformed-req");
   });
 
+  test("returns the same body parse failure when the body is read twice", async () => {
+    const app = await startApp({
+      app: { name: "body-cache-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.post("/twice", async (ctx) => {
+      const errors: string[] = [];
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await ctx.body();
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+      return ctx.json({ errors });
+    });
+
+    const response = await fetch(`${base(app)}/twice`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      errors: ["Invalid JSON body", "Invalid JSON body"],
+    });
+  });
+
   test("provides health, readiness, 404 and 405 responses", async () => {
     const app = await startApp({
       app: { name: "health-test", env: "test" },
