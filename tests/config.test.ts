@@ -84,6 +84,25 @@ export default defineConfig({
     await app.stop();
   });
 
+  test("defaults to JSON logs for production apps from any config source", () => {
+    expect(resolveConfig({ app: { env: "production" } }, { env: {}, argv: [] }).log.json).toBe(true);
+    expect(
+      resolveConfig({}, { env: {}, argv: [], fileConfig: { app: { env: "production" } } }).log.json,
+    ).toBe(true);
+    expect(
+      resolveConfig(
+        { app: { env: "production" }, log: { json: false } },
+        { env: {}, argv: [] },
+      ).log.json,
+    ).toBe(false);
+    expect(
+      resolveConfig({ app: { env: "development" } }, { env: {}, argv: [] }).log.json,
+    ).toBe(false);
+    expect(resolveConfig({}, { env: { MUBO_LOG_JSON: "0", MUBO_ENV: "production" }, argv: [] }).log.json).toBe(
+      false,
+    );
+  });
+
   test("rejects invalid ports and migration table names", () => {
     expect(() => resolveConfig({ http: { port: 70000 } }, { env: {}, argv: [] })).toThrow(/Invalid HTTP port/);
     expect(() =>

@@ -436,11 +436,16 @@ export function resolveConfig(
     log: { level: "info", json: appEnv === "production" },
   };
 
+  const logJsonConfigured =
+    options.fileConfig?.log?.json !== undefined ||
+    overrides.log?.json !== undefined ||
+    (env.MUBO_LOG_JSON !== undefined && env.MUBO_LOG_JSON !== "");
   const merged = mergeConfig(
     mergeConfig(mergeConfig(defaults as unknown, options.fileConfig ?? {}), overrides as unknown),
     mergeConfig(envOverrides(env) as unknown, argvOverrides(options.argv ?? process.argv.slice(2)) as unknown),
   ) as ResolvedMuboConfig;
 
+  if (!logJsonConfigured) merged.log.json = merged.app.env === "production";
   merged.app.name = sanitizeAppName(merged.app.name);
   merged.dataDir = resolve(cwd, merged.dataDir || defaultDataDir(merged.app.name, env));
   if (!merged.db.path) merged.db.path = join(merged.dataDir, "mubo.sqlite");
