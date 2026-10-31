@@ -489,7 +489,10 @@ export async function createMuboApp(
   config: MuboConfig = {},
   options: CreateMuboAppOptions = {},
 ): Promise<MuboApp> {
-  const resolved = await loadAndResolveConfig(config, options);
+  const resolved = await loadAndResolveConfig(config, {
+    ...options,
+    loadFile: options.loadFile ?? true,
+  });
   const logger = createLogger(resolved.log, {
     app: resolved.app.name,
     env: resolved.app.env,
