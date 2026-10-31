@@ -231,6 +231,30 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects existing indexes with custom collations", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(
+      "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT); " +
+        "CREATE INDEX idx_users_email ON users(email COLLATE NOCASE);",
+    );
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            users: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                email: { type: "text" },
+              },
+              indexes: [{ name: "idx_users_email", columns: ["email"] }],
+            },
+          },
+        }),
+      ),
+    ).toThrow(/different definition/);
+    db.close();
+  });
+
   test("rejects existing indexes with descending columns", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec(

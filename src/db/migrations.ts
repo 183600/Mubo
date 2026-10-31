@@ -35,6 +35,7 @@ interface ExistingIndex {
   unique: boolean;
   columns: string[];
   descending: boolean;
+  customCollation: boolean;
   partial: boolean;
   where?: string;
 }
@@ -496,15 +497,20 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
     const definition = db
       .query<{ sql: string | null }>("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?")
       .get(row.name);
-    const descending = db
-      .query<{ desc: number; key: number }>(`PRAGMA index_xinfo(${quoteIdentifier(row.name)})`)
+    const keyColumns = db
+      .query<{ desc: number; key: number; coll: string }>(
+        `PRAGMA index_xinfo(${quoteIdentifier(row.name)})`,
+      )
       .all()
-      .some((column) => column.key === 1 && column.desc === 1);
+      .filter((column) => column.key === 1);
+    const descending = keyColumns.some((column) => column.desc === 1);
+    const customCollation = keyColumns.some((column) => column.coll !== "BINARY");
     indexes.set(row.name, {
       name: row.name,
       unique: row.unique === 1,
       columns: indexColumns,
       descending,
+      customCollation,
       partial: row.partial === 1,
       where: row.partial === 1 ? indexWhere(definition?.sql) : undefined,
     });
@@ -707,6 +713,7 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
       if (
         !sameColumns ||
         current.descending ||
+        current.customCollation ||
         current.unique !== Boolean(index.unique) ||
         current.partial !== Boolean(index.where) ||
         !sameWhere
