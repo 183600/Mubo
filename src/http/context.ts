@@ -40,7 +40,7 @@ export interface ContextDependencies {
 export function createRequestContext(deps: ContextDependencies): MuboRequestContext {
   let rawBodyPromise: Promise<Uint8Array> | undefined;
   let parsedBodyPromise: Promise<unknown> | undefined;
-  const state: Record<string, unknown> = {};
+  const state = Object.create(null) as Record<string, unknown>;
 
   const readBodyBytes = async (): Promise<Uint8Array> => {
     const body = deps.req.body;

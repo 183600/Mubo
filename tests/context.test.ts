@@ -93,6 +93,21 @@ describe("request context bodies", () => {
     expect(ctx.get("missing")).toBeUndefined();
   });
 
+  test("does not expose object prototype keys through request state", () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+
+    expect(ctx.get("toString")).toBeUndefined();
+    expect(ctx.get("constructor")).toBeUndefined();
+
+    ctx.set("__proto__", { polluted: true });
+    expect(ctx.get("polluted")).toBeUndefined();
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+    expect(ctx.get<{ polluted: boolean }>("__proto__")).toEqual({ polluted: true });
+
+    ctx.set("constructor", "value");
+    expect(ctx.get("constructor")).toBe("value");
+  });
+
   test("rejects streamed bodies that exceed the limit without a content-length header", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
