@@ -1335,6 +1335,23 @@ describe("database and automatic migrations", () => {
     }
   });
 
+  test("guards iterators after their transaction or database closes", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE items (id INTEGER PRIMARY KEY)");
+    db.query("INSERT INTO items (id) VALUES (?)").run(1);
+
+    let inTransaction!: IterableIterator<{ id: number }>;
+    db.transaction(() => {
+      inTransaction = db.query<{ id: number }>("SELECT id FROM items").iterate();
+      expect(inTransaction.next().value).toEqual({ id: 1 });
+    });
+    expect(() => inTransaction.next()).toThrow(/Transaction is no longer active/);
+
+    const afterClose = db.query<{ id: number }>("SELECT id FROM items").iterate();
+    db.close();
+    expect(() => afterClose.next()).toThrow(/Database is closed/);
+  });
+
   test("rejects invalid database options before opening SQLite", () => {
     expect(() => new MuboDatabase({ path: "" })).toThrow(/path must not be empty/);
     expect(() => new MuboDatabase({ path: "   " })).toThrow(/path must not be empty/);

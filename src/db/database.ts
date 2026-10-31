@@ -159,7 +159,31 @@ export class MuboDatabase {
       values: (...params) => this.timed(sql, () => this.statement<Row>(sql).values(...normalizeParams(params))),
       iterate: (...params) => {
         this.assertOpen();
-        return this.raw.query<Row, QueryArgument[]>(sql).iterate(...normalizeParams(params));
+        this.assertTransactionActive();
+        const context = this.transactionContext.getStore();
+        const iterator = this.raw.query<Row, QueryArgument[]>(sql).iterate(...normalizeParams(params));
+        const assertIteratorActive = () => {
+          this.assertOpen();
+          let current = context;
+          while (current) {
+            if (!current.active) {
+              throw new MuboError("INTERNAL_ERROR", "Transaction is no longer active");
+            }
+            current = current.parent;
+          }
+        };
+        return (function* () {
+          try {
+            while (true) {
+              assertIteratorActive();
+              const next = iterator.next();
+              if (next.done) return;
+              yield next.value;
+            }
+          } finally {
+            iterator.return?.();
+          }
+        })();
       },
     };
   }
