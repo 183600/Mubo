@@ -164,9 +164,13 @@ describe("CLI", () => {
   test("generated config treats empty HTTP environment values as unset", async () => {
     const cwd = tempDir();
     const dir = await initProject("empty-env-app", { cwd });
+    const frameworkPath = framework.split("\\").join("/");
     for (const file of ["mubo.config.ts", "src/server/schema.ts"]) {
       const path = join(dir, file);
-      writeFileSync(path, readFileSync(path, "utf8").replaceAll('from "mubo"', `from ${JSON.stringify(framework)}`));
+      writeFileSync(
+        path,
+        readFileSync(path, "utf8").replaceAll('from "mubo"', `from ${JSON.stringify(frameworkPath)}`),
+      );
     }
 
     const originalHost = process.env.MUBO_HOST;
