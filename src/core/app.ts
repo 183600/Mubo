@@ -86,6 +86,7 @@ export class MuboApp {
   private readonly middlewares: RouteMiddleware[] = [];
   private readonly wsRoutes = new Map<string, WsRoute>();
   private server?: Server<WsSocketData>;
+  private starting?: Promise<Server<WsSocketData>>;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private startedAt?: number;
 
@@ -454,6 +455,18 @@ export class MuboApp {
   }
 
   async start(): Promise<Server<WsSocketData>> {
+    if (this.server) return this.server;
+    if (this.starting) return this.starting;
+    const starting = this.startOnce();
+    this.starting = starting;
+    try {
+      return await starting;
+    } finally {
+      if (this.starting === starting) this.starting = undefined;
+    }
+  }
+
+  private async startOnce(): Promise<Server<WsSocketData>> {
     if (this.server) return this.server;
     const migration = await this.migrate();
     if (migration.status === "pending") {

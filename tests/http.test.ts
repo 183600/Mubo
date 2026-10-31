@@ -293,6 +293,25 @@ describe("HTTP routing and middleware", () => {
     expect(wrongMethod.headers.get("allow")).toContain("OPTIONS");
   });
 
+  test("shares a single server across concurrent start calls", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "concurrent-start-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    try {
+      const [first, second] = await Promise.all([app.start(), app.start()]);
+      expect(first).toBe(second);
+      expect(app.port).toBe(first.port);
+    } finally {
+      await app.stop();
+    }
+  });
+
   test("refuses to start when migrations are pending", async () => {
     const app = await createMuboApp(
       {
