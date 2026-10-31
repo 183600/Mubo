@@ -360,6 +360,9 @@ export default defineConfig({
       resolveConfig({ http: { cors: { origin: [] } } }, { env: {}, argv: [] }),
     ).toThrow(/Invalid CORS origin/);
     expect(() =>
+      resolveConfig({ http: { cors: { origin: ["   "] } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid CORS origin/);
+    expect(() =>
       resolveConfig({ http: { cors: { origin: "*", credentials: "yes" as never } } }, { env: {}, argv: [] }),
     ).toThrow(/Invalid CORS credentials/);
   });
