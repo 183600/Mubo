@@ -29,6 +29,10 @@ export type RouteMatch =
   | { type: "method-not-allowed"; allowed: HttpMethod[] }
   | { type: "not-found" };
 
+function routeKey(path: string): string {
+  return path.replace(/^\/+|\/+$/g, "");
+}
+
 function compilePath(path: string): Segment[] {
   if (!path.startsWith("/")) {
     throw new MuboError("CONFIG_ERROR", `Route path must start with "/": ${path}`);
@@ -100,7 +104,8 @@ export class Router {
 
   add(method: HttpMethod, path: string, handler: RouteHandler): this {
     const segments = compilePath(path);
-    const existing = this.routes.findIndex((route) => route.method === method && route.path === path);
+    const key = routeKey(path);
+    const existing = this.routes.findIndex((route) => route.method === method && routeKey(route.path) === key);
     const route: Route = { method, path, segments, handler };
     if (existing >= 0) this.routes[existing] = route;
     else this.routes.push(route);

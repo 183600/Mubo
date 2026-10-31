@@ -64,6 +64,24 @@ describe("router", () => {
     expect(match.type === "match" ? match.route.handler({} as never) : undefined).toBeInstanceOf(Response);
   });
 
+  test("replaces equivalent routes that differ only by surrounding slashes", async () => {
+    const router = new Router();
+    router.add("GET", "/same", ok("first"));
+    router.add("GET", "/same/", ok("second"));
+    expect(router.routes).toHaveLength(1);
+
+    let match = router.match("GET", "/same");
+    expect(match.type).toBe("match");
+    const response = match.type === "match" ? await match.route.handler({} as never) : undefined;
+    expect(await (response as Response).text()).toBe("second");
+
+    router.add("GET", "//same", ok("third"));
+    expect(router.routes).toHaveLength(1);
+    match = router.match("GET", "/same");
+    const third = match.type === "match" ? await match.route.handler({} as never) : undefined;
+    expect(await (third as Response).text()).toBe("third");
+  });
+
   test("rejects ambiguous or malformed route definitions", () => {
     const invalid = [
       "users",
