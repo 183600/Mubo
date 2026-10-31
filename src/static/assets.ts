@@ -225,24 +225,29 @@ export class StaticAssets {
   private async diskResponse(request: Request, pathname: string): Promise<Response | null> {
     const resolved = this.safeDiskPath(pathname);
     if (resolved.error) return resolved.error;
-    let target = resolved.path;
-    if (resolved.directory) target = join(target, "index.html");
+    let target = resolved.directory ? join(resolved.path, "index.html") : resolved.path;
     let file = Bun.file(target);
-    if (!(await file.exists())) {
-      if (this.spaFallback) {
-        const fallback = join(this.root, "index.html");
-        if (await Bun.file(fallback).exists()) {
-          target = fallback;
-          file = Bun.file(fallback);
-        } else {
-          return null;
-        }
-      } else {
-        return null;
+    let exists = await file.exists();
+    if (!exists && !resolved.directory) {
+      const directoryIndex = join(resolved.path, "index.html");
+      const candidate = Bun.file(directoryIndex);
+      if (await candidate.exists()) {
+        target = directoryIndex;
+        file = candidate;
+        exists = true;
       }
     }
+    if (!exists) {
+      if (!this.spaFallback) return null;
+      const fallback = join(this.root, "index.html");
+      const candidate = Bun.file(fallback);
+      if (!(await candidate.exists())) return null;
+      target = fallback;
+      file = candidate;
+    }
     const etag = `"${file.size.toString(16)}-${Math.round(file.lastModified).toString(16)}"`;
-    const contentType = MIME_TYPES[extname(target).slice(1).toLowerCase()] ?? file.type ?? "application/octet-stream";
+    const extensionType = MIME_TYPES[extname(target).slice(1).toLowerCase()];
+    const contentType = extensionType ?? (file.type || "application/octet-stream");
     return this.respond(request, target, file, etag, contentType, file.size);
   }
 
@@ -263,12 +268,20 @@ export class StaticAssets {
 
   async hasFile(pathname: string): Promise<boolean> {
     if (!this.enabled) return false;
-    if (this.assets.size > 0 && this.assets.has(normalizeKey(pathname))) return true;
+    if (this.assets.size > 0) {
+      if (this.assets.has(normalizeKey(pathname))) return true;
+      try {
+        if (this.assets.has(normalizeKey(decodeURIComponent(pathname)))) return true;
+      } catch {
+        return false;
+      }
+    }
     if (this.mode !== "disk") return false;
     const resolved = this.safeDiskPath(pathname);
     if (resolved.error) return false;
     const target = resolved.directory ? join(resolved.path, "index.html") : resolved.path;
-    return Bun.file(target).exists();
+    if (await Bun.file(target).exists()) return true;
+    return !resolved.directory && (await Bun.file(join(resolved.path, "index.html")).exists());
   }
 }
 

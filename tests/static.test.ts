@@ -90,8 +90,37 @@ describe("static assets", () => {
     expect(nested.status).toBe(200);
     expect(await nested.text()).toContain("Nested");
 
+    const nestedWithoutSlash = await fetch(`${root}/nested`);
+    expect(nestedWithoutSlash.status).toBe(200);
+    expect(await nestedWithoutSlash.text()).toContain("Nested");
+
     const missing = await fetch(`${root}/missing`);
     expect(missing.status).toBe(404);
+  });
+
+  test("resolves disk and embedded paths when checking for files", async () => {
+    const dir = publicDir();
+    mkdirSync(join(dir, "nested"));
+    writeFileSync(join(dir, "nested", "index.html"), "<!doctype html><title>Nested</title>");
+
+    const disk = new StaticAssets({ mode: "disk", dir }, dir);
+    expect(await disk.hasFile("/")).toBe(true);
+    expect(await disk.hasFile("/nested/")).toBe(true);
+    expect(await disk.hasFile("/nested")).toBe(true);
+    expect(await disk.hasFile("/assets%2Fapp.a1b2c3d4.js")).toBe(true);
+    expect(await disk.hasFile("/missing")).toBe(false);
+    expect(await disk.hasFile("/%2e%2e%2fetc/passwd")).toBe(false);
+
+    const embedded = new StaticAssets(
+      { mode: "embedded", assets: { "/café.txt": "hello", "/index.html": "home" } },
+      dir,
+    );
+    expect(await embedded.hasFile("/caf%C3%A9.txt")).toBe(true);
+    expect(await embedded.hasFile("/café.txt")).toBe(true);
+    expect(await embedded.hasFile("/missing")).toBe(false);
+
+    const off = new StaticAssets({ mode: "off", dir }, dir);
+    expect(await off.hasFile("/")).toBe(false);
   });
 
   test("blocks path traversal attempts", async () => {
@@ -132,7 +161,11 @@ describe("static assets", () => {
           dir: "/definitely/not/here",
           assets: {
             "/index.html": { data: "<h1>embedded</h1>", type: "text/html; charset=utf-8" },
-            "/app.js": { data: Buffer.from("embedded-js").toString("base64"), encoding: "base64" },
+            "/app.js": {
+              data: Buffer.from("embedded-js").toString("base64"),
+              encoding: "base64",
+              etag: '"custom-etag"',
+            },
           },
         },
       },
@@ -147,5 +180,14 @@ describe("static assets", () => {
     expect(await route.text()).toBe("<h1>embedded</h1>");
     const script = await fetch(`${root}/app.js`);
     expect(await script.text()).toBe("embedded-js");
+    expect(script.headers.get("etag")).toBe('"custom-etag"');
+
+    const cached = await fetch(`${root}/app.js`, { headers: { "if-none-match": '"custom-etag"' } });
+    expect(cached.status).toBe(304);
+
+    const head = await fetch(`${root}/app.js`, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("content-length")).toBe("11");
   });
 });
