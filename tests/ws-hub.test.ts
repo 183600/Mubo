@@ -106,6 +106,18 @@ describe("WebSocket room hub", () => {
     expect(firstCtx.rooms.size).toBe(0);
   });
 
+  test("isolates socket state from object prototype keys", () => {
+    const hub = new WsRoomHub();
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, logger, "");
+
+    expect((ctx.state as { toString?: unknown }).toString).toBeUndefined();
+    ctx.state["__proto__"] = { polluted: "yes" };
+    expect((ctx.state as { polluted?: unknown }).polluted).toBeUndefined();
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+    expect((ctx.state as { constructor?: unknown }).constructor).toBeUndefined();
+  });
+
   test("rejects empty room names and handles pings and shutdown", () => {
     const hub = new WsRoomHub();
     const first = fakeSocket();

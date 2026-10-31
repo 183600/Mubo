@@ -101,6 +101,7 @@ export class WsRoomHub {
   add(ws: ServerWebSocket<WsSocketData>, app: unknown, logger: Logger, ip: string): MuboWsContext {
     const id = crypto.randomUUID();
     let client!: Client;
+    const state = Object.assign(Object.create(null) as Record<string, unknown>, ws.data.state);
     const context: MuboWsContext = {
       id,
       ws,
@@ -108,7 +109,7 @@ export class WsRoomHub {
       url: ws.data.url,
       requestId: ws.data.requestId,
       user: ws.data.user,
-      state: ws.data.state,
+      state,
       get rooms() {
         return client.rooms as ReadonlySet<string>;
       },

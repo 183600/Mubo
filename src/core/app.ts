@@ -239,7 +239,7 @@ export class MuboApp {
       url: url.href,
       ip: clientIp(request, server, this.config.http.trustProxy),
       user,
-      state: {},
+      state: Object.create(null) as Record<string, unknown>,
     };
     const upgraded = server.upgrade(request, { data });
     if (!upgraded) {
