@@ -75,6 +75,25 @@ describe("static assets", () => {
     expect(notFound.status).toBe(404);
   });
 
+  test("serves directory index files when SPA fallback is disabled", async () => {
+    const dir = publicDir();
+    mkdirSync(join(dir, "nested"));
+    writeFileSync(join(dir, "nested", "index.html"), "<!doctype html><title>Nested</title>");
+    const app = await startStatic(dir, false);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    const index = await fetch(`${root}/`);
+    expect(index.status).toBe(200);
+    expect(await index.text()).toContain("Mubo");
+
+    const nested = await fetch(`${root}/nested/`);
+    expect(nested.status).toBe(200);
+    expect(await nested.text()).toContain("Nested");
+
+    const missing = await fetch(`${root}/missing`);
+    expect(missing.status).toBe(404);
+  });
+
   test("blocks path traversal attempts", async () => {
     const dir = publicDir();
     const assets = new StaticAssets({ mode: "disk", dir }, dir);

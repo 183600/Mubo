@@ -203,27 +203,30 @@ export class StaticAssets {
     return this.respond(request, finalPath, bytes, etag, type ?? contentTypeFor(finalPath), bytes.byteLength);
   }
 
-  private safeDiskPath(pathname: string): { path: string; error?: Response } {
+  private safeDiskPath(pathname: string): { path: string; directory: boolean; error?: Response } {
     let decoded: string;
     try {
       decoded = decodeURIComponent(pathname);
     } catch {
-      return { path: "", error: textResponse("Bad Request", { status: 400 }) };
+      return { path: "", directory: false, error: textResponse("Bad Request", { status: 400 }) };
     }
-    if (decoded.includes("\0")) return { path: "", error: textResponse("Bad Request", { status: 400 }) };
+    if (decoded.includes("\0")) {
+      return { path: "", directory: false, error: textResponse("Bad Request", { status: 400 }) };
+    }
     const relativePath = decoded.replace(/^\/+/, "").replace(/\\/g, "/");
-    const target = resolve(this.root, relativePath || "index.html");
+    const directory = relativePath === "" || relativePath.endsWith("/");
+    const target = resolve(this.root, relativePath || ".");
     if (target !== this.root && !target.startsWith(`${this.root}${sep}`)) {
-      return { path: "", error: textResponse("Forbidden", { status: 403 }) };
+      return { path: "", directory: false, error: textResponse("Forbidden", { status: 403 }) };
     }
-    return { path: target };
+    return { path: target, directory };
   }
 
   private async diskResponse(request: Request, pathname: string): Promise<Response | null> {
     const resolved = this.safeDiskPath(pathname);
     if (resolved.error) return resolved.error;
     let target = resolved.path;
-    if (pathname.endsWith("/")) target = join(target, "index.html");
+    if (resolved.directory) target = join(target, "index.html");
     let file = Bun.file(target);
     if (!(await file.exists())) {
       if (this.spaFallback) {
@@ -264,7 +267,8 @@ export class StaticAssets {
     if (this.mode !== "disk") return false;
     const resolved = this.safeDiskPath(pathname);
     if (resolved.error) return false;
-    return Bun.file(resolved.path).exists();
+    const target = resolved.directory ? join(resolved.path, "index.html") : resolved.path;
+    return Bun.file(target).exists();
   }
 }
 
