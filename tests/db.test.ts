@@ -332,6 +332,22 @@ describe("database and automatic migrations", () => {
         schema: {
           tables: {
             items: {
+              columns: {
+                parent_id: {
+                  type: "text",
+                  notNull: true,
+                  references: { table: "parents", onDelete: "SET NULL" },
+                },
+              },
+            },
+          },
+        },
+        message: /SET NULL action cannot be used with NOT NULL column items.parent_id/,
+      },
+      {
+        schema: {
+          tables: {
+            items: {
               columns: { id: { type: "text", primaryKey: true, autoIncrement: true } },
             },
           },

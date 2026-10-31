@@ -143,6 +143,15 @@ function validateTable(name: string, table: TableDefinition): void {
           `Invalid ON UPDATE action for ${name}.${columnName}: ${column.references.onUpdate}`,
         );
       }
+      if (
+        column.notNull &&
+        (column.references.onDelete === "SET NULL" || column.references.onUpdate === "SET NULL")
+      ) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `SET NULL action cannot be used with NOT NULL column ${name}.${columnName}`,
+        );
+      }
     }
   }
   for (const index of table.indexes ?? []) validateIndex(name, index);
