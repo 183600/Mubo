@@ -43,14 +43,19 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
   const state: Record<string, unknown> = {};
 
   const readBodyBytes = async (): Promise<Uint8Array> => {
-    if (!deps.req.body) return new Uint8Array();
+    const body = deps.req.body;
+    if (deps.req.bodyUsed) {
+      throw new MuboError("BAD_REQUEST", "Request body has already been consumed");
+    }
+    if (!body) return new Uint8Array();
     const declared = Number(deps.req.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > deps.bodyLimit) {
+      await body.cancel().catch(() => undefined);
       throw new MuboError("PAYLOAD_TOO_LARGE", `Request body exceeds ${deps.bodyLimit} bytes`, {
         status: 413,
       });
     }
-    const reader = deps.req.body.getReader();
+    const reader = body.getReader();
     const chunks: Uint8Array[] = [];
     let size = 0;
     while (true) {

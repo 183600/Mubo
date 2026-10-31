@@ -178,6 +178,29 @@ describe("HTTP routing and middleware", () => {
     });
   });
 
+  test("rejects context reads after the raw request body was consumed", async () => {
+    const app = await startApp({
+      app: { name: "body-consumed-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.post("/direct", async (ctx) => {
+      await ctx.req.text();
+      return ctx.json({ body: await ctx.body() });
+    });
+
+    const response = await fetch(`${base(app)}/direct`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{\"ok\":true}",
+    });
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { error: { code: string; message: string } };
+    expect(payload.error.code).toBe("BAD_REQUEST");
+    expect(payload.error.message).toContain("already been consumed");
+  });
+
   test("provides health, readiness, 404 and 405 responses", async () => {
     const app = await startApp({
       app: { name: "health-test", env: "test" },
