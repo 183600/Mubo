@@ -247,6 +247,18 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
   const dbPath = env.MUBO_DB_PATH;
   const busyTimeoutMs = readNumber(env.MUBO_BUSY_TIMEOUT_MS, "MUBO_BUSY_TIMEOUT_MS");
   const migrationMode = env.MUBO_MIGRATIONS_MODE;
+  if (
+    migrationMode !== undefined &&
+    migrationMode !== "" &&
+    migrationMode !== "apply" &&
+    migrationMode !== "check" &&
+    migrationMode !== "off"
+  ) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      `Invalid MUBO_MIGRATIONS_MODE: ${migrationMode} (expected apply, check or off)`,
+    );
+  }
   const migrationTable = env.MUBO_MIGRATIONS_TABLE;
   const safeOnly = readBoolean(env.MUBO_MIGRATIONS_SAFE_ONLY);
   if (dbPath || busyTimeoutMs !== undefined || migrationMode || migrationTable || safeOnly !== undefined) {
@@ -265,6 +277,18 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
   }
 
   const staticMode = env.MUBO_STATIC_MODE;
+  if (
+    staticMode !== undefined &&
+    staticMode !== "" &&
+    staticMode !== "embedded" &&
+    staticMode !== "disk" &&
+    staticMode !== "off"
+  ) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      `Invalid MUBO_STATIC_MODE: ${staticMode} (expected embedded, disk or off)`,
+    );
+  }
   const staticDir = env.MUBO_STATIC_DIR;
   const spaFallback = readBoolean(env.MUBO_STATIC_SPA_FALLBACK);
   if (

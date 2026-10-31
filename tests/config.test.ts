@@ -119,6 +119,21 @@ export default defineConfig({
     );
   });
 
+  test("rejects invalid environment modes", () => {
+    expect(() => resolveConfig({}, { env: { MUBO_MIGRATIONS_MODE: "sometimes" }, argv: [] })).toThrow(
+      /Invalid MUBO_MIGRATIONS_MODE/,
+    );
+    expect(() => resolveConfig({}, { env: { MUBO_STATIC_MODE: "cdn" }, argv: [] })).toThrow(
+      /Invalid MUBO_STATIC_MODE/,
+    );
+    expect(
+      resolveConfig({}, { env: { MUBO_MIGRATIONS_MODE: "check", MUBO_STATIC_MODE: "off" }, argv: [] }),
+    ).toMatchObject({
+      db: { migrations: { mode: "check" } },
+      static: { mode: "off" },
+    });
+  });
+
   test("rejects out-of-range numeric settings", () => {
     expect(() => resolveConfig({ http: { bodyLimit: 0 } }, { env: {}, argv: [] })).toThrow(
       /Invalid body limit/,
