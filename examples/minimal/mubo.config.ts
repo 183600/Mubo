@@ -4,8 +4,8 @@ import { schema } from "./src/server/schema.ts";
 export default defineConfig({
   app: { name: "mubo-example-minimal" },
   http: {
-    host: process.env.MUBO_HOST ?? "127.0.0.1",
-    port: Number(process.env.MUBO_PORT ?? 3000),
+    host: process.env.MUBO_HOST?.trim() || "127.0.0.1",
+    port: Number(process.env.MUBO_PORT?.trim() || 3000),
   },
   db: {
     migrations: { mode: "apply", safeOnly: true },

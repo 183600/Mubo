@@ -2,9 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Database } from "bun:sqlite";
 import { boolFlag, parseCliArgs, stringFlag } from "../src/cli/args.ts";
 import { initProject } from "../src/cli/init.ts";
+import { resolveConfig } from "../src/core/config.ts";
 
 const tempDirs: string[] = [];
 const cli = resolve(import.meta.dir, "../src/cli/index.ts");
@@ -157,6 +159,33 @@ describe("CLI", () => {
 
     writeFileSync(join(cwd, "occupied"), "not a directory");
     await expect(initProject("occupied", { cwd })).rejects.toThrow(/not a directory/);
+  });
+
+  test("generated config treats empty HTTP environment values as unset", async () => {
+    const cwd = tempDir();
+    const dir = await initProject("empty-env-app", { cwd });
+    for (const file of ["mubo.config.ts", "src/server/schema.ts"]) {
+      const path = join(dir, file);
+      writeFileSync(path, readFileSync(path, "utf8").replaceAll('from "mubo"', `from ${JSON.stringify(framework)}`));
+    }
+
+    const originalHost = process.env.MUBO_HOST;
+    const originalPort = process.env.MUBO_PORT;
+    process.env.MUBO_HOST = "   ";
+    process.env.MUBO_PORT = "";
+    try {
+      const loaded = (await import(pathToFileURL(join(dir, "mubo.config.ts")).href)) as {
+        default: Parameters<typeof resolveConfig>[0];
+      };
+      const config = resolveConfig(loaded.default, { env: {}, argv: [] });
+      expect(config.http.host).toBe("127.0.0.1");
+      expect(config.http.port).toBe(3000);
+    } finally {
+      if (originalHost === undefined) delete process.env.MUBO_HOST;
+      else process.env.MUBO_HOST = originalHost;
+      if (originalPort === undefined) delete process.env.MUBO_PORT;
+      else process.env.MUBO_PORT = originalPort;
+    }
   });
 
   test("migrate applies, reports idempotency, and checks pending migrations", async () => {

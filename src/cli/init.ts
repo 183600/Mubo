@@ -129,8 +129,8 @@ import { schema } from "./src/server/schema";
 export default defineConfig({
   app: { name: ${JSON.stringify(name)} },
   http: {
-    host: process.env.MUBO_HOST ?? "127.0.0.1",
-    port: Number(process.env.MUBO_PORT ?? 3000),
+    host: process.env.MUBO_HOST?.trim() || "127.0.0.1",
+    port: Number(process.env.MUBO_PORT?.trim() || 3000),
   },
   db: {
     migrations: { mode: "apply", safeOnly: true },
