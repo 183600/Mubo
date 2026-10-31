@@ -380,6 +380,21 @@ function ensureMigrationTableAvailable(db: MuboDatabase, table: string): void {
   }
 }
 
+const requiredMigrationColumns = ["id", "applied_at", "checksum", "meta"] as const;
+
+function assertMigrationTableSchema(db: MuboDatabase, table: string): void {
+  const columns = new Set(
+    Array.from(introspectTable(db, table).columns.keys(), (name) => name.toLowerCase()),
+  );
+  const missing = requiredMigrationColumns.filter((column) => !columns.has(column));
+  if (missing.length > 0) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Migration table ${table} is missing required column${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}; use a different table name or repair it manually`,
+    );
+  }
+}
+
 function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string): void {
   const owner = indexOwner(db, index);
   if (owner !== undefined && owner.toLowerCase() !== table.toLowerCase()) {
@@ -849,6 +864,9 @@ export function applyMigrations(
   if (mode === "apply") {
     ensureMigrationTableAvailable(db, table);
     db.exec(migrationTableSql(table));
+    assertMigrationTableSchema(db, table);
+  } else if (mode === "check" && tableExists(db, table)) {
+    assertMigrationTableSchema(db, table);
   }
   const initial = planMigrations(db, schema, { table, safeOnly });
   if (initial.statements.length === 0) {
@@ -877,17 +895,26 @@ export function applyMigrations(
       }
       const appliedAt = Date.now();
       const meta = JSON.stringify({ statements: fresh.statements, changes: fresh.changes });
-      const alreadyApplied = db
-        .query<{ id: string }>(`SELECT id FROM ${quoteIdentifier(table)} WHERE id = ?`)
-        .get(fresh.id);
-      if (alreadyApplied) {
-        db.query(
-          `UPDATE ${quoteIdentifier(table)} SET applied_at = ?, checksum = ?, meta = ? WHERE id = ?`,
-        ).run(appliedAt, fresh.id, meta, fresh.id);
-      } else {
-        db.query(
-          `INSERT INTO ${quoteIdentifier(table)} (id, applied_at, checksum, meta) VALUES (?, ?, ?, ?)`,
-        ).run(fresh.id, appliedAt, fresh.id, meta);
+      try {
+        const alreadyApplied = db
+          .query<{ id: string }>(`SELECT id FROM ${quoteIdentifier(table)} WHERE id = ?`)
+          .get(fresh.id);
+        if (alreadyApplied) {
+          db.query(
+            `UPDATE ${quoteIdentifier(table)} SET applied_at = ?, checksum = ?, meta = ? WHERE id = ?`,
+          ).run(appliedAt, fresh.id, meta, fresh.id);
+        } else {
+          db.query(
+            `INSERT INTO ${quoteIdentifier(table)} (id, applied_at, checksum, meta) VALUES (?, ?, ?, ?)`,
+          ).run(fresh.id, appliedAt, fresh.id, meta);
+        }
+      } catch (error) {
+        if (isMuboError(error)) throw error;
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Failed to record migration history for ${fresh.id}`,
+          { cause: error, details: { migration: fresh.id } },
+        );
       }
       applied = fresh;
     },

@@ -934,6 +934,47 @@ describe("database and automatic migrations", () => {
     auto.close();
   });
 
+  test("rejects migration history tables missing required columns", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE _mubo_migrations (id TEXT PRIMARY KEY)");
+
+    expect(() => db.migrate(baseSchema)).toThrow(
+      /Migration table _mubo_migrations is missing required columns: applied_at, checksum, meta/,
+    );
+    expect(() => db.migrate(baseSchema, { mode: "check" })).toThrow(
+      /missing required columns: applied_at, checksum, meta/,
+    );
+    db.close();
+  });
+
+  test("rolls back schema changes when migration history cannot be recorded", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    expect((await db.migrate(baseSchema)).status).toBe("applied");
+    const withNotes = defineSchema({
+      tables: {
+        ...baseSchema.tables,
+        notes: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            body: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+    db.exec(
+      "CREATE TRIGGER fail_migration_history BEFORE INSERT ON _mubo_migrations BEGIN SELECT RAISE(ABORT, 'history blocked'); END",
+    );
+
+    expect(() => db.migrate(withNotes)).toThrow(/Failed to record migration history/);
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes'").get(),
+    ).toBeNull();
+    expect(db.query<{ count: number }>("SELECT COUNT(*) AS count FROM _mubo_migrations").get()).toEqual({
+      count: 1,
+    });
+    db.close();
+  });
+
   test("rejects dropping declared columns while leaving unrelated tables untouched", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const withNotes = defineSchema({
