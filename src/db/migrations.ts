@@ -269,7 +269,7 @@ function indexOwner(db: MuboDatabase, index: string): string | undefined {
 
 function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string): void {
   const owner = indexOwner(db, index);
-  if (owner !== undefined) {
+  if (owner !== undefined && owner !== table) {
     throw new MuboError(
       "MIGRATION_ERROR",
       `Index ${index} already exists on table ${owner}; use a different name or a manual migration`,
