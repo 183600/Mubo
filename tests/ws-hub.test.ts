@@ -83,6 +83,34 @@ describe("WebSocket room hub", () => {
     });
   });
 
+  test("is idempotent for duplicate socket registration", () => {
+    const hub = new WsRoomHub();
+    const socket = fakeSocket();
+    const first = hub.add(socket.ws, null, logger, "127.0.0.1");
+    const second = hub.add(socket.ws, null, logger, "127.0.0.1");
+
+    expect(second).toBe(first);
+    expect(hub.clientCount).toBe(1);
+    hub.subscribe(first, "lobby");
+    expect(hub.publish("lobby", { ok: true })).toBe(1);
+    expect(socket.sent).toHaveLength(1);
+  });
+
+  test("rejects blank room names and reports failed sends", () => {
+    const hub = new WsRoomHub();
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, logger, "");
+    hub.subscribe(ctx, "lobby");
+
+    for (const room of ["", "   ", "\n\t"]) {
+      expect(() => hub.subscribe(ctx, room)).toThrow(MuboError);
+    }
+    expect(() => hub.subscribe(ctx, 42 as never)).toThrow(/Room name cannot be empty/);
+    expect(hub.publish("lobby", { value: 1n })).toBe(0);
+    expect(socket.sent).toHaveLength(0);
+    expect(hub.broadcast({ value: 1n })).toBe(0);
+  });
+
   test("releases rooms and clients on removal", () => {
     const hub = new WsRoomHub();
     const first = fakeSocket();

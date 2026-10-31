@@ -72,11 +72,13 @@ export function serializePayload(data: unknown): string | ArrayBuffer | ArrayBuf
   return json;
 }
 
-function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Logger): void {
+function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Logger): boolean {
   try {
     ws.send(serializePayload(data) as any);
+    return true;
   } catch (error) {
     logger?.warn("WebSocket send failed", { error: error instanceof Error ? error.message : String(error) });
+    return false;
   }
 }
 
@@ -99,6 +101,8 @@ export class WsRoomHub {
   }
 
   add(ws: ServerWebSocket<WsSocketData>, app: unknown, logger: Logger, ip: string): MuboWsContext {
+    const existing = this.clientsBySocket.get(ws);
+    if (existing) return existing.ctx;
     const id = crypto.randomUUID();
     let client!: Client;
     const state = Object.assign(Object.create(null) as Record<string, unknown>, ws.data.state);
@@ -142,7 +146,9 @@ export class WsRoomHub {
   }
 
   subscribe(ctx: MuboWsContext, room: string): void {
-    if (!room) throw new MuboError("VALIDATION_ERROR", "Room name cannot be empty");
+    if (typeof room !== "string" || room.trim().length === 0) {
+      throw new MuboError("VALIDATION_ERROR", "Room name cannot be empty");
+    }
     const client = this.clients.get(ctx.id);
     if (!client) return;
     if (client.rooms.has(room)) return;
@@ -171,8 +177,7 @@ export class WsRoomHub {
     let sent = 0;
     for (const client of members) {
       if (options.except && client.ctx.id === options.except) continue;
-      safeSend(client.ws, data, this.logger);
-      sent++;
+      if (safeSend(client.ws, data, this.logger)) sent++;
     }
     return sent;
   }
@@ -181,8 +186,7 @@ export class WsRoomHub {
     let sent = 0;
     for (const client of this.clients.values()) {
       if (options.except && client.ctx.id === options.except) continue;
-      safeSend(client.ws, data, this.logger);
-      sent++;
+      if (safeSend(client.ws, data, this.logger)) sent++;
     }
     return sent;
   }
