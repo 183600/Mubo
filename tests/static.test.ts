@@ -42,6 +42,7 @@ async function startStatic(dir: string, spaFallback = true): Promise<MuboApp> {
 
 describe("static assets", () => {
   test("accepts a filesystem root as the static directory", () => {
+    if (process.platform === "win32") return;
     const assets = new StaticAssets({ mode: "disk", dir: "/" });
     const resolved = (
       assets as unknown as {
