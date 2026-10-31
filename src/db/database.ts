@@ -101,11 +101,11 @@ export class MuboDatabase {
     if (options.wal ?? true) {
       try {
         this.raw.run("PRAGMA journal_mode = WAL");
-        this.raw.run("PRAGMA synchronous = NORMAL");
       } catch {
         // Some filesystems (or :memory:) do not support WAL; SQLite falls back safely.
       }
     }
+    this.raw.run("PRAGMA synchronous = NORMAL");
   }
 
   get isOpen(): boolean {

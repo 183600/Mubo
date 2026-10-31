@@ -55,6 +55,12 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("applies NORMAL synchronous mode even when WAL is disabled", () => {
+    const db = new MuboDatabase({ path: ":memory:", wal: false });
+    expect(db.raw.query("PRAGMA synchronous").get()).toEqual({ synchronous: 1 });
+    db.close();
+  });
+
   test("plans keyword-like identifiers idempotently, including partial indexes", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const schema = defineSchema({
