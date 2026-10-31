@@ -786,6 +786,55 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("treats equivalent numeric and keyword defaults as unchanged", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const initial = defineSchema({
+      tables: {
+        metrics: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            ratio: { type: "real", sqlDefault: "1.0" },
+            count: { type: "integer", sqlDefault: "0007" },
+            updated_at: { type: "text", sqlDefault: "current_timestamp" },
+            enabled: { type: "boolean", sqlDefault: "true" },
+          },
+        },
+      },
+    });
+    await db.migrate(initial);
+
+    const equivalent = defineSchema({
+      tables: {
+        metrics: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            ratio: { type: "real", sqlDefault: "1" },
+            count: { type: "integer", sqlDefault: "7" },
+            updated_at: { type: "text", sqlDefault: "CURRENT_TIMESTAMP" },
+            enabled: { type: "boolean", sqlDefault: "TRUE" },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(equivalent)).status).toBe("none");
+
+    const changed = defineSchema({
+      tables: {
+        metrics: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            ratio: { type: "real", sqlDefault: "2.0" },
+            count: { type: "integer", sqlDefault: "7" },
+            updated_at: { type: "text", sqlDefault: "CURRENT_TIMESTAMP" },
+            enabled: { type: "boolean", sqlDefault: "TRUE" },
+          },
+        },
+      },
+    });
+    expect(() => db.migrate(changed)).toThrow(/Default value change for metrics\.ratio/);
+    db.close();
+  });
+
   test("treats parenthesized NULL sql defaults as no default", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const schema = defineSchema({

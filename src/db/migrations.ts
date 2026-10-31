@@ -312,6 +312,20 @@ function normalizeDefault(value: string | null | undefined): string | null {
     text = text.slice(1, -1).trim();
   }
   if (!text || text.toUpperCase() === "NULL") return null;
+  if (/^[+-]?\d+$/.test(text)) {
+    const negative = text.startsWith("-");
+    const digits = text.replace(/^[+-]/, "").replace(/^0+(?=\d)/, "");
+    return negative && digits !== "0" ? `-${digits}` : digits;
+  }
+  if (/^[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?$/.test(text)) {
+    const numeric = Number(text);
+    if (Number.isFinite(numeric) && (!Number.isInteger(numeric) || Number.isSafeInteger(numeric))) {
+      return String(numeric);
+    }
+  }
+  if (/^(?:CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|TRUE|FALSE)$/i.test(text)) {
+    return text.toUpperCase();
+  }
   return text;
 }
 
