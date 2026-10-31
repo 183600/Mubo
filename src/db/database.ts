@@ -67,6 +67,7 @@ export class MuboDatabase {
     if (typeof options.path !== "string" || options.path.trim().length === 0) {
       throw new MuboError("CONFIG_ERROR", "Database path must not be empty");
     }
+    const path = options.path.trim();
     const busyTimeoutMs = options.busyTimeoutMs ?? 5000;
     if (!Number.isInteger(busyTimeoutMs) || busyTimeoutMs < 0) {
       throw new MuboError("CONFIG_ERROR", `Invalid database busy timeout: ${busyTimeoutMs}`);
@@ -81,17 +82,17 @@ export class MuboDatabase {
     if (options.foreignKeys !== undefined && typeof options.foreignKeys !== "boolean") {
       throw new MuboError("CONFIG_ERROR", "Invalid database foreign keys setting");
     }
-    this.path = options.path;
+    this.path = path;
     this.slowQueryMs = slowQueryMs;
     this.logger = options.logger;
     this.schema = options.schema;
-    if (options.path !== ":memory:") {
-      ensureDataDir(options.path, options.dataDir ?? process.cwd());
+    if (path !== ":memory:") {
+      ensureDataDir(path, options.dataDir ?? process.cwd());
     }
     try {
-      this.raw = new SQLiteDatabase(options.path, { create: true, readwrite: true, strict: true });
+      this.raw = new SQLiteDatabase(path, { create: true, readwrite: true, strict: true });
     } catch (error) {
-      throw new MuboError("CONFIG_ERROR", `Cannot open SQLite database at ${options.path}`, {
+      throw new MuboError("CONFIG_ERROR", `Cannot open SQLite database at ${path}`, {
         cause: error,
       });
     }

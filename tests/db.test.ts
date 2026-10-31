@@ -1119,6 +1119,10 @@ describe("database and automatic migrations", () => {
   test("rejects invalid database options before opening SQLite", () => {
     expect(() => new MuboDatabase({ path: "" })).toThrow(/path must not be empty/);
     expect(() => new MuboDatabase({ path: "   " })).toThrow(/path must not be empty/);
+    const trimmed = new MuboDatabase({ path: "  :memory:  " });
+    expect(trimmed.path).toBe(":memory:");
+    expect(trimmed.ping()).toBe(true);
+    trimmed.close();
     expect(() => new MuboDatabase({ path: ":memory:", busyTimeoutMs: -1 })).toThrow(
       /Invalid database busy timeout/,
     );
