@@ -153,6 +153,18 @@ export default defineConfig({
     expect(config.ws.enabled).toBe(false);
   });
 
+  test("rejects empty HTTP hosts", () => {
+    expect(() => resolveConfig({ http: { host: "" } }, { env: {}, argv: [] })).toThrow(
+      /Invalid HTTP host/,
+    );
+    expect(() => resolveConfig({ http: { host: "   " } }, { env: {}, argv: [] })).toThrow(
+      /Invalid HTTP host/,
+    );
+    expect(resolveConfig({ http: { host: " 0.0.0.0 " } }, { env: {}, argv: [] }).http.host).toBe(
+      "0.0.0.0",
+    );
+  });
+
   test("rejects empty CLI values", async () => {
     expect(() => resolveConfig({}, { env: {}, argv: ["--port="] })).toThrow(
       /Missing value for --port/,

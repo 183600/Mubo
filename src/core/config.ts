@@ -448,6 +448,10 @@ export function resolveConfig(
     merged.db.path = resolve(cwd, merged.db.path);
   }
   if (merged.static.dir && !isAbsolute(merged.static.dir)) merged.static.dir = resolve(cwd, merged.static.dir);
+  if (typeof merged.http.host !== "string" || merged.http.host.trim().length === 0) {
+    throw new MuboError("CONFIG_ERROR", `Invalid HTTP host: ${String(merged.http.host)}`);
+  }
+  merged.http.host = merged.http.host.trim();
   if (!Number.isInteger(merged.http.port) || merged.http.port < 0 || merged.http.port > 65535) {
     throw new MuboError("CONFIG_ERROR", `Invalid HTTP port: ${merged.http.port}`);
   }
