@@ -317,9 +317,45 @@ function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string
 
 function indexWhere(sql: string | null | undefined): string | undefined {
   if (!sql) return undefined;
-  const match = /\bWHERE\b([\s\S]*)$/i.exec(sql);
-  const where = match?.[1]?.trim();
-  return where ? where : undefined;
+  let quote: string | undefined;
+  let depth = 0;
+  for (let index = 0; index < sql.length; index++) {
+    const char = sql[index]!;
+    if (quote) {
+      if (char !== quote) continue;
+      if (sql[index + 1] === quote) {
+        index++;
+        continue;
+      }
+      quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "[") {
+      quote = "]";
+      continue;
+    }
+    if (char === "(") {
+      depth++;
+      continue;
+    }
+    if (char === ")") {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    if (depth !== 0 || (char !== "W" && char !== "w")) continue;
+    if (sql.slice(index, index + 5).toUpperCase() !== "WHERE") continue;
+    const before = sql[index - 1];
+    const after = sql[index + 5];
+    if (before && /[A-Za-z0-9_$]/.test(before)) continue;
+    if (after && /[A-Za-z0-9_$]/.test(after)) continue;
+    const where = sql.slice(index + 5).trim();
+    return where || undefined;
+  }
+  return undefined;
 }
 
 function normalizeWhere(value: string | undefined): string {
@@ -409,7 +445,7 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
       unique: row.unique === 1,
       columns: indexColumns,
       partial: row.partial === 1,
-      where: indexWhere(definition?.sql),
+      where: row.partial === 1 ? indexWhere(definition?.sql) : undefined,
     });
   }
   const foreignKeys = new Map<string, ExistingForeignKey[]>();

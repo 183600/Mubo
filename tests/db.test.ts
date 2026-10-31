@@ -55,6 +55,31 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("plans keyword-like identifiers idempotently, including partial indexes", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: {
+        where: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            where: { type: "text" },
+          },
+          indexes: [
+            {
+              name: "idx_where_value",
+              columns: ["where"],
+              where: '"where" IS NOT NULL',
+            },
+          ],
+        },
+      },
+    });
+
+    expect((await db.migrate(schema)).status).toBe("applied");
+    expect((await db.migrate(schema)).status).toBe("none");
+    db.close();
+  });
+
   test("exec runs multiple SQL statements", () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec("CREATE TABLE first (id INTEGER PRIMARY KEY); CREATE TABLE second (id INTEGER PRIMARY KEY);");
