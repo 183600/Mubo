@@ -393,11 +393,10 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
             `Cannot automatically add primary-key, auto-increment or UNIQUE column ${tableName}.${columnName}; use a manual migration`,
           );
         }
-        if (
-          column.notNull &&
-          (column.default === undefined || column.default === null) &&
-          column.sqlDefault === undefined
-        ) {
+        const fallback = normalizeDefault(
+          column.sqlDefault === undefined ? defaultSql(column) : column.sqlDefault,
+        );
+        if (column.notNull && fallback === null) {
           throw new MuboError(
             "MIGRATION_ERROR",
             `Cannot automatically add NOT NULL column ${tableName}.${columnName} without a default value`,
