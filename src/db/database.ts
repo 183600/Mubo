@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { Database as SQLiteDatabase, type SQLQueryBindings } from "bun:sqlite";
+import { Database as SQLiteDatabase, type SQLQueryBindings, type Statement } from "bun:sqlite";
 import { ensureDataDir } from "../core/config.ts";
 import { MuboError } from "../core/errors.ts";
 import type { Logger } from "../core/logger.ts";
@@ -50,6 +50,7 @@ export class MuboDatabase {
   private readonly logger?: Logger;
   private readonly schema?: MuboSchema;
   private closed = false;
+  private readonly statementCache = new Map<string, Statement<unknown, QueryArgument[]>>();
   private readonly transactionContext = new AsyncLocalStorage<TransactionContext>();
   private readonly transactionQueue: Array<() => void> = [];
   private transactionActive = false;
@@ -116,14 +117,24 @@ export class MuboDatabase {
     }
   }
 
+  private statement<Row>(sql: string): Statement<Row, QueryArgument[]> {
+    const cached = this.statementCache.get(sql);
+    if (cached) return cached as Statement<Row, QueryArgument[]>;
+    const statement = this.raw.query<Row, QueryArgument[]>(sql);
+    this.statementCache.set(sql, statement as Statement<unknown, QueryArgument[]>);
+    return statement;
+  }
+
   query<Row = Record<string, unknown>>(sql: string): QueryResult<Row> {
-    const statement = () => this.raw.query<Row, QueryArgument[]>(sql);
     return {
-      all: (...params) => this.timed(sql, () => statement().all(...normalizeParams(params))),
-      get: (...params) => this.timed(sql, () => statement().get(...normalizeParams(params))),
-      run: (...params) => this.timed(sql, () => statement().run(...normalizeParams(params))),
-      values: (...params) => this.timed(sql, () => statement().values(...normalizeParams(params))),
-      iterate: (...params) => statement().iterate(...normalizeParams(params)),
+      all: (...params) => this.timed(sql, () => this.statement<Row>(sql).all(...normalizeParams(params))),
+      get: (...params) => this.timed(sql, () => this.statement<Row>(sql).get(...normalizeParams(params))),
+      run: (...params) => this.timed(sql, () => this.statement<Row>(sql).run(...normalizeParams(params))),
+      values: (...params) => this.timed(sql, () => this.statement<Row>(sql).values(...normalizeParams(params))),
+      iterate: (...params) => {
+        this.assertOpen();
+        return this.raw.query<Row, QueryArgument[]>(sql).iterate(...normalizeParams(params));
+      },
     };
   }
 
@@ -302,6 +313,7 @@ export class MuboDatabase {
   close(force = false): void {
     if (this.closed) return;
     this.closed = true;
+    this.statementCache.clear();
     this.raw.close(force);
   }
 }

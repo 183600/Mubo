@@ -419,6 +419,37 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("caches prepared statements while honoring schema changes and iterators", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)");
+    const raw = db.raw as any;
+    const originalQuery = raw.query.bind(raw);
+    let compiled = 0;
+    raw.query = (sql: string) => {
+      compiled++;
+      return originalQuery(sql);
+    };
+    try {
+      db.query("INSERT INTO items (name) VALUES (?)").run("a");
+      db.query("INSERT INTO items (name) VALUES (?)").run("b");
+      expect(compiled).toBe(1);
+
+      const select = db.query<{ name: string; extra?: string | null }>("SELECT * FROM items ORDER BY id");
+      expect(select.all().map((row) => row.name)).toEqual(["a", "b"]);
+      expect(select.all()).toHaveLength(2);
+      expect(compiled).toBe(2);
+
+      db.exec("ALTER TABLE items ADD COLUMN extra TEXT DEFAULT 'x'");
+      expect(select.all().map((row) => row.extra)).toEqual(["x", "x"]);
+
+      expect([...select.iterate()]).toHaveLength(2);
+      expect(compiled).toBe(3);
+    } finally {
+      raw.query = originalQuery;
+      db.close();
+    }
+  });
+
   test("rejects invalid database options before opening SQLite", () => {
     expect(() => new MuboDatabase({ path: "" })).toThrow(/path must not be empty/);
     expect(() => new MuboDatabase({ path: ":memory:", busyTimeoutMs: -1 })).toThrow(
