@@ -322,6 +322,36 @@ describe("database and automatic migrations", () => {
   test("rejects malformed schema definitions", () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const cases: Array<{ schema: unknown; message: RegExp }> = [
+      { schema: { tables: null }, message: /Invalid schema definition/ },
+      { schema: { tables: { invalid: null } }, message: /Invalid table definition/ },
+      { schema: { tables: { items: { columns: null } } }, message: /must define a columns object/ },
+      {
+        schema: { tables: { items: { columns: { id: null } } } },
+        message: /Invalid column definition/,
+      },
+      {
+        schema: {
+          tables: { items: { columns: { id: { type: "text", default: { bad: true } } } } },
+        },
+        message: /Invalid default value/,
+      },
+      {
+        schema: {
+          tables: { items: { columns: { id: { type: "text", sqlDefault: 42 } } } },
+        },
+        message: /Invalid SQL default/,
+      },
+      {
+        schema: {
+          tables: {
+            items: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "idx_items", columns: "id" }],
+            },
+          },
+        },
+        message: /needs a columns array/,
+      },
       { schema: { tables: { empty: { columns: {} } } }, message: /at least one column/ },
       {
         schema: {

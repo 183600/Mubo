@@ -106,11 +106,26 @@ function columnSql(name: string, column: ColumnDefinition, includePrimaryKey: bo
   return parts.join(" ");
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function validateTable(name: string, table: TableDefinition): void {
   quoteIdentifier(name);
+  if (!isObject(table)) {
+    throw new MuboError("MIGRATION_ERROR", `Invalid table definition: ${name}`);
+  }
+  if (!isObject(table.columns)) {
+    throw new MuboError("MIGRATION_ERROR", `Table ${name} must define a columns object`);
+  }
   const entries = Object.entries(table.columns);
   if (entries.length === 0) {
     throw new MuboError("MIGRATION_ERROR", `Table ${name} must define at least one column`);
+  }
+  for (const [columnName, column] of entries) {
+    if (!isObject(column)) {
+      throw new MuboError("MIGRATION_ERROR", `Invalid column definition for ${name}.${columnName}`);
+    }
   }
   const primaryKeys = entries.filter(([, column]) => column.primaryKey);
   if (primaryKeys.length > 1) {
@@ -121,31 +136,53 @@ function validateTable(name: string, table: TableDefinition): void {
     if (!column.type || !/^[A-Za-z][A-Za-z0-9 _(),]*$/.test(String(column.type))) {
       throw new MuboError("MIGRATION_ERROR", `Invalid column type for ${name}.${columnName}: ${column.type}`);
     }
+    if (
+      column.default !== undefined &&
+      column.default !== null &&
+      typeof column.default !== "string" &&
+      typeof column.default !== "number" &&
+      typeof column.default !== "boolean"
+    ) {
+      throw new MuboError("MIGRATION_ERROR", `Invalid default value for ${name}.${columnName}`);
+    }
+    if (typeof column.default === "number" && !Number.isFinite(column.default)) {
+      throw new MuboError("MIGRATION_ERROR", `Invalid numeric default: ${column.default}`);
+    }
+    if (column.sqlDefault !== undefined && typeof column.sqlDefault !== "string") {
+      throw new MuboError("MIGRATION_ERROR", `Invalid SQL default for ${name}.${columnName}`);
+    }
     if (column.autoIncrement && !column.primaryKey) {
       throw new MuboError(
         "MIGRATION_ERROR",
         `AUTOINCREMENT requires a primary key for ${name}.${columnName}`,
       );
     }
-    if (column.references) {
-      quoteIdentifier(column.references.table);
-      quoteIdentifier(column.references.column ?? "id");
+    const references = column.references;
+    if (references !== undefined && references !== null) {
+      if (!isObject(references)) {
+        throw new MuboError("MIGRATION_ERROR", `Invalid references for ${name}.${columnName}`);
+      }
+      if (typeof references.table !== "string" || typeof (references.column ?? "id") !== "string") {
+        throw new MuboError("MIGRATION_ERROR", `Invalid references for ${name}.${columnName}`);
+      }
+      quoteIdentifier(references.table);
+      quoteIdentifier(references.column ?? "id");
       const actions = ["CASCADE", "SET NULL", "RESTRICT", "NO ACTION"];
-      if (column.references.onDelete && !actions.includes(column.references.onDelete)) {
+      if (references.onDelete && !actions.includes(references.onDelete)) {
         throw new MuboError(
           "MIGRATION_ERROR",
-          `Invalid ON DELETE action for ${name}.${columnName}: ${column.references.onDelete}`,
+          `Invalid ON DELETE action for ${name}.${columnName}: ${references.onDelete}`,
         );
       }
-      if (column.references.onUpdate && !actions.includes(column.references.onUpdate)) {
+      if (references.onUpdate && !actions.includes(references.onUpdate)) {
         throw new MuboError(
           "MIGRATION_ERROR",
-          `Invalid ON UPDATE action for ${name}.${columnName}: ${column.references.onUpdate}`,
+          `Invalid ON UPDATE action for ${name}.${columnName}: ${references.onUpdate}`,
         );
       }
       if (
         column.notNull &&
-        (column.references.onDelete === "SET NULL" || column.references.onUpdate === "SET NULL")
+        (references.onDelete === "SET NULL" || references.onUpdate === "SET NULL")
       ) {
         throw new MuboError(
           "MIGRATION_ERROR",
@@ -154,15 +191,32 @@ function validateTable(name: string, table: TableDefinition): void {
       }
     }
   }
+  if (table.indexes !== undefined && !Array.isArray(table.indexes)) {
+    throw new MuboError("MIGRATION_ERROR", `Indexes for ${name} must be an array`);
+  }
   for (const index of table.indexes ?? []) validateIndex(name, index);
 }
 
 function validateIndex(table: string, index: IndexDefinition): void {
+  if (!isObject(index)) {
+    throw new MuboError("MIGRATION_ERROR", `Invalid index definition on ${table}`);
+  }
+  if (typeof index.name !== "string") {
+    throw new MuboError("MIGRATION_ERROR", `Invalid SQL identifier: ${String(index.name)}`);
+  }
   quoteIdentifier(index.name);
+  if (!Array.isArray(index.columns)) {
+    throw new MuboError("MIGRATION_ERROR", `Index ${index.name} on ${table} needs a columns array`);
+  }
   if (index.columns.length === 0) {
     throw new MuboError("MIGRATION_ERROR", `Index ${index.name} on ${table} needs at least one column`);
   }
-  for (const column of index.columns) quoteIdentifier(column);
+  for (const column of index.columns) {
+    if (typeof column !== "string") {
+      throw new MuboError("MIGRATION_ERROR", `Invalid SQL identifier: ${String(column)}`);
+    }
+    quoteIdentifier(column);
+  }
 }
 
 function createTableSql(name: string, table: TableDefinition): string {
@@ -294,6 +348,9 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
 }
 
 function validateSchema(schema: MuboSchema): void {
+  if (!isObject(schema) || !isObject(schema.tables)) {
+    throw new MuboError("MIGRATION_ERROR", "Invalid schema definition");
+  }
   const indexOwners = new Map<string, string>();
   for (const [tableName, table] of Object.entries(schema.tables)) {
     validateTable(tableName, table);
