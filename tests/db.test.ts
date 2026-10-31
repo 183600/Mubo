@@ -275,6 +275,29 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("does not collapse whitespace inside index string literals", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(
+      "CREATE TABLE labels (id INTEGER PRIMARY KEY, name TEXT); " +
+        "CREATE INDEX idx_labels_name ON labels(name) WHERE name = 'a  b';",
+    );
+    const schema = defineSchema({
+      tables: {
+        labels: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            name: { type: "text" },
+          },
+          indexes: [
+            { name: "idx_labels_name", columns: ["name"], where: "name = 'a b'" },
+          ],
+        },
+      },
+    });
+    expect(() => db.migrate(schema)).toThrow(/different definition/);
+    db.close();
+  });
+
   test("rejects existing indexes with descending columns", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec(
@@ -1158,7 +1181,7 @@ describe("database and automatic migrations", () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec(
       "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT); " +
-        "CREATE INDEX idx_users_email ON users(email) /* WHERE ignored */ WHERE email IS NOT NULL;",
+        "CREATE INDEX idx_users_email ON users(email) /* WHERE ignored */ WHERE email IS NOT NULL /* trailing */;",
     );
     const schema = defineSchema({
       tables: {
@@ -1168,7 +1191,7 @@ describe("database and automatic migrations", () => {
             email: { type: "text" },
           },
           indexes: [
-            { name: "idx_users_email", columns: ["email"], where: "email IS NOT NULL" },
+            { name: "idx_users_email", columns: ["email"], where: "email  IS  NOT NULL" },
           ],
         },
       },

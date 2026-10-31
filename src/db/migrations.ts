@@ -433,7 +433,34 @@ function indexWhere(sql: string | null | undefined): string | undefined {
 }
 
 function normalizeWhere(value: string | undefined): string {
-  return (value ?? "").replace(/\s+/g, " ").trim();
+  if (!value) return "";
+  let result = "";
+  let pendingSpace = false;
+  for (let index = 0; index < value.length; index++) {
+    const char = value[index]!;
+    const skip = skipSqlIgnored(value, index);
+    if (skip !== undefined) {
+      const comment =
+        (char === "-" && value[index + 1] === "-") || (char === "/" && value[index + 1] === "*");
+      if (comment) {
+        pendingSpace = true;
+      } else {
+        if (pendingSpace && result.length > 0) result += " ";
+        pendingSpace = false;
+        result += value.slice(index, skip + 1);
+      }
+      index = skip;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace && result.length > 0) result += " ";
+    pendingSpace = false;
+    result += char;
+  }
+  return result;
 }
 
 function normalizeDefault(value: string | null | undefined): string | null {
