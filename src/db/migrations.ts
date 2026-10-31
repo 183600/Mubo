@@ -627,7 +627,11 @@ export function validateSchema(schema: MuboSchema): void {
   }
 }
 
-function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean): { statements: string[]; changes: string[] } {
+function planForSchema(
+  db: MuboDatabase,
+  schema: MuboSchema,
+  safeOnly: boolean,
+): { statements: string[]; changes: string[] } {
   const statements: string[] = [];
   const changes: string[] = [];
   validateSchema(schema);
@@ -655,6 +659,17 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
     }
 
     const existing = introspectTable(db, tableName);
+    const declaredColumns = new Set(
+      Object.keys(table.columns).map((columnName) => columnName.toLowerCase()),
+    );
+    for (const existingColumn of existing.columns.keys()) {
+      if (!declaredColumns.has(existingColumn.toLowerCase())) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Dropping column ${tableName}.${existingColumn} requires a manual migration`,
+        );
+      }
+    }
     for (const [columnName, column] of Object.entries(table.columns)) {
       const current = findCaseInsensitive(existing.columns, columnName);
       if (!current) {

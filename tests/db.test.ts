@@ -934,6 +934,45 @@ describe("database and automatic migrations", () => {
     auto.close();
   });
 
+  test("rejects dropping declared columns while leaving unrelated tables untouched", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const withNotes = defineSchema({
+      tables: {
+        ...baseSchema.tables,
+        notes: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            body: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(withNotes)).status).toBe("applied");
+
+    const withoutName = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true, autoIncrement: true },
+            email: { type: "text", notNull: true, unique: true },
+            created_at: { type: "integer", notNull: true },
+          },
+          indexes: [{ name: "idx_users_created_at", columns: ["created_at"] }],
+        },
+        notes: withNotes.tables.notes,
+      },
+    });
+    expect(() => db.migrate(withoutName)).toThrow(/Dropping column users\.name/);
+    expect((await db.migrate(baseSchema)).status).toBe("none");
+
+    db.exec("CREATE TABLE legacy (id INTEGER PRIMARY KEY)");
+    expect((await db.migrate(withNotes)).status).toBe("none");
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'legacy'").get(),
+    ).toBeTruthy();
+    db.close();
+  });
+
   test("repairs missing schema objects even when a plan was applied before", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const schema = defineSchema({
