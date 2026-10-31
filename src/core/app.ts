@@ -175,7 +175,17 @@ export class MuboApp {
 
   ws(path: string, handlers: WsHandlers): this {
     const normalized = normalizeRoutePath(path);
-    this.wsRoutes.set(normalized, { path: normalized, handlers });
+    const route: WsRoute = { path: normalized, handlers };
+    this.wsRoutes.set(normalized, route);
+    try {
+      const decoded = normalizeRoutePath(decodeURIComponent(normalized));
+      if (
+        decoded !== normalized &&
+        decoded.split("/").length === normalized.split("/").length
+      ) {
+        this.wsRoutes.set(decoded, route);
+      }
+    } catch {}
     return this;
   }
 
