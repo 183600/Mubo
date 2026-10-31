@@ -288,11 +288,11 @@ export function planMigrations(
   return { id: migrationId(statements), statements, changes };
 }
 
-export async function applyMigrations(
+export function applyMigrations(
   db: MuboDatabase,
   schema: MuboSchema,
   options: MigrationOptions = {},
-): Promise<MigrationResult> {
+): MigrationResult {
   const mode = options.mode ?? "apply";
   const table = options.table ?? "_mubo_migrations";
   const safeOnly = options.safeOnly ?? true;
@@ -310,7 +310,7 @@ export async function applyMigrations(
   }
 
   let applied: MigrationPlan | null = null;
-  await db.transaction(
+  db.transaction(
     () => {
       const fresh = planMigrations(db, schema, { table, safeOnly });
       if (fresh.statements.length === 0 || fresh.id === null) return;

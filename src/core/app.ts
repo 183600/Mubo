@@ -136,7 +136,7 @@ export class MuboApp {
     return this;
   }
 
-  async migrate(schema: MuboSchema | undefined = this.config.schema): Promise<Awaited<ReturnType<MuboDatabase["migrate"]>>> {
+  migrate(schema: MuboSchema | undefined = this.config.schema): ReturnType<MuboDatabase["migrate"]> {
     return this.db.migrate(schema ?? { tables: {} }, this.config.db.migrations);
   }
 

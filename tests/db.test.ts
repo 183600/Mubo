@@ -47,7 +47,7 @@ describe("database and automatic migrations", () => {
     );
     expect(user?.name).toBe("Alice");
 
-    const second = await db.migrate(baseSchema);
+    const second = db.migrate(baseSchema);
     expect(second.status).toBe("none");
     expect(db.ping()).toBe(true);
     db.close();
@@ -128,7 +128,7 @@ describe("database and automatic migrations", () => {
         },
       },
     });
-    await expect(db.migrate(unsafeUnique)).rejects.toThrow(/UNIQUE column/);
+    expect(() => db.migrate(unsafeUnique)).toThrow(/UNIQUE column/);
     db.close();
   });
   test("check mode reports pending migrations without applying them", async () => {
@@ -163,20 +163,27 @@ describe("database and automatic migrations", () => {
         },
       },
     });
-    await expect(db.migrate(unsafe)).rejects.toThrow(/NOT NULL/);
+    expect(() => db.migrate(unsafe)).toThrow(/NOT NULL/);
 
-    await expect(
+    expect(() =>
       db.transaction(() => {
         db.query("INSERT INTO users (email, name, created_at) VALUES (?, ?, ?)").run("tx@example.com", "Tx", 1);
         throw new Error("rollback");
       }),
-    ).rejects.toThrow("rollback");
+    ).toThrow("rollback");
     expect(db.query("SELECT COUNT(*) AS count FROM users").get()).toEqual({ count: 0 });
 
-    await db.transaction(async () => {
+    const syncResult = db.transaction(() => {
       db.query("INSERT INTO users (email, name, created_at) VALUES (?, ?, ?)").run("ok@example.com", "Ok", 2);
+      return "committed";
     });
+    expect(syncResult).toBe("committed");
     expect(db.query("SELECT COUNT(*) AS count FROM users").get()).toEqual({ count: 1 });
+
+    await db.transaction(async () => {
+      db.query("INSERT INTO users (email, name, created_at) VALUES (?, ?, ?)").run("async@example.com", "Async", 3);
+    });
+    expect(db.query("SELECT COUNT(*) AS count FROM users").get()).toEqual({ count: 2 });
     db.close();
   });
 });

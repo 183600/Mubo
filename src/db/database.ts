@@ -112,22 +112,23 @@ export class MuboDatabase {
     return this.timed(sql, () => (this.raw.run as (...args: unknown[]) => { changes: number; lastInsertRowid: number | bigint })(sql, ...normalizeParams(params)));
   }
 
-  async transaction<T>(
+  transaction<T>(
     fn: (db: MuboDatabase) => T | Promise<T>,
     options: { immediate?: boolean } = {},
-  ): Promise<T> {
+  ): T | Promise<T> {
     this.assertOpen();
     const depth = this.transactionDepth;
     const savepoint = `mubo_sp_${depth}`;
     this.transactionDepth++;
-    try {
-      if (depth === 0) this.raw.run(options.immediate === false ? "BEGIN" : "BEGIN IMMEDIATE");
-      else this.raw.run(`SAVEPOINT ${savepoint}`);
-      const result = await fn(this);
-      if (depth === 0) this.raw.run("COMMIT");
-      else this.raw.run(`RELEASE ${savepoint}`);
-      return result;
-    } catch (error) {
+    const commit = () => {
+      try {
+        if (depth === 0) this.raw.run("COMMIT");
+        else this.raw.run(`RELEASE ${savepoint}`);
+      } finally {
+        this.transactionDepth--;
+      }
+    };
+    const rollback = () => {
       try {
         if (depth === 0) this.raw.run("ROLLBACK");
         else {
@@ -136,10 +137,36 @@ export class MuboDatabase {
         }
       } catch {
         // The original error is more useful than a rollback failure.
+      } finally {
+        this.transactionDepth--;
       }
+    };
+    try {
+      if (depth === 0) this.raw.run(options.immediate === false ? "BEGIN" : "BEGIN IMMEDIATE");
+      else this.raw.run(`SAVEPOINT ${savepoint}`);
+      const result = fn(this);
+      if (result instanceof Promise) {
+        return result.then(
+          (value) => {
+            try {
+              commit();
+              return value;
+            } catch (error) {
+              rollback();
+              throw error;
+            }
+          },
+          (error) => {
+            rollback();
+            throw error;
+          },
+        );
+      }
+      commit();
+      return result;
+    } catch (error) {
+      rollback();
       throw error;
-    } finally {
-      this.transactionDepth--;
     }
   }
 
@@ -157,10 +184,10 @@ export class MuboDatabase {
     return planMigrations(this, schema, { table: "_mubo_migrations", safeOnly: true, ...options });
   }
 
-  async migrate(
+  migrate(
     schema: MuboSchema = this.schema ?? { tables: {} },
     options: MigrationOptions = {},
-  ): Promise<MigrationResult> {
+  ): MigrationResult {
     this.assertOpen();
     return applyMigrations(this, schema, { table: "_mubo_migrations", safeOnly: true, ...options });
   }
