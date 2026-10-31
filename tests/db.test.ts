@@ -99,6 +99,38 @@ describe("database and automatic migrations", () => {
     v2.close();
   });
 
+
+  test("honors NOT NULL on primary keys and rejects unsafe added constraints", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    await db.migrate(
+      defineSchema({
+        tables: {
+          tokens: {
+            columns: {
+              id: { type: "text", primaryKey: true, notNull: true },
+              value: { type: "text" },
+            },
+          },
+        },
+      }),
+    );
+    const columns = db.query<{ name: string; notnull: number }>('PRAGMA table_info("tokens")').all();
+    expect(columns.find((column) => column.name === "id")?.notnull).toBe(1);
+
+    const unsafeUnique = defineSchema({
+      tables: {
+        tokens: {
+          columns: {
+            id: { type: "text", primaryKey: true, notNull: true },
+            value: { type: "text" },
+            slug: { type: "text", unique: true },
+          },
+        },
+      },
+    });
+    await expect(db.migrate(unsafeUnique)).rejects.toThrow(/UNIQUE column/);
+    db.close();
+  });
   test("check mode reports pending migrations without applying them", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(baseSchema);

@@ -169,7 +169,11 @@ export class StaticAssets {
       return textResponse("Bad Request", { status: 400 });
     }
     let asset = this.assets.get(key);
-    if (asset === undefined && this.spaFallback) asset = this.assets.get("/index.html");
+    let usedFallback = false;
+    if (asset === undefined && this.spaFallback) {
+      asset = this.assets.get("/index.html");
+      usedFallback = asset !== undefined;
+    }
     if (asset === undefined) return null;
 
     const bytes = decodeAsset(asset);
@@ -181,7 +185,7 @@ export class StaticAssets {
       typeof asset === "object" && !(asset instanceof Uint8Array) && !(asset instanceof ArrayBuffer) && asset.etag
         ? asset.etag
         : `"${new Bun.CryptoHasher("sha256").update(bytes).digest("hex").slice(0, 20)}"`;
-    const finalPath = asset === this.assets.get("/index.html") && key !== "/index.html" ? "/index.html" : key;
+    const finalPath = usedFallback ? "/index.html" : key;
     return this.respond(request, finalPath, bytes, etag, type ?? contentTypeFor(finalPath), bytes.byteLength);
   }
 

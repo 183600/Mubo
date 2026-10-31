@@ -61,7 +61,7 @@ export async function devCommand(context: CommandContext): Promise<void> {
 
 export async function migrateCommand(context: CommandContext): Promise<void> {
   const config = await projectConfig(context);
-  if (boolFlag(context.args, "check")) config.db.migrations.mode = "check";
+  config.db.migrations.mode = boolFlag(context.args, "check") ? "check" : "apply";
   const db = new MuboDatabase({
     path: config.db.path,
     dataDir: config.dataDir,

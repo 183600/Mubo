@@ -1,8 +1,8 @@
 import type { Server, ServerWebSocket } from "bun";
-import { MuboError } from "./errors.ts";
+import { isMuboError, MuboError } from "./errors.ts";
 import { createLogger, type Logger } from "./logger.ts";
 import {
-  resolveConfig,
+  loadAndResolveConfig,
   type MuboConfig,
   type ResolveConfigOptions,
   type ResolvedMuboConfig,
@@ -241,11 +241,10 @@ export class MuboApp {
 
   private handleWsClose(ws: ServerWebSocket<WsSocketData>, code: number, reason: string): void {
     const route = this.wsRoutes.get(ws.data.routePath);
-    const ctx = this.wsHub.getContext(ws);
+    const ctx = this.wsHub.remove(ws);
     if (ctx && route?.handlers.onClose) {
       this.runWsHandler(ctx, route.handlers, () => route.handlers.onClose!(ctx, code, reason));
     }
-    this.wsHub.remove(ws);
     this.logger.debug("WebSocket disconnected", { code, reason, path: ws.data.routePath });
   }
 
@@ -389,13 +388,19 @@ export class MuboApp {
       const response = await this.dispatchHttp(request, url, server, requestId, match, started);
       return applyCors(request, response, this.config);
     } catch (error) {
-      this.logger.error("Unhandled request error", {
+      const expected = isMuboError(error) && error.status < 500;
+      const fields = {
         requestId,
         method: request.method,
         path: url.pathname,
         error: error instanceof Error ? error.message : String(error),
-        stack: this.config.app.env === "production" ? undefined : error instanceof Error ? error.stack : undefined,
-      });
+        stack:
+          !expected && this.config.app.env !== "production" && error instanceof Error
+            ? error.stack
+            : undefined,
+      };
+      if (expected) this.logger.warn("Request rejected", fields);
+      else this.logger.error("Unhandled request error", fields);
       const response = errorResponse(requestId, error, this.config.app.env === "production");
       return applyCors(request, response, this.config);
     }
@@ -484,7 +489,7 @@ export async function createMuboApp(
   config: MuboConfig = {},
   options: CreateMuboAppOptions = {},
 ): Promise<MuboApp> {
-  const resolved = resolveConfig(config, options);
+  const resolved = await loadAndResolveConfig(config, options);
   const logger = createLogger(resolved.log, {
     app: resolved.app.name,
     env: resolved.app.env,

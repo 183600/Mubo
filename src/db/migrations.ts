@@ -79,7 +79,7 @@ function columnSql(name: string, column: ColumnDefinition, includePrimaryKey: bo
       parts.push("AUTOINCREMENT");
     }
   }
-  if (column.notNull && !column.primaryKey) parts.push("NOT NULL");
+  if (column.notNull) parts.push("NOT NULL");
   if (column.unique && !column.primaryKey) parts.push("UNIQUE");
   const fallback = defaultSql(column);
   if (fallback !== null) parts.push(`DEFAULT ${fallback}`);
@@ -205,7 +205,17 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
     for (const [columnName, column] of Object.entries(table.columns)) {
       const current = existing.columns.get(columnName);
       if (!current) {
-        if (column.notNull && column.default === undefined && column.sqlDefault === undefined) {
+        if (column.primaryKey || column.autoIncrement || column.unique) {
+          throw new MuboError(
+            "MIGRATION_ERROR",
+            `Cannot automatically add primary-key, auto-increment or UNIQUE column ${tableName}.${columnName}; use a manual migration`,
+          );
+        }
+        if (
+          column.notNull &&
+          (column.default === undefined || column.default === null) &&
+          column.sqlDefault === undefined
+        ) {
           throw new MuboError(
             "MIGRATION_ERROR",
             `Cannot automatically add NOT NULL column ${tableName}.${columnName} without a default value`,
