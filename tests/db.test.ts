@@ -331,6 +331,37 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("detects nullability changes on primary-key columns", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    await db.migrate(
+      defineSchema({
+        tables: {
+          tokens: {
+            columns: {
+              id: { type: "text", primaryKey: true },
+              value: { type: "text" },
+            },
+          },
+        },
+      }),
+    );
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            tokens: {
+              columns: {
+                id: { type: "text", primaryKey: true, notNull: true },
+                value: { type: "text" },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(/nullability change/);
+    db.close();
+  });
+
   test("check mode reports pending migrations without applying them", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(baseSchema);

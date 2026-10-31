@@ -309,7 +309,7 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
           `Foreign-key change for ${tableName}.${columnName} requires a manual migration`,
         );
       }
-      if (!current.primaryKey && current.notNull !== Boolean(column.notNull)) {
+      if (current.notNull !== Boolean(column.notNull)) {
         const detail = safeOnly
           ? "safeOnly is enabled"
           : "automatic destructive migrations are not supported";
