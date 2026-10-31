@@ -28,15 +28,27 @@ async function projectConfig(context: CommandContext): Promise<ResolvedMuboConfi
   );
 }
 
+const DEV_ENTRY_CANDIDATES = [
+  "src/server/index.ts",
+  "src/server/index.js",
+  "src/index.ts",
+  "src/index.js",
+  "server.ts",
+  "server.js",
+  "index.ts",
+  "index.js",
+];
+
 function findDevEntry(cwd: string, requested?: string): string {
-  const candidates = requested
-    ? [requested]
-    : ["src/server/index.ts", "src/index.ts", "server.ts", "index.ts"];
+  const candidates = requested ? [requested] : DEV_ENTRY_CANDIDATES;
   for (const candidate of candidates) {
     const path = resolve(cwd, candidate);
     if (existsSync(path)) return path;
   }
-  throw new MuboError("CONFIG_ERROR", "Cannot find app entry (tried src/server/index.ts, src/index.ts)");
+  throw new MuboError(
+    "CONFIG_ERROR",
+    `Cannot find app entry (tried ${DEV_ENTRY_CANDIDATES.join(", ")})`,
+  );
 }
 
 export async function devCommand(context: CommandContext): Promise<void> {

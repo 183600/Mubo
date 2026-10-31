@@ -51,6 +51,21 @@ describe("single-file build", () => {
     );
   });
 
+  test("finds JavaScript entries when no TypeScript entry exists", async () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, "src", "server"), { recursive: true });
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({ name: "js-entry-app", type: "module" }),
+    );
+    writeFileSync(join(cwd, "src", "server", "index.js"), "console.log('js entry');\n");
+
+    const result = await buildProject({ cwd, outfile: "dist/js-entry-app" });
+    expect(result.entry).toBe(join(cwd, "src", "server", "index.js"));
+    expect(existsSync(result.outfile)).toBe(true);
+    expect(result.assets).toBe(0);
+  }, 60_000);
+
   test(
     "compiles an app with embedded assets and runs it with a data directory",
     async () => {

@@ -49,17 +49,26 @@ function isDirectory(path: string): boolean {
   }
 }
 
+const ENTRY_CANDIDATES = [
+  "src/server/index.ts",
+  "src/server/index.js",
+  "src/index.ts",
+  "src/index.js",
+  "server.ts",
+  "server.js",
+  "index.ts",
+  "index.js",
+];
+
 function findEntry(cwd: string, requested?: string): string {
-  const candidates = requested
-    ? [requested]
-    : ["src/server/index.ts", "src/index.ts", "server.ts", "index.ts"];
+  const candidates = requested ? [requested] : ENTRY_CANDIDATES;
   for (const candidate of candidates) {
     const absolute = resolve(cwd, candidate);
     if (isFile(absolute)) return absolute;
   }
   throw new MuboError(
     "CONFIG_ERROR",
-    `Cannot find app entry${requested ? `: ${requested}` : " (tried src/server/index.ts, src/index.ts, server.ts, index.ts)"}`,
+    `Cannot find app entry${requested ? `: ${requested}` : ` (tried ${ENTRY_CANDIDATES.join(", ")})`}`,
   );
 }
 
