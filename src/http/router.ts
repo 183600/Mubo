@@ -100,6 +100,23 @@ function matchSegments(route: Route, parts: string[]): Record<string, string> | 
   return parts.length === route.segments.length ? params : null;
 }
 
+function segmentSpecificity(segment: Segment | undefined): number {
+  if (!segment) return 4;
+  if (segment.kind === "literal") return 3;
+  if (segment.kind === "param") return 2;
+  return 1;
+}
+
+function isMoreSpecific(route: Route, than: Route): boolean {
+  const length = Math.max(route.segments.length, than.segments.length);
+  for (let index = 0; index < length; index++) {
+    const difference =
+      segmentSpecificity(route.segments[index]) - segmentSpecificity(than.segments[index]);
+    if (difference !== 0) return difference > 0;
+  }
+  return false;
+}
+
 export class Router {
   readonly routes: Route[] = [];
 
@@ -117,18 +134,24 @@ export class Router {
     const upper = method.toUpperCase();
     const parts = pathSegments(pathname);
 
+    let best: { route: Route; params: Record<string, string> } | undefined;
     for (const route of this.routes) {
       if (route.method !== upper) continue;
       const params = matchSegments(route, parts);
-      if (params !== null) return { type: "match", route, params };
+      if (params !== null && (!best || isMoreSpecific(route, best.route))) {
+        best = { route, params };
+      }
     }
-    if (upper === "HEAD") {
+    if (!best && upper === "HEAD") {
       for (const route of this.routes) {
         if (route.method !== "GET") continue;
         const params = matchSegments(route, parts);
-        if (params !== null) return { type: "match", route, params };
+        if (params !== null && (!best || isMoreSpecific(route, best.route))) {
+          best = { route, params };
+        }
       }
     }
+    if (best) return { type: "match", route: best.route, params: best.params };
 
     const allowed = new Set<HttpMethod>();
     for (const route of this.routes) {

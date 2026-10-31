@@ -37,6 +37,33 @@ describe("router", () => {
     });
   });
 
+  test("prefers literal routes over parameters and wildcards regardless of order", async () => {
+    const router = new Router();
+    router.add("GET", "/users/:id", ok("param"));
+    router.add("GET", "/users/*", ok("wildcard"));
+    router.add("GET", "/users/me", ok("literal"));
+
+    const literal = router.match("GET", "/users/me");
+    expect(literal.type).toBe("match");
+    expect(literal.type === "match" ? literal.route.path : undefined).toBe("/users/me");
+
+    const param = router.match("GET", "/users/42");
+    expect(param.type).toBe("match");
+    expect(param.type === "match" ? param.route.path : undefined).toBe("/users/:id");
+
+    const wildcard = router.match("GET", "/users/42/details");
+    expect(wildcard.type).toBe("match");
+    expect(wildcard.type === "match" ? wildcard.route.path : undefined).toBe("/users/*");
+
+    const exact = new Router();
+    exact.add("GET", "/files/*", ok("wildcard"));
+    exact.add("GET", "/files", ok("exact"));
+    const exactMatch = exact.match("GET", "/files");
+    const exactResponse =
+      exactMatch.type === "match" ? await exactMatch.route.handler({} as never) : undefined;
+    expect(await (exactResponse as Response).text()).toBe("exact");
+  });
+
   test("falls back from HEAD to GET and reports allowed methods", () => {
     const router = new Router();
     router.add("GET", "/users/:id", ok("get"));
