@@ -83,6 +83,11 @@ await app.start();
       expect(existsSync(result.outfile)).toBe(true);
       expect(result.assets).toBe(1);
 
+      writeFileSync(
+        join(cwd, "mubo.config.ts"),
+        `throw new Error("compiled apps must not load config from their working directory");\n`,
+      );
+
       const dataDir = join(cwd, "data");
       const port = await freePort();
       const proc = Bun.spawn([result.outfile], {
