@@ -187,7 +187,7 @@ describe("static assets", () => {
     expect(await response!.text()).not.toContain("root:");
   });
 
-  test("rejects malformed and NUL paths without SPA fallback", async () => {
+  test("rejects malformed and NUL paths", async () => {
     const dir = publicDir();
     const disk = new StaticAssets({ mode: "disk", dir, spaFallback: true }, dir);
     for (const path of ["/%E0%A4%A", "/%00"]) {
@@ -200,9 +200,11 @@ describe("static assets", () => {
       { mode: "embedded", spaFallback: true, assets: { "/index.html": "home" } },
       dir,
     );
-    const malformed = "http://localhost/%E0%A4%A";
-    const response = await embedded.handle(new Request(malformed), new URL(malformed));
-    expect(response?.status).toBe(400);
+    for (const path of ["/%E0%A4%A", "/%00"]) {
+      const url = `http://localhost${path}`;
+      const response = await embedded.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(400);
+    }
   });
 
   test("app.static configures static serving after creation", async () => {

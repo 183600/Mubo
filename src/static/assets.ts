@@ -186,6 +186,9 @@ export class StaticAssets {
     } catch {
       throw new MuboError("BAD_REQUEST", `Malformed percent-encoding in URL: ${pathname}`);
     }
+    if (key.includes("\0")) {
+      throw new MuboError("BAD_REQUEST", `Invalid NUL byte in URL: ${pathname}`);
+    }
     const exact = this.assets.get(key);
     if (exact !== undefined) return { asset: exact, path: key };
 
