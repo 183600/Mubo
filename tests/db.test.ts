@@ -1030,6 +1030,37 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("ignores keyword-like identifiers and defaults when detecting autoincrement", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: {
+        items: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            autoincrement: { type: "text" },
+            note: { type: "text", default: "AUTOINCREMENT" },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("applied");
+    expect((await db.migrate(schema)).status).toBe("none");
+
+    const withAutoIncrement = defineSchema({
+      tables: {
+        counters: {
+          columns: {
+            id: { type: "integer", primaryKey: true, autoIncrement: true },
+            label: { type: "text" },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(withAutoIncrement)).status).toBe("applied");
+    expect((await db.migrate(withAutoIncrement)).status).toBe("none");
+    db.close();
+  });
+
   test("rejects added NOT NULL columns when the SQL default is NULL", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(

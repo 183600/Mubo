@@ -305,6 +305,39 @@ function indexOwner(db: MuboDatabase, index: string): string | undefined {
     .get(index)?.tbl_name;
 }
 
+function hasKeyword(sql: string | null | undefined, keyword: string): boolean {
+  if (!sql) return false;
+  const target = keyword.toUpperCase();
+  let quote: string | undefined;
+  for (let index = 0; index < sql.length; index++) {
+    const char = sql[index]!;
+    if (quote) {
+      if (char !== quote) continue;
+      if (sql[index + 1] === quote) {
+        index++;
+        continue;
+      }
+      quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "[") {
+      quote = "]";
+      continue;
+    }
+    if (sql.slice(index, index + target.length).toUpperCase() !== target) continue;
+    const before = sql[index - 1];
+    const after = sql[index + target.length];
+    if (before && /[A-Za-z0-9_$]/.test(before)) continue;
+    if (after && /[A-Za-z0-9_$]/.test(after)) continue;
+    return true;
+  }
+  return false;
+}
+
 function viewExists(db: MuboDatabase, view: string): boolean {
   return (
     db
@@ -492,7 +525,7 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
       "SELECT sql FROM sqlite_master WHERE type = 'table' AND name COLLATE NOCASE = ?",
     )
     .get(table);
-  const autoIncrement = /\bAUTOINCREMENT\b/i.test(definition?.sql ?? "");
+  const autoIncrement = hasKeyword(definition?.sql, "AUTOINCREMENT");
   return { columns, indexes, foreignKeys, autoIncrement };
 }
 
