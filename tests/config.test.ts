@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createMuboApp, resolveConfig } from "../src/index.ts";
+import { createMuboApp, loadAndResolveConfig, resolveConfig } from "../src/index.ts";
 import { defaultDataDir, sanitizeAppName } from "../src/core/config.ts";
 
 const tempDirs: string[] = [];
@@ -116,6 +116,59 @@ export default defineConfig({
     );
     await expect(createMuboApp({}, { cwd: tempDir(), argv: ["--config"], env: {} })).rejects.toThrow(
       /Missing value for --config/,
+    );
+  });
+
+  test("applies all supported CLI overrides", () => {
+    const cwd = tempDir();
+    const config = resolveConfig(
+      {},
+      {
+        cwd,
+        env: {},
+        argv: [
+          "--data-dir",
+          "data-root",
+          "--port",
+          "0",
+          "--host",
+          "0.0.0.0",
+          "--db",
+          ":memory:",
+          "--static-dir",
+          "assets",
+          "--log-level",
+          "debug",
+          "--no-static",
+          "--no-ws",
+        ],
+      },
+    );
+    expect(config.dataDir).toBe(resolve(cwd, "data-root"));
+    expect(config.http).toMatchObject({ port: 0, host: "0.0.0.0" });
+    expect(config.db.path).toBe(":memory:");
+    expect(config.static.mode).toBe("off");
+    expect(config.static.dir).toBe(resolve(cwd, "assets"));
+    expect(config.log.level).toBe("debug");
+    expect(config.ws.enabled).toBe(false);
+  });
+
+  test("reports config file loading failures and invalid environment values", async () => {
+    const cwd = tempDir();
+    await expect(
+      loadAndResolveConfig({}, { cwd, loadFile: true, configFile: "missing.config.ts", env: {} }),
+    ).rejects.toThrow(/Config file not found/);
+
+    writeFileSync(join(cwd, "mubo.config.ts"), "export default 42;\n");
+    await expect(loadAndResolveConfig({}, { cwd, loadFile: true, env: {} })).rejects.toThrow(
+      /Failed to load config file/,
+    );
+
+    expect(() => resolveConfig({}, { env: { MUBO_LOG_JSON: "maybe" }, argv: [] })).toThrow(
+      /Invalid boolean value/,
+    );
+    expect(() => resolveConfig({}, { env: { MUBO_PORT: "abc" }, argv: [] })).toThrow(
+      /MUBO_PORT must be a number/,
     );
   });
 
