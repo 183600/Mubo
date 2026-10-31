@@ -427,6 +427,52 @@ describe("database and automatic migrations", () => {
         message: /Invalid SQL identifier/,
       },
       {
+        schema: { tables: { items: { columns: { id: { type: 42 } } } } },
+        message: /Invalid column type/,
+      },
+      {
+        schema: { tables: { items: { columns: { id: { type: "text", notNull: "yes" } } } } },
+        message: /Invalid notNull setting/,
+      },
+      {
+        schema: { tables: { items: { columns: { id: { type: "text", sqlDefault: "   " } } } } },
+        message: /Invalid SQL default/,
+      },
+      {
+        schema: {
+          tables: {
+            items: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "idx_items", columns: ["id"], where: 42 }],
+            },
+          },
+        },
+        message: /Invalid WHERE clause/,
+      },
+      {
+        schema: {
+          tables: {
+            items: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "idx_items", columns: ["missing"] }],
+            },
+          },
+        },
+        message: /references unknown column missing/,
+      },
+      {
+        schema: {
+          tables: {
+            items: {
+              columns: {
+                parent_id: { type: "text", references: { table: "parents", onDelete: 42 } },
+              },
+            },
+          },
+        },
+        message: /Invalid ON DELETE action/,
+      },
+      {
         schema: {
           tables: {
             first: {

@@ -126,6 +126,11 @@ function validateTable(name: string, table: TableDefinition): void {
     if (!isObject(column)) {
       throw new MuboError("MIGRATION_ERROR", `Invalid column definition for ${name}.${columnName}`);
     }
+    for (const flag of ["primaryKey", "autoIncrement", "notNull", "unique"] as const) {
+      if (column[flag] !== undefined && typeof column[flag] !== "boolean") {
+        throw new MuboError("MIGRATION_ERROR", `Invalid ${flag} setting for ${name}.${columnName}`);
+      }
+    }
   }
   const primaryKeys = entries.filter(([, column]) => column.primaryKey);
   if (primaryKeys.length > 1) {
@@ -133,8 +138,8 @@ function validateTable(name: string, table: TableDefinition): void {
   }
   for (const [columnName, column] of entries) {
     quoteIdentifier(columnName);
-    if (!column.type || !/^[A-Za-z][A-Za-z0-9 _(),]*$/.test(String(column.type))) {
-      throw new MuboError("MIGRATION_ERROR", `Invalid column type for ${name}.${columnName}: ${column.type}`);
+    if (typeof column.type !== "string" || !/^[A-Za-z][A-Za-z0-9 _(),]*$/.test(column.type)) {
+      throw new MuboError("MIGRATION_ERROR", `Invalid column type for ${name}.${columnName}: ${String(column.type)}`);
     }
     if (
       column.default !== undefined &&
@@ -148,7 +153,10 @@ function validateTable(name: string, table: TableDefinition): void {
     if (typeof column.default === "number" && !Number.isFinite(column.default)) {
       throw new MuboError("MIGRATION_ERROR", `Invalid numeric default: ${column.default}`);
     }
-    if (column.sqlDefault !== undefined && typeof column.sqlDefault !== "string") {
+    if (
+      column.sqlDefault !== undefined &&
+      (typeof column.sqlDefault !== "string" || column.sqlDefault.trim().length === 0)
+    ) {
       throw new MuboError("MIGRATION_ERROR", `Invalid SQL default for ${name}.${columnName}`);
     }
     if (column.autoIncrement && !column.primaryKey) {
@@ -168,16 +176,16 @@ function validateTable(name: string, table: TableDefinition): void {
       quoteIdentifier(references.table);
       quoteIdentifier(references.column ?? "id");
       const actions = ["CASCADE", "SET NULL", "RESTRICT", "NO ACTION"];
-      if (references.onDelete && !actions.includes(references.onDelete)) {
+      if (references.onDelete !== undefined && !actions.includes(references.onDelete)) {
         throw new MuboError(
           "MIGRATION_ERROR",
-          `Invalid ON DELETE action for ${name}.${columnName}: ${references.onDelete}`,
+          `Invalid ON DELETE action for ${name}.${columnName}: ${String(references.onDelete)}`,
         );
       }
-      if (references.onUpdate && !actions.includes(references.onUpdate)) {
+      if (references.onUpdate !== undefined && !actions.includes(references.onUpdate)) {
         throw new MuboError(
           "MIGRATION_ERROR",
-          `Invalid ON UPDATE action for ${name}.${columnName}: ${references.onUpdate}`,
+          `Invalid ON UPDATE action for ${name}.${columnName}: ${String(references.onUpdate)}`,
         );
       }
       if (
@@ -194,10 +202,11 @@ function validateTable(name: string, table: TableDefinition): void {
   if (table.indexes !== undefined && !Array.isArray(table.indexes)) {
     throw new MuboError("MIGRATION_ERROR", `Indexes for ${name} must be an array`);
   }
-  for (const index of table.indexes ?? []) validateIndex(name, index);
+  const columnNames = new Set(entries.map(([columnName]) => columnName));
+  for (const index of table.indexes ?? []) validateIndex(name, index, columnNames);
 }
 
-function validateIndex(table: string, index: IndexDefinition): void {
+function validateIndex(table: string, index: IndexDefinition, columnNames: Set<string>): void {
   if (!isObject(index)) {
     throw new MuboError("MIGRATION_ERROR", `Invalid index definition on ${table}`);
   }
@@ -205,6 +214,12 @@ function validateIndex(table: string, index: IndexDefinition): void {
     throw new MuboError("MIGRATION_ERROR", `Invalid SQL identifier: ${String(index.name)}`);
   }
   quoteIdentifier(index.name);
+  if (index.unique !== undefined && typeof index.unique !== "boolean") {
+    throw new MuboError("MIGRATION_ERROR", `Invalid unique setting for index ${index.name}`);
+  }
+  if (index.where !== undefined && typeof index.where !== "string") {
+    throw new MuboError("MIGRATION_ERROR", `Invalid WHERE clause for index ${index.name}`);
+  }
   if (!Array.isArray(index.columns)) {
     throw new MuboError("MIGRATION_ERROR", `Index ${index.name} on ${table} needs a columns array`);
   }
@@ -216,6 +231,12 @@ function validateIndex(table: string, index: IndexDefinition): void {
       throw new MuboError("MIGRATION_ERROR", `Invalid SQL identifier: ${String(column)}`);
     }
     quoteIdentifier(column);
+    if (!columnNames.has(column)) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Index ${index.name} on ${table} references unknown column ${column}`,
+      );
+    }
   }
 }
 
