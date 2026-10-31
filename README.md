@@ -155,6 +155,59 @@ Mubo 应用的生命周期容器，负责：
 
 ---
 
+## API 参考
+
+### App
+
+```ts
+const app = await createMuboApp(config, { cwd, argv, env });
+app.get("/path", handler);
+app.post("/path", handler);
+app.put("/path", handler);
+app.patch("/path", handler);
+app.delete("/path", handler);
+app.head("/path", handler);
+app.use(async (ctx, next) => {
+  const response = await next();
+  response.headers.set("x-demo", "1");
+  return response;
+});
+app.ws("/ws", { authorize, onConnect, onMessage, onClose, onError });
+app.static({ mode: "embedded", spaFallback: true });
+await app.start();
+await app.stop();
+```
+
+`createMuboApp` 默认从当前目录加载 `mubo.config.ts`；传入 `{ loadFile: false }` 可关闭。显式传入的配置优先于配置文件。
+
+### HTTP Context
+
+`ctx.req`、`ctx.url`、`ctx.method`、`ctx.params`、`ctx.query`、`ctx.requestId`、`ctx.db`、`ctx.log`、`ctx.set/get`、`ctx.body()`、`ctx.text()`、`ctx.form()`、`ctx.json()`、`ctx.ok()`、`ctx.fail()`。
+
+未捕获的 `MuboError` 会转换为统一 JSON：`{ error: { code, message }, requestId }`，响应头同时包含 `x-request-id`。
+
+### Database
+
+```ts
+app.db.exec("CREATE TABLE ...; CREATE INDEX ...;");
+app.db.query("SELECT * FROM users WHERE id = ?").get(id);
+app.db.query("SELECT * FROM users").all();
+app.db.query("INSERT INTO users (name) VALUES (?)").run("Ada");
+app.db.query("SELECT id FROM users").values();
+app.db.transaction((db) => {
+  db.query("INSERT INTO users (name) VALUES (?)").run("Ada");
+});
+app.db.migrate(schema, { mode: "check" });
+```
+
+事务回调为同步时直接返回结果，为异步时返回 Promise；嵌套事务使用 SAVEPOINT。迁移默认只允许建表、加列和加索引，破坏性变更需手写迁移。
+
+### WebSocket Context
+
+`ctx.id`、`ctx.ip`、`ctx.url`、`ctx.user`、`ctx.state`、`ctx.rooms`、`ctx.send()`、`ctx.emit()`、`ctx.publish()`、`ctx.subscribe()`、`ctx.unsubscribe()`、`ctx.close()`。`emit()` 使用 `{ t: "event", e, d, id? }` 协议。
+
+---
+
 ## 示例：HTTP 路由（示意）
 
 ```ts
@@ -180,7 +233,7 @@ registerHealthRoutes(app);
 await app.start();
 ```
 
-> 注：具体 API 以最终实现为准；详细设计见 `PLAN.md`。
+> 详细设计见 `PLAN.md`；可运行示例见 `examples/minimal`。
 
 ---
 
@@ -206,7 +259,7 @@ export function registerWs(app: any) {
 
 Mubo 的迁移目标是让“私有化单文件应用”具备：
 - **启动即升级**（用户不需要手动运行 migrate 命令）
-- **可追踪**（表 `mubo_migrations` 或 `PRAGMA user_version`）
+- **可追踪**（默认表 `_mubo_migrations`，记录迁移 ID、校验和与执行时间）
 - **尽量安全**（默认只做追加式变更：建表/加列/加索引；破坏性变更需显式开启）
 
 建议：
@@ -217,10 +270,11 @@ Mubo 的迁移目标是让“私有化单文件应用”具备：
 
 ## 配置
 
-配置优先级（建议）：
-1. 环境变量
-2. `mubo.config.ts`
-3. 默认值
+配置优先级：
+1. CLI 参数（`--port`、`--host`、`--data-dir`、`--db`、`--static-dir` 等）
+2. 环境变量（`MUBO_*`）
+3. `mubo.config.ts` / `mubo.config.js`
+4. 默认值
 
 常见配置项：
 - `MUBO_PORT`：监听端口
