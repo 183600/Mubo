@@ -362,6 +362,62 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("detects default-value changes on existing columns", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const initial = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            role: { type: "text", default: "member" },
+            enabled: { type: "boolean", default: true },
+            code: { type: "text", sqlDefault: "(lower('X'))" },
+            updated_at: { type: "integer", sqlDefault: "CURRENT_TIMESTAMP" },
+          },
+        },
+      },
+    });
+    await db.migrate(initial);
+    expect((await db.migrate(initial)).status).toBe("none");
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            settings: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                role: { type: "text", default: "admin" },
+                enabled: { type: "boolean", default: true },
+                code: { type: "text", sqlDefault: "(lower('X'))" },
+                updated_at: { type: "integer", sqlDefault: "CURRENT_TIMESTAMP" },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Default value change for settings\.role/);
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            settings: {
+              columns: {
+                id: { type: "integer", primaryKey: true },
+                role: { type: "text" },
+                enabled: { type: "boolean", default: true },
+                code: { type: "text", sqlDefault: "(lower('X'))" },
+                updated_at: { type: "integer", sqlDefault: "CURRENT_TIMESTAMP" },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Default value change for settings\.role/);
+    db.close();
+  });
+
   test("check mode reports pending migrations without applying them", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(baseSchema);

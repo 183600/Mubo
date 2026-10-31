@@ -168,6 +168,32 @@ function normalizeWhere(value: string | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
+function normalizeDefault(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  let text = value.trim();
+  if (!text || text.toUpperCase() === "NULL") return null;
+  while (text.startsWith("(") && text.endsWith(")")) {
+    let depth = 0;
+    let wrapped = true;
+    for (let index = 0; index < text.length; index++) {
+      const char = text[index];
+      if (char === "(") depth++;
+      else if (char === ")") depth--;
+      if (depth === 0 && index > 0 && index < text.length - 1) {
+        wrapped = false;
+        break;
+      }
+      if (depth < 0) {
+        wrapped = false;
+        break;
+      }
+    }
+    if (!wrapped) break;
+    text = text.slice(1, -1).trim();
+  }
+  return text || null;
+}
+
 function introspectTable(db: MuboDatabase, table: string): ExistingTable {
   const columns = new Map<string, ExistingColumn>();
   for (const row of db.query<{
@@ -307,6 +333,15 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
         throw new MuboError(
           "MIGRATION_ERROR",
           `Foreign-key change for ${tableName}.${columnName} requires a manual migration`,
+        );
+      }
+      const expectedDefault = normalizeDefault(
+        column.sqlDefault === undefined ? defaultSql(column) : column.sqlDefault,
+      );
+      if (expectedDefault !== normalizeDefault(current.defaultValue)) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Default value change for ${tableName}.${columnName} requires a manual migration`,
         );
       }
       if (current.notNull !== Boolean(column.notNull)) {
