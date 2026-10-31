@@ -127,12 +127,15 @@ describe("HTTP routing and middleware", () => {
   });
 
   test("logs successful and failed requests with their request ids", async () => {
-    const app = await startApp({
-      app: { name: "access-log-test", env: "test" },
-      db: { path: ":memory:" },
-      log: { level: "info", json: true },
-      static: { mode: "off" },
-    });
+    const app = await createMuboApp(
+      {
+        app: { name: "access-log-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "info", json: true },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
     app.get("/logged", (ctx) => ctx.json({ ok: true }));
     app.get("/logged-error", () => {
       throw new Error("boom");
@@ -140,10 +143,13 @@ describe("HTTP routing and middleware", () => {
 
     const lines: string[] = [];
     const original = console.log;
+    const originalError = console.error;
     console.log = (...args: unknown[]) => {
       lines.push(args.map((value) => String(value)).join(" "));
     };
+    console.error = () => {};
     try {
+      await app.start();
       const ok = await fetch(`${base(app)}/logged`, {
         headers: { "x-request-id": "req-log-ok" },
       });
@@ -153,7 +159,9 @@ describe("HTTP routing and middleware", () => {
       });
       expect(failed.status).toBe(500);
     } finally {
+      await app.stop();
       console.log = original;
+      console.error = originalError;
     }
 
     const entries = lines.flatMap((line) => {
