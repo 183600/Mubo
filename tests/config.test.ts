@@ -565,6 +565,34 @@ export default defineConfig({
     }
   });
 
+  test("trims whitespace around explicit path and table settings", () => {
+    const cwd = tempDir();
+    const config = resolveConfig(
+      {
+        dataDir: "  data-root  ",
+        db: { path: "  :memory:  ", migrations: { table: "  custom_migrations  " } },
+        static: { dir: "  assets  " },
+      },
+      { cwd, env: {}, argv: [] },
+    );
+    expect(config.dataDir).toBe(resolve(cwd, "data-root"));
+    expect(config.db.path).toBe(":memory:");
+    expect(config.db.migrations.table).toBe("custom_migrations");
+    expect(config.static.dir).toBe(resolve(cwd, "assets"));
+
+    const blank = resolveConfig(
+      { dataDir: "   ", db: { path: "   " }, static: { dir: "   " } },
+      { cwd, env: { HOME: cwd }, argv: [] },
+    );
+    expect(blank.dataDir).toBe(defaultDataDir("mubo-app", { HOME: cwd }));
+    expect(blank.db.path).toBe(join(blank.dataDir, "mubo.sqlite"));
+    expect(blank.static.dir).toBe(join(cwd, "public"));
+
+    expect(() =>
+      resolveConfig({ db: { migrations: { table: "   " } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid migrations table/);
+  });
+
   test("normalizes immutable cache extensions", () => {
     const config = resolveConfig(
       { static: { cache: { immutableExtensions: [".JS", " Css ", "woff2"] } } },

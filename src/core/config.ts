@@ -527,6 +527,11 @@ export function resolveConfig(
   requireString("migrations table", merged.db.migrations.table);
   requireString("static directory", merged.static.dir);
 
+  merged.dataDir = merged.dataDir.trim();
+  merged.db.path = merged.db.path.trim();
+  merged.db.migrations.table = merged.db.migrations.table.trim();
+  merged.static.dir = merged.static.dir.trim();
+
   const immutableExtensions = merged.static.cache.immutableExtensions;
   if (
     !Array.isArray(immutableExtensions) ||
