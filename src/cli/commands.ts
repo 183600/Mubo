@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import {
@@ -39,15 +39,23 @@ const DEV_ENTRY_CANDIDATES = [
   "index.js",
 ];
 
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function findDevEntry(cwd: string, requested?: string): string {
   const candidates = requested ? [requested] : DEV_ENTRY_CANDIDATES;
   for (const candidate of candidates) {
     const path = resolve(cwd, candidate);
-    if (existsSync(path)) return path;
+    if (isFile(path)) return path;
   }
   throw new MuboError(
     "CONFIG_ERROR",
-    `Cannot find app entry (tried ${DEV_ENTRY_CANDIDATES.join(", ")})`,
+    `Cannot find app entry${requested ? `: ${requested}` : ` (tried ${DEV_ENTRY_CANDIDATES.join(", ")})`}`,
   );
 }
 

@@ -102,6 +102,15 @@ describe("CLI", () => {
     }
   });
 
+  test("dev rejects entry paths that are not files", async () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, "entry-dir"));
+    writeFileSync(join(cwd, "entry-dir", "package.json"), "{}");
+    const result = await runCli(cwd, ["dev", "--entry", "entry-dir"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Cannot find app entry: entry-dir");
+  });
+
   test("init creates a complete project and refuses to overwrite non-empty dirs", async () => {
     const cwd = tempDir();
     const dir = await initProject("my-app", { cwd });
