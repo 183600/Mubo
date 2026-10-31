@@ -217,7 +217,10 @@ function validateIndex(table: string, index: IndexDefinition, columnNames: Set<s
   if (index.unique !== undefined && typeof index.unique !== "boolean") {
     throw new MuboError("MIGRATION_ERROR", `Invalid unique setting for index ${index.name}`);
   }
-  if (index.where !== undefined && typeof index.where !== "string") {
+  if (
+    index.where !== undefined &&
+    (typeof index.where !== "string" || index.where.trim().length === 0)
+  ) {
     throw new MuboError("MIGRATION_ERROR", `Invalid WHERE clause for index ${index.name}`);
   }
   if (!Array.isArray(index.columns)) {

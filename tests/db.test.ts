@@ -512,6 +512,17 @@ describe("database and automatic migrations", () => {
           tables: {
             items: {
               columns: { id: { type: "text" } },
+              indexes: [{ name: "idx_items", columns: ["id"], where: "   " }],
+            },
+          },
+        },
+        message: /Invalid WHERE clause/,
+      },
+      {
+        schema: {
+          tables: {
+            items: {
+              columns: { id: { type: "text" } },
               indexes: [{ name: "idx_items", columns: ["missing"] }],
             },
           },
