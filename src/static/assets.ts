@@ -99,7 +99,7 @@ function contentTypeFor(path: string): string {
 
 function hasContentHash(path: string): boolean {
   const name = path.slice(path.lastIndexOf("/") + 1);
-  return /[.-][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/.test(name);
+  return /[.-][A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9]+)*\.[A-Za-z0-9]+$/.test(name);
 }
 
 function etagMatches(header: string | null, etag: string): boolean {

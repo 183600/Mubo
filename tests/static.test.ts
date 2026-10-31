@@ -290,6 +290,23 @@ describe("static assets", () => {
     }
   });
 
+  test("treats hashed assets with extra suffix extensions as immutable", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.a1b2c3d4.min.js"), "console.log('min')");
+    writeFileSync(join(dir, "vendor.12345678.chunk.css"), "body{}");
+    const assets = new StaticAssets(
+      { mode: "disk", dir, cache: { immutableExtensions: ["js", "css"] } },
+      dir,
+    );
+
+    for (const path of ["/app.a1b2c3d4.min.js", "/vendor.12345678.chunk.css"]) {
+      const url = `http://localhost${path}`;
+      const response = await assets.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(200);
+      expect(response?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    }
+  });
+
   test("serves embedded assets without touching disk", async () => {
     const app = await createMuboApp(
       {
