@@ -444,7 +444,7 @@ export function resolveConfig(
       mode: "disk",
       dir: join(cwd, "public"),
       spaFallback: true,
-      cache: { immutableExtensions: DEFAULT_IMMUTABLE_EXTENSIONS, defaultMaxAgeSeconds: 3600 },
+      cache: { immutableExtensions: [...DEFAULT_IMMUTABLE_EXTENSIONS], defaultMaxAgeSeconds: 3600 },
     },
     ws: {
       enabled: true,

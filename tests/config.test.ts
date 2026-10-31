@@ -240,6 +240,13 @@ export default defineConfig({
     );
   });
 
+  test("does not share mutable cache defaults between resolutions", () => {
+    const first = resolveConfig({}, { env: {}, argv: [] });
+    first.static.cache.immutableExtensions.push("custom");
+    const second = resolveConfig({}, { env: {}, argv: [] });
+    expect(second.static.cache.immutableExtensions).not.toContain("custom");
+  });
+
   test("treats an empty MUBO_ENV as unset and falls back to NODE_ENV", () => {
     const config = resolveConfig({}, { env: { MUBO_ENV: "", NODE_ENV: "production" }, argv: [] });
     expect(config.app.env).toBe("production");
