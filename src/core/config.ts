@@ -150,6 +150,12 @@ function requireSection(value: unknown, name: string): Record<string, unknown> {
   return value;
 }
 
+function requireBoolean(name: string, value: unknown): void {
+  if (typeof value !== "boolean") {
+    throw new MuboError("CONFIG_ERROR", `Invalid ${name} setting`);
+  }
+}
+
 export function mergeConfig<T>(base: T, override: unknown): T {
   if (!isPlainObject(base) || !isPlainObject(override)) {
     return (override === undefined ? base : override) as T;
@@ -480,6 +486,22 @@ export function resolveConfig(
   requireSection(merged.ws, "WebSocket");
   requireSection(merged.ws.heartbeat, "WebSocket heartbeat");
   requireSection(merged.log, "log");
+
+  requireBoolean("trust proxy", merged.http.trustProxy);
+  requireBoolean("database WAL", merged.db.wal);
+  requireBoolean("database foreign keys", merged.db.foreignKeys);
+  requireBoolean("safeOnly migrations", merged.db.migrations.safeOnly);
+  requireBoolean("static SPA fallback", merged.static.spaFallback);
+  requireBoolean("WebSocket enabled", merged.ws.enabled);
+  requireBoolean("JSON logging", merged.log.json);
+
+  const immutableExtensions = merged.static.cache.immutableExtensions;
+  if (
+    !Array.isArray(immutableExtensions) ||
+    immutableExtensions.some((extension) => typeof extension !== "string" || extension.length === 0)
+  ) {
+    throw new MuboError("CONFIG_ERROR", "Invalid immutable extensions setting");
+  }
 
   if (!logJsonConfigured) merged.log.json = merged.app.env === "production";
   if (merged.app.env !== "development" && merged.app.env !== "production" && merged.app.env !== "test") {

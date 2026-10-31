@@ -344,6 +344,23 @@ export default defineConfig({
     ).toThrow(/Invalid CORS credentials/);
   });
 
+  test("rejects non-boolean config switches and invalid cache extensions", () => {
+    const invalid: Array<[unknown, RegExp]> = [
+      [{ http: { trustProxy: "false" } }, /Invalid trust proxy setting/],
+      [{ db: { wal: "false" } }, /Invalid database WAL setting/],
+      [{ db: { foreignKeys: 0 } }, /Invalid database foreign keys setting/],
+      [{ db: { migrations: { safeOnly: "true" } } }, /Invalid safeOnly migrations setting/],
+      [{ static: { spaFallback: "false" } }, /Invalid static SPA fallback setting/],
+      [{ ws: { enabled: "false" } }, /Invalid WebSocket enabled setting/],
+      [{ log: { json: "false" } }, /Invalid JSON logging setting/],
+      [{ static: { cache: { immutableExtensions: "js" } } }, /Invalid immutable extensions setting/],
+      [{ static: { cache: { immutableExtensions: [""] } } }, /Invalid immutable extensions setting/],
+    ];
+    for (const [config, pattern] of invalid) {
+      expect(() => resolveConfig(config as never, { env: {}, argv: [] })).toThrow(pattern);
+    }
+  });
+
   test("treats an empty static directory as the default", () => {
     const cwd = tempDir();
     const config = resolveConfig({ static: { dir: "" } }, { cwd, env: {}, argv: [] });
