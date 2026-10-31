@@ -211,6 +211,29 @@ describe("WebSocket route registration", () => {
       expect(response.status).toBe(404);
     }
   });
+
+  test("preserves path segment boundaries when decoding WebSocket lookups", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-encoded-slash-test", env: "test" },
+        db: { path: ":memory:" },
+        http: { port: 0 },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/a/b", {});
+    app.ws("/a b", {});
+    await app.start();
+    apps.push(app);
+
+    const base = `http://127.0.0.1:${app.port}`;
+    expect((await fetch(`${base}/a%2Fb`)).status).toBe(404);
+    expect((await fetch(`${base}/a/b`)).status).toBe(426);
+    expect((await fetch(`${base}/a%20b`)).status).toBe(426);
+  });
 });
 
 describe("WebSocket rooms and broadcasting", () => {

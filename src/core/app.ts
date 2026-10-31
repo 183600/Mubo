@@ -44,6 +44,12 @@ function decodeRoutePath(path: string): string {
   }
 }
 
+function decodeLookupPath(path: string): string | undefined {
+  const segments = path.split("/").map((segment) => decodeRoutePath(segment));
+  if (segments.some((segment) => segment.includes("/"))) return undefined;
+  return normalizeLookupPath(segments.join("/"));
+}
+
 function validRequestId(value: string | null): value is string {
   return value !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
 }
@@ -241,7 +247,7 @@ export class MuboApp {
     if (this.wsRoutes.size === 0) return null;
     const route =
       this.wsRoutes.get(normalizeLookupPath(url.pathname)) ??
-      this.wsRoutes.get(normalizeLookupPath(decodeRoutePath(url.pathname)));
+      this.wsRoutes.get(decodeLookupPath(url.pathname) ?? "");
     if (!route) return null;
     const upgrade = (request.headers.get("upgrade") ?? "").toLowerCase();
     if (upgrade !== "websocket") {
