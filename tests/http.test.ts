@@ -126,6 +126,28 @@ describe("HTTP routing and middleware", () => {
     expect(await raw.text()).toBe("raw");
   });
 
+  test("tags malformed URL failures with the request id", async () => {
+    const app = await startApp({
+      app: { name: "malformed-url-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/users/:id", (ctx) => ctx.json({ id: ctx.params.id }));
+
+    const response = await fetch(`${base(app)}/users/%E0%A4%A`, {
+      headers: { "x-request-id": "malformed-req" },
+    });
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as {
+      error: { code: string };
+      requestId: string;
+    };
+    expect(payload.error.code).toBe("BAD_REQUEST");
+    expect(payload.requestId).toBe("malformed-req");
+    expect(response.headers.get("x-request-id")).toBe("malformed-req");
+  });
+
   test("provides health, readiness, 404 and 405 responses", async () => {
     const app = await startApp({
       app: { name: "health-test", env: "test" },

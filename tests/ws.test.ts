@@ -166,6 +166,41 @@ describe("WebSocket rooms and broadcasting", () => {
     second.socket.close();
   });
 
+  test("returns request ids on rejected websocket upgrades", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-reject-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      authorize() {
+        return null;
+      },
+    });
+    await app.start();
+    apps.push(app);
+    const base = `http://127.0.0.1:${app.port}`;
+
+    const rejected = await fetch(`${base}/ws`, {
+      headers: { upgrade: "websocket", "x-request-id": "ws-rejected" },
+    });
+    expect(rejected.status).toBe(401);
+    expect(rejected.headers.get("x-request-id")).toBe("ws-rejected");
+    const payload = (await rejected.json()) as { requestId: string };
+    expect(payload.requestId).toBe("ws-rejected");
+
+    const notUpgrade = await fetch(`${base}/ws`, {
+      headers: { "x-request-id": "ws-not-upgrade" },
+    });
+    expect(notUpgrade.status).toBe(426);
+    expect(notUpgrade.headers.get("x-request-id")).toBe("ws-not-upgrade");
+  });
+
   test("routes synchronous handler failures through onError", async () => {
     const errors: string[] = [];
     const app = await createMuboApp(

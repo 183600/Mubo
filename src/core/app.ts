@@ -375,31 +375,32 @@ export class MuboApp {
       return response;
     }
 
-    if (this.config.http.cors && request.method.toUpperCase() === "OPTIONS") {
-      const allowOrigin = originAllowed(request, this.config);
-      if (allowOrigin) {
-        const headers = new Headers({
-          "access-control-allow-origin": allowOrigin,
-          "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
-          "access-control-allow-headers":
-            request.headers.get("access-control-request-headers") ?? "content-type, authorization, x-request-id",
-          "access-control-max-age": String(this.config.http.cors.maxAgeSeconds ?? 600),
-          vary: "Origin",
-        });
-        if (this.config.http.cors.credentials) headers.set("access-control-allow-credentials", "true");
-        headers.set("x-request-id", requestId);
-        return new Response(null, { status: 204, headers });
-      }
-    }
-
-    const wsResponse = await this.handleWebSocketUpgrade(request, url, server);
-    if (wsResponse) {
-      if (wsResponse.status === 101) return undefined;
-      return applyCors(request, wsResponse, this.config);
-    }
-
-    const match = this.router.match(request.method, url.pathname);
     try {
+      if (this.config.http.cors && request.method.toUpperCase() === "OPTIONS") {
+        const allowOrigin = originAllowed(request, this.config);
+        if (allowOrigin) {
+          const headers = new Headers({
+            "access-control-allow-origin": allowOrigin,
+            "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
+            "access-control-allow-headers":
+              request.headers.get("access-control-request-headers") ?? "content-type, authorization, x-request-id",
+            "access-control-max-age": String(this.config.http.cors.maxAgeSeconds ?? 600),
+            vary: "Origin",
+          });
+          if (this.config.http.cors.credentials) headers.set("access-control-allow-credentials", "true");
+          headers.set("x-request-id", requestId);
+          return new Response(null, { status: 204, headers });
+        }
+      }
+
+      const wsResponse = await this.handleWebSocketUpgrade(request, url, server);
+      if (wsResponse) {
+        if (wsResponse.status === 101) return undefined;
+        if (!wsResponse.headers.has("x-request-id")) wsResponse.headers.set("x-request-id", requestId);
+        return applyCors(request, wsResponse, this.config);
+      }
+
+      const match = this.router.match(request.method, url.pathname);
       const response = await this.dispatchHttp(request, url, server, requestId, match, started);
       return applyCors(request, response, this.config);
     } catch (error) {
