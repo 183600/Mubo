@@ -89,6 +89,12 @@ describe("CLI", () => {
     const empty = parseCliArgs([]);
     expect(empty.command).toBeUndefined();
     expect(empty.positionals).toEqual([]);
+
+    const missing = parseCliArgs(["build", "--entry"]);
+    expect(() => stringFlag(missing, "entry")).toThrow(/Missing value for --entry/);
+    expect(() => stringFlag(parseCliArgs(["migrate", "--config"]), "config")).toThrow(
+      /Missing value for --config/,
+    );
   });
 
   test("init creates a complete project and refuses to overwrite non-empty dirs", async () => {

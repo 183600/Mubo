@@ -1,3 +1,5 @@
+import { MuboError } from "../core/errors.ts";
+
 export interface CliArgs {
   command?: string;
   positionals: string[];
@@ -42,7 +44,8 @@ export function parseCliArgs(argv: string[]): CliArgs {
 
 export function stringFlag(args: CliArgs, name: string): string | undefined {
   const value = args.flags.get(name);
-  return typeof value === "string" ? value : undefined;
+  if (value === undefined || typeof value === "string") return value;
+  throw new MuboError("CONFIG_ERROR", `Missing value for --${name}`);
 }
 
 export function boolFlag(args: CliArgs, name: string): boolean {
