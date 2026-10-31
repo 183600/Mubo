@@ -174,6 +174,7 @@ function argvOverrides(argv: string[]): MuboConfig {
   const result: MuboConfig = {};
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
+    if (token === "--") break;
     if (token === undefined || !token.startsWith("--")) continue;
     const equal = token.indexOf("=");
     const name = equal === -1 ? token.slice(2) : token.slice(2, equal);

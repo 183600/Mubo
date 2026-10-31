@@ -138,6 +138,11 @@ export default defineConfig({
     );
   });
 
+  test("stops parsing CLI options after the separator", () => {
+    const config = resolveConfig({}, { env: {}, argv: ["--", "--port", "4321"] });
+    expect(config.http.port).toBe(3000);
+  });
+
   test("applies all supported CLI overrides", () => {
     const cwd = tempDir();
     const config = resolveConfig(
