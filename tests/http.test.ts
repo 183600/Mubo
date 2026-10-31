@@ -277,6 +277,12 @@ describe("HTTP routing and middleware", () => {
     expect(ready.status).toBe(200);
     expect(((await ready.json()) as any).ok).toBe(true);
 
+    for (const path of ["/healthz/", "//healthz", "//readyz///"]) {
+      const response = await fetch(`${base(app)}${path}`);
+      expect(response.status).toBe(200);
+      expect(((await response.json()) as any).ok).toBe(true);
+    }
+
     const missing = await fetch(`${base(app)}/missing`);
     expect(missing.status).toBe(404);
     expect(((await missing.json()) as any).error.code).toBe("NOT_FOUND");

@@ -180,9 +180,10 @@ export class MuboApp {
   }
 
   private async healthResponse(ctx: MuboRequestContext, pathname: string): Promise<Response | null> {
-    if (pathname !== "/healthz" && pathname !== "/readyz") return null;
+    const path = pathname.replace(/^\/+|\/+$/g, "");
+    if (path !== "healthz" && path !== "readyz") return null;
     if (ctx.method !== "GET" && ctx.method !== "HEAD") return null;
-    if (pathname === "/readyz") {
+    if (path === "readyz") {
       const ready = this.db.ping();
       return ctx.json(
         { ok: ready, app: this.config.app.name },
