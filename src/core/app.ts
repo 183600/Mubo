@@ -317,6 +317,23 @@ export class MuboApp {
     }
   }
 
+  private logHttp(
+    request: Request,
+    url: URL,
+    server: Server<WsSocketData>,
+    requestId: string,
+    status: number,
+    started: number,
+  ): void {
+    this.logger.child({ requestId }).info("http", {
+      method: request.method,
+      path: url.pathname,
+      status,
+      durationMs: Math.round((performance.now() - started) * 100) / 100,
+      ip: clientIp(request, server, this.config.http.trustProxy),
+    });
+  }
+
   private async dispatchHttp(
     request: Request,
     url: URL,
@@ -361,13 +378,7 @@ export class MuboApp {
     });
 
     if (!response.headers.has("x-request-id")) response.headers.set("x-request-id", requestId);
-    this.logger.info("http", {
-      method: request.method,
-      path: url.pathname,
-      status: response.status,
-      durationMs: Math.round((performance.now() - started) * 100) / 100,
-      ip: clientIp(request, server, this.config.http.trustProxy),
-    });
+    this.logHttp(request, url, server, requestId, response.status, started);
     return response;
   }
 
@@ -383,6 +394,7 @@ export class MuboApp {
     } catch {
       const response = errorResponse(requestId, new MuboError("BAD_REQUEST", "Invalid request URL"), true);
       response.headers.set("x-request-id", requestId);
+      this.logHttp(request, new URL("http://invalid.local/"), server, requestId, response.status, started);
       return response;
     }
 
@@ -400,6 +412,7 @@ export class MuboApp {
           });
           if (this.config.http.cors.credentials) headers.set("access-control-allow-credentials", "true");
           headers.set("x-request-id", requestId);
+          this.logHttp(request, url, server, requestId, 204, started);
           return new Response(null, { status: 204, headers });
         }
       }
@@ -408,6 +421,7 @@ export class MuboApp {
       if (wsResponse) {
         if (wsResponse.status === 101) return undefined;
         if (!wsResponse.headers.has("x-request-id")) wsResponse.headers.set("x-request-id", requestId);
+        this.logHttp(request, url, server, requestId, wsResponse.status, started);
         return applyCors(request, wsResponse, this.config);
       }
 
@@ -430,6 +444,7 @@ export class MuboApp {
       else this.logger.error("Unhandled request error", fields);
       const response = errorResponse(requestId, error, this.config.app.env === "production");
       response.headers.set("x-request-id", requestId);
+      this.logHttp(request, url, server, requestId, response.status, started);
       return applyCors(request, response, this.config);
     }
   }

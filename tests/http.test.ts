@@ -126,6 +126,57 @@ describe("HTTP routing and middleware", () => {
     expect(await raw.text()).toBe("raw");
   });
 
+  test("logs successful and failed requests with their request ids", async () => {
+    const app = await startApp({
+      app: { name: "access-log-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "info", json: true },
+      static: { mode: "off" },
+    });
+    app.get("/logged", (ctx) => ctx.json({ ok: true }));
+    app.get("/logged-error", () => {
+      throw new Error("boom");
+    });
+
+    const lines: string[] = [];
+    const original = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map((value) => String(value)).join(" "));
+    };
+    try {
+      const ok = await fetch(`${base(app)}/logged`, {
+        headers: { "x-request-id": "req-log-ok" },
+      });
+      expect(ok.status).toBe(200);
+      const failed = await fetch(`${base(app)}/logged-error`, {
+        headers: { "x-request-id": "req-log-error" },
+      });
+      expect(failed.status).toBe(500);
+    } finally {
+      console.log = original;
+    }
+
+    const entries = lines.flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
+    expect(entries.find((entry) => entry.requestId === "req-log-ok")).toMatchObject({
+      message: "http",
+      method: "GET",
+      path: "/logged",
+      status: 200,
+    });
+    expect(entries.find((entry) => entry.requestId === "req-log-error")).toMatchObject({
+      message: "http",
+      method: "GET",
+      path: "/logged-error",
+      status: 500,
+    });
+  });
+
   test("tags malformed URL failures with the request id", async () => {
     const app = await startApp({
       app: { name: "malformed-url-test", env: "test" },
