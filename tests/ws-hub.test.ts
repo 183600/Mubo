@@ -128,6 +128,32 @@ describe("WebSocket room hub", () => {
     expect(hub.broadcast({ value: 1n })).toBe(0);
   });
 
+  test("direct sends reject payloads without JSON representations", () => {
+    const hub = new WsRoomHub();
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, logger, "");
+
+    expect(() => ctx.send({ value: 1n })).toThrow(MuboError);
+    expect(() => ctx.emit("bad", { value: 1n })).toThrow(MuboError);
+    expect(socket.sent).toHaveLength(0);
+
+    ctx.send({ ok: true });
+    ctx.emit("ready", { ok: true });
+    expect(JSON.parse(socket.sent[0] as string)).toEqual({ ok: true });
+    expect(JSON.parse(socket.sent[1] as string)).toEqual({
+      t: "event",
+      e: "ready",
+      d: { ok: true },
+    });
+
+    const failing = fakeSocket();
+    failing.ws.send = () => {
+      throw new Error("closed");
+    };
+    const failingCtx = hub.add(failing.ws, null, logger, "");
+    expect(() => failingCtx.send({ ok: true })).not.toThrow();
+  });
+
   test("releases rooms and clients on removal", () => {
     const hub = new WsRoomHub();
     const first = fakeSocket();

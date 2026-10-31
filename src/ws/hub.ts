@@ -83,6 +83,15 @@ function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Log
   }
 }
 
+function sendDirect(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Logger): void {
+  const payload = serializePayload(data);
+  try {
+    ws.send(payload as any);
+  } catch (error) {
+    logger?.warn("WebSocket send failed", { error: errorMessage(error) });
+  }
+}
+
 export class WsRoomHub {
   private readonly clients = new Map<string, Client>();
   private readonly clientsBySocket = new Map<ServerWebSocket<WsSocketData>, Client>();
@@ -120,8 +129,9 @@ export class WsRoomHub {
       },
       log: logger,
       app,
-      send: (data) => safeSend(ws, data, this.logger),
-      emit: (event, data, messageId) => safeSend(ws, { t: "event", e: event, d: data, id: messageId }, this.logger),
+      send: (data) => sendDirect(ws, data, this.logger),
+      emit: (event, data, messageId) =>
+        sendDirect(ws, { t: "event", e: event, d: data, id: messageId }, this.logger),
       publish: (room, data) => this.publish(room, data),
       broadcast: (data, options) => this.broadcast(data, options),
       subscribe: (room) => this.subscribe(context, room),
