@@ -507,7 +507,7 @@ export async function createMuboApp(
 ): Promise<MuboApp> {
   const resolved = await loadAndResolveConfig(config, {
     ...options,
-    loadFile: options.loadFile ?? true,
+    loadFile: options.loadFile ?? Object.keys(config).length === 0,
   });
   const logger = createLogger(resolved.log, {
     app: resolved.app.name,

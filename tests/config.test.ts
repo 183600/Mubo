@@ -48,6 +48,23 @@ export default defineConfig({
     expect(cliOverride.http.port).toBe(4300);
   });
 
+  test("does not load a config file when explicit config is provided", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "mubo.config.ts"), `throw new Error("should not load");\n`);
+    const app = await createMuboApp(
+      {
+        app: { name: "explicit" },
+        dataDir: join(cwd, "data"),
+        db: { path: ":memory:" },
+        static: { mode: "off" },
+        log: { level: "error" },
+      },
+      { cwd, argv: [], env: {} },
+    );
+    expect(app.config.app.name).toBe("explicit");
+    await app.stop();
+  });
+
   test("honors --config when creating an app", async () => {
     const cwd = tempDir();
     writeFileSync(

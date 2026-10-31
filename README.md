@@ -179,7 +179,7 @@ await app.start();
 await app.stop();
 ```
 
-`createMuboApp` 默认从当前目录加载 `mubo.config.ts`；传入 `{ loadFile: false }` 可关闭。显式传入的配置优先于配置文件。
+未传入显式配置时，`createMuboApp` 会加载当前目录的 `mubo.config.*`；传入任意显式配置项时默认不加载文件，也可用 `{ loadFile: true }` 强制加载。CLI 生成的入口会直接导入并传入配置，因此单文件二进制不依赖运行目录中的配置文件。
 
 ### HTTP Context
 
