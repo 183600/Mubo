@@ -133,7 +133,11 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
     },
     async formData() {
       const bytes = await readBytes();
-      return (await new Response(bytes, { headers: deps.req.headers }).formData()) as unknown as FormData;
+      try {
+        return (await new Response(bytes, { headers: deps.req.headers }).formData()) as unknown as FormData;
+      } catch (error) {
+        throw new MuboError("VALIDATION_ERROR", "Invalid form data", { cause: error });
+      }
     },
     async form() {
       return context.formData();

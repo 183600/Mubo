@@ -63,6 +63,11 @@ describe("request context bodies", () => {
     expect((await alias.form()).get("title")).toBe("hello");
   });
 
+  test("reports malformed form bodies as validation errors", async () => {
+    const ctx = contextFor(postRequest("not a form", "multipart/form-data"));
+    await expect(ctx.formData()).rejects.toThrow(/Invalid form data/);
+  });
+
   test("provides JSON, text and failure response helpers", async () => {
     const ctx = contextFor(new Request("http://localhost/test"));
     const ok = ctx.ok({ ok: true }, { status: 201 });
