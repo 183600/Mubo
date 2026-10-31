@@ -58,7 +58,7 @@ function applyCors(request: Request, response: Response, config: ResolvedMuboCon
     headers.set("access-control-allow-credentials", "true");
   }
   const cors = config.http.cors;
-  if (cors && allowOrigin !== "*" && cors.origin !== "*") {
+  if (cors && allowOrigin !== "*") {
     headers.append("vary", "Origin");
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });

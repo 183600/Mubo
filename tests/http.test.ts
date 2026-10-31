@@ -190,5 +190,19 @@ describe("HTTP routing and middleware", () => {
       body: "{}",
     });
     expect(actual.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+
+    const wildcard = await startApp({
+      app: { name: "cors-wildcard-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { port: 0, cors: { origin: "*", credentials: true } },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    wildcard.get("/cors", (ctx) => ctx.json({ ok: true }));
+    const wildcardResponse = await fetch(`${base(wildcard)}/cors`, {
+      headers: { origin: "http://any.test" },
+    });
+    expect(wildcardResponse.headers.get("access-control-allow-origin")).toBe("http://any.test");
+    expect(wildcardResponse.headers.get("vary")).toContain("Origin");
   });
 });
