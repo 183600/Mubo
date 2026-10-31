@@ -152,4 +152,14 @@ describe("request context bodies", () => {
     expect((caught as MuboError).code).toBe("PAYLOAD_TOO_LARGE");
     await expect(ctx.body()).rejects.toThrow(/exceeds 10 bytes/);
   });
+
+  test("rejects oversized declared bodies even when no stream is present", async () => {
+    const request = new Request("http://localhost/test", {
+      method: "POST",
+      headers: { "content-length": "2048" },
+    });
+    const ctx = contextFor(request, 10);
+
+    await expect(ctx.body()).rejects.toThrow(/exceeds 10 bytes/);
+  });
 });

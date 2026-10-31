@@ -54,12 +54,12 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
     if (deps.req.bodyUsed) {
       throw new MuboError("BAD_REQUEST", "Request body has already been consumed");
     }
-    if (!body) return new Uint8Array();
     const declared = Number(deps.req.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > deps.bodyLimit) {
-      await body.cancel().catch(() => undefined);
+      await body?.cancel().catch(() => undefined);
       throw payloadTooLarge(deps.bodyLimit);
     }
+    if (!body) return new Uint8Array();
     const reader = body.getReader();
     const chunks: Uint8Array[] = [];
     let size = 0;
