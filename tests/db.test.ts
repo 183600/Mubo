@@ -1215,6 +1215,26 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("validates schema before creating migration metadata", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            items: {
+              columns: { id: { type: "text" } },
+              indexes: [{ name: "bad-name", columns: ["id"] }],
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Invalid SQL identifier/);
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_mubo_migrations'").get(),
+    ).toBeNull();
+    db.close();
+  });
+
   test("reports migration SQL failures and rolls back the plan", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const invalid = defineSchema({
