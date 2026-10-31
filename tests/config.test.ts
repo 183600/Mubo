@@ -84,6 +84,29 @@ export default defineConfig({
     await app.stop();
   });
 
+  test("lets --config override inline config for entries that import their own config", async () => {
+    const cwd = tempDir();
+    writeFileSync(
+      join(cwd, "custom.config.ts"),
+      `export default { app: { name: "from-explicit-file" }, dataDir: ${JSON.stringify(join(cwd, "custom-data"))}, db: { path: ":memory:" }, http: { port: 4555 }, static: { mode: "off" }, log: { level: "error" } };\n`,
+    );
+    const app = await createMuboApp(
+      {
+        app: { name: "from-inline" },
+        dataDir: join(cwd, "inline-data"),
+        db: { path: ":memory:" },
+        http: { port: 4000 },
+        static: { mode: "off" },
+        log: { level: "error" },
+      },
+      { cwd, argv: ["--config", "custom.config.ts"], env: {} },
+    );
+    expect(app.config.app.name).toBe("from-explicit-file");
+    expect(app.config.http.port).toBe(4555);
+    expect(app.config.dataDir).toBe(join(cwd, "custom-data"));
+    await app.stop();
+  });
+
   test("uses the last --config value from argv", async () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "first.config.ts"), `export default { app: { name: "first-file" } };\n`);

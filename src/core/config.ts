@@ -643,10 +643,15 @@ export async function loadAndResolveConfig(
   options: ResolveConfigOptions = {},
 ): Promise<ResolvedMuboConfig> {
   const cwd = options.cwd ?? process.cwd();
-  if (!options.loadFile) return resolveConfig(overrides, options);
   const argv = options.argv ?? process.argv.slice(2);
   const explicitFile = options.configFile ?? configFileFromArgv(argv);
+  if (!options.loadFile && explicitFile === undefined) {
+    return resolveConfig(overrides, { ...options, cwd, argv });
+  }
   const { config: fileConfig } = await loadConfigFile(cwd, explicitFile);
+  if (explicitFile !== undefined) {
+    return resolveConfig(fileConfig, { ...options, cwd, argv, fileConfig: overrides });
+  }
   return resolveConfig(overrides, { ...options, cwd, argv, fileConfig });
 }
 

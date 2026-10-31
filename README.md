@@ -171,7 +171,7 @@ app.get("/healthz", () => Response.json({ ok: true }));
 await app.start();
 ```
 
-`createMuboApp` 未传入显式配置时会加载当前目录的 `mubo.config.*`；传入任意显式配置项时默认不加载文件，也可以用 `{ loadFile: true }` 强制加载。CLI 生成的入口会直接导入并传入配置，因此单文件二进制不依赖运行目录中的配置文件。
+`createMuboApp` 未传入显式配置时会加载当前目录的 `mubo.config.*`；传入任意显式配置项时默认不加载文件，也可以用 `{ loadFile: true }` 强制加载。显式传入 `--config <file>` 或 `{ configFile }` 时始终加载该文件，并用它覆盖代码内联配置（环境变量与其余 CLI 参数仍优先）。CLI 生成的入口会直接导入并传入配置，因此单文件二进制不依赖运行目录中的配置文件。
 
 ### 路由与中间件
 
