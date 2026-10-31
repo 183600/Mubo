@@ -83,6 +83,18 @@ describe("single-file build", () => {
     expect(result.assets).toBe(1);
   }, 60_000);
 
+  test("treats a blank configured static directory as unset", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "console.log('blank static');\n");
+    writeFileSync(join(cwd, "mubo.config.ts"), `export default { static: { dir: "   " } };\n`);
+    mkdirSync(join(cwd, "dist", "client"), { recursive: true });
+    writeFileSync(join(cwd, "dist", "client", "index.html"), "built client");
+
+    const result = await buildProject({ cwd, outfile: "dist/blank-static-app" });
+    expect(result.staticDir).toBe(join(cwd, "dist", "client"));
+    expect(result.assets).toBe(1);
+  }, 60_000);
+
   test("honors environment overrides for app name, static mode and directory", async () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "index.ts"), "console.log('env config');\n");

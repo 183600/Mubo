@@ -55,7 +55,7 @@ function findStaticDir(
     return absolute;
   }
   if (resolved.mode === "off") return undefined;
-  const configuredDir = envDir || config.static?.dir;
+  const configuredDir = envDir || config.static?.dir?.trim();
   const absolute = resolve(cwd, resolved.dir);
   if (isDirectory(absolute)) return absolute;
   if (configuredDir) {
