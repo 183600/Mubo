@@ -486,8 +486,8 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
     partial: number;
   }>(`PRAGMA index_list(${quoteIdentifier(table)})`).all()) {
     const indexColumns = db
-      .query<{ name: string | null }>(`PRAGMA index_info(${quoteIdentifier(row.name)})`)
-      .all()
+      .query<{ name: string | null }>("SELECT name FROM pragma_index_info(?) ORDER BY seqno")
+      .all(row.name)
       .map((item) => item.name ?? "");
     if (row.origin === "u" && row.unique === 1 && row.partial === 0 && indexColumns.length === 1) {
       const column = findCaseInsensitive(columns, indexColumns[0]!);
@@ -499,9 +499,9 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
       .get(row.name);
     const keyColumns = db
       .query<{ desc: number; key: number; coll: string }>(
-        `PRAGMA index_xinfo(${quoteIdentifier(row.name)})`,
+        "SELECT desc, key, coll FROM pragma_index_xinfo(?) ORDER BY seqno",
       )
-      .all()
+      .all(row.name)
       .filter((column) => column.key === 1);
     const descending = keyColumns.some((column) => column.desc === 1);
     const customCollation = keyColumns.some((column) => column.coll !== "BINARY");

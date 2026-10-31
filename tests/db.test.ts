@@ -255,6 +255,26 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("introspects existing indexes with quoted names", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(
+      'CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT); ' +
+        'CREATE INDEX "idx-email weird" ON users(email);',
+    );
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text" },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("none");
+    db.close();
+  });
+
   test("rejects existing indexes with descending columns", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec(
