@@ -93,6 +93,26 @@ describe("WebSocket payload serialization", () => {
   });
 });
 
+describe("WebSocket route registration", () => {
+  test("rejects paths with query strings or fragments", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-route-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    try {
+      expect(() => app.ws("/ws?token=1", {})).toThrow(/must not contain a query or fragment/);
+      expect(() => app.ws("/ws#fragment", {})).toThrow(/must not contain a query or fragment/);
+    } finally {
+      await app.stop();
+    }
+  });
+});
+
 describe("WebSocket rooms and broadcasting", () => {
   test("authenticates, tracks rooms, broadcasts, and releases clients on close", async () => {
     const closeEvents: string[] = [];
