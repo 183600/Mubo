@@ -95,6 +95,11 @@ describe("CLI", () => {
     expect(() => stringFlag(parseCliArgs(["migrate", "--config"]), "config")).toThrow(
       /Missing value for --config/,
     );
+    for (const flag of ["entry", "outfile", "static-dir", "target", "config"]) {
+      expect(() => stringFlag(parseCliArgs(["build", `--${flag}=`]), flag)).toThrow(
+        new RegExp(`Missing value for --${flag}`),
+      );
+    }
   });
 
   test("init creates a complete project and refuses to overwrite non-empty dirs", async () => {

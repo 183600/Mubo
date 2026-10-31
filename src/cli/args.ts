@@ -44,7 +44,8 @@ export function parseCliArgs(argv: string[]): CliArgs {
 
 export function stringFlag(args: CliArgs, name: string): string | undefined {
   const value = args.flags.get(name);
-  if (value === undefined || typeof value === "string") return value;
+  if (value === undefined) return undefined;
+  if (typeof value === "string" && value.length > 0) return value;
   throw new MuboError("CONFIG_ERROR", `Missing value for --${name}`);
 }
 
