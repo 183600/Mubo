@@ -348,6 +348,37 @@ describe("HTTP routing and middleware", () => {
     expect(response.headers.get("vary")?.toLowerCase()).toBe("accept-encoding, origin");
   });
 
+  test("varies CORS responses even when the request origin is absent or denied", async () => {
+    const app = await startApp({
+      app: { name: "cors-missing-origin-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { port: 0, cors: { origin: ["http://allowed.test"] } },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/plain", () => new Response("ok"));
+
+    const origins: Array<Record<string, string>> = [{}, { origin: "http://denied.test" }];
+    for (const headers of origins) {
+      const response = await fetch(`${base(app)}/plain`, { headers });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      expect(response.headers.get("vary")).toBe("Origin");
+    }
+
+    const wildcard = await startApp({
+      app: { name: "cors-credentials-origin-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { port: 0, cors: { origin: "*", credentials: true } },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    wildcard.get("/plain", () => new Response("ok"));
+    const noOrigin = await fetch(`${base(wildcard)}/plain`);
+    expect(noOrigin.headers.get("access-control-allow-origin")).toBeNull();
+    expect(noOrigin.headers.get("vary")).toBe("Origin");
+  });
+
   test("enforces body limits and optionally handles CORS preflight", async () => {
     const app = await startApp({
       app: { name: "limits-test", env: "test" },
