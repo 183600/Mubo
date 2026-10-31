@@ -26,14 +26,20 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Mirror push to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
           set -euo pipefail
           export GIT_TERMINAL_PROMPT=0
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
           GH_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
-          GITEE_URL="https://qwe12345678:${{ secrets.GITEE_TOKEN }}@gitee.com/qwe12345678/${REPO_NAME}.git"
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "未配置 GITEE_TOKEN secret，跳过 Gitee 同步（在仓库 secrets 配置后自动恢复）。"
+            exit 0
+          fi
+          GITEE_URL="https://qwe12345678:${GITEE_TOKEN}@gitee.com/qwe12345678/${REPO_NAME}.git"
           if ! git ls-remote "$GITEE_URL" >/dev/null 2>&1; then
-            echo "Gitee 仓库不可达（未配置 GITEE_TOKEN，或 gitee.com/qwe12345678/${REPO_NAME} 尚未创建），跳过本次同步。"
+            echo "Gitee 仓库不可达（gitee.com/qwe12345678/${REPO_NAME} 可能尚未创建），跳过本次同步。"
             exit 0
           fi
           GH_REFS=$(git ls-remote "$GH_URL" | grep -E 'refs/(heads|tags)/' | sort || true)
