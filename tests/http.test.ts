@@ -293,6 +293,26 @@ describe("HTTP routing and middleware", () => {
     expect(wrongMethod.headers.get("allow")).toContain("OPTIONS");
   });
 
+  test("adds a request id to Bun.serve fallback errors", async () => {
+    const app = await startApp({
+      app: { name: "serve-error-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.handleRequest = () => {
+      throw new Error("boom");
+    };
+
+    const response = await fetch(`${base(app)}/boom`);
+    expect(response.status).toBe(500);
+    const requestId = response.headers.get("x-request-id") ?? "";
+    expect(requestId).not.toBe("");
+    const payload = (await response.json()) as { error: { code: string }; requestId: string };
+    expect(payload.error.code).toBe("INTERNAL_ERROR");
+    expect(payload.requestId).toBe(requestId);
+  });
+
   test("shares a single server across concurrent start calls", async () => {
     const app = await createMuboApp(
       {

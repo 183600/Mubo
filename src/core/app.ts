@@ -525,8 +525,11 @@ export class MuboApp {
       development: this.config.app.env !== "production",
       fetch: (request: Request, server: Server<WsSocketData>) => this.handleRequest(request, server),
       error: (error: Error) => {
-        this.logger.error("Bun.serve error", { error: error.message });
-        return errorResponse(crypto.randomUUID(), error, this.config.app.env === "production");
+        const requestId = crypto.randomUUID();
+        this.logger.error("Bun.serve error", { requestId, error: error.message });
+        const response = errorResponse(requestId, error, this.config.app.env === "production");
+        response.headers.set("x-request-id", requestId);
+        return response;
       },
       websocket: this.config.ws.enabled
         ? {
