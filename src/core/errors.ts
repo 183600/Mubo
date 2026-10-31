@@ -39,7 +39,7 @@ export class MuboError extends Error {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "MuboError";
     this.code = code;
-    this.status = options.status ?? DEFAULT_STATUS[code] ?? 500;
+    this.status = options.status ?? (Object.hasOwn(DEFAULT_STATUS, code) ? DEFAULT_STATUS[code]! : 500);
     this.details = options.details;
     this.expose = options.expose ?? this.status < 500;
   }

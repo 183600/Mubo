@@ -23,6 +23,12 @@ describe("error payloads", () => {
     const custom = new MuboError("CUSTOM", "failed");
     expect(custom.status).toBe(500);
     expect(custom.expose).toBe(false);
+
+    for (const code of ["constructor", "toString", "__proto__"]) {
+      const prototypeCode = new MuboError(code, "failed");
+      expect(prototypeCode.status).toBe(500);
+      expect(errorResponse("req-prototype", prototypeCode).status).toBe(500);
+    }
   });
 
   test("hide unexpected and explicitly private errors in production", () => {

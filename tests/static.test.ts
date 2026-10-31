@@ -178,6 +178,23 @@ describe("static assets", () => {
     expect(await assets.handle(new Request(secretUrl), new URL(secretUrl))).toBeNull();
   });
 
+  test("falls back to a binary content type for prototype-like extensions", async () => {
+    const dir = publicDir();
+    writeFileSync(join(dir, "asset.constructor"), "binary");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    const diskUrl = "http://localhost/asset.constructor";
+    const disk = await assets.handle(new Request(diskUrl), new URL(diskUrl));
+    expect(disk?.headers.get("content-type")).toBe("application/octet-stream");
+
+    const embedded = new StaticAssets(
+      { mode: "embedded", assets: { "/asset.toString": "binary" } },
+      dir,
+    );
+    const url = "http://localhost/asset.toString";
+    const response = await embedded.handle(new Request(url), new URL(url));
+    expect(response?.headers.get("content-type")).toBe("application/octet-stream");
+  });
+
   test("blocks path traversal attempts", async () => {
     const dir = publicDir();
     const assets = new StaticAssets({ mode: "disk", dir }, dir);

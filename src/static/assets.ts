@@ -88,9 +88,13 @@ function decodeAsset(asset: EmbeddedAsset | string | Uint8Array | ArrayBuffer): 
   return new Uint8Array(asset.data);
 }
 
+export function mimeTypeForExtension(extension: string): string | undefined {
+  const ext = extension.toLowerCase();
+  return Object.hasOwn(MIME_TYPES, ext) ? MIME_TYPES[ext] : undefined;
+}
+
 function contentTypeFor(path: string): string {
-  const ext = extname(path).slice(1).toLowerCase();
-  return MIME_TYPES[ext] ?? "application/octet-stream";
+  return mimeTypeForExtension(extname(path).slice(1)) ?? "application/octet-stream";
 }
 
 function hasContentHash(path: string): boolean {
@@ -272,7 +276,7 @@ export class StaticAssets {
       file = candidate;
     }
     const etag = `"${file.size.toString(16)}-${Math.round(file.lastModified).toString(16)}"`;
-    const extensionType = MIME_TYPES[extname(target).slice(1).toLowerCase()];
+    const extensionType = mimeTypeForExtension(extname(target).slice(1));
     const contentType = extensionType ?? (file.type || "application/octet-stream");
     return this.respond(request, target, file, etag, contentType, file.size);
   }

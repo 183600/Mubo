@@ -3,7 +3,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 import { sanitizeAppName } from "../core/config.ts";
 import { MuboError } from "../core/errors.ts";
 import { loadConfigFile, type MuboConfig } from "../core/config.ts";
-import { MIME_TYPES } from "../static/assets.ts";
+import { mimeTypeForExtension } from "../static/assets.ts";
 
 export interface BuildOptions {
   cwd?: string;
@@ -112,7 +112,7 @@ async function collectAssets(root: string): Promise<Record<string, { data: strin
     assets[key] = {
       data: Buffer.from(bytes).toString("base64"),
       encoding: "base64",
-      type: MIME_TYPES[ext] ?? "application/octet-stream",
+      type: mimeTypeForExtension(ext) ?? "application/octet-stream",
     };
   }
   return assets;
