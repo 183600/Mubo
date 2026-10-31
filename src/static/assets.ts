@@ -176,7 +176,10 @@ export class StaticAssets {
     return new Response(body, { status: 200, headers });
   }
 
-  private findEmbedded(pathname: string): { asset: EmbeddedAsset | string | Uint8Array | ArrayBuffer; path: string } | null {
+  private findEmbedded(
+    pathname: string,
+    allowSpaFallback = true,
+  ): { asset: EmbeddedAsset | string | Uint8Array | ArrayBuffer; path: string } | null {
     let key = normalizeKey(pathname);
     try {
       key = normalizeKey(decodeURIComponent(pathname));
@@ -190,17 +193,21 @@ export class StaticAssets {
     const index = this.assets.get(directoryIndex);
     if (index !== undefined) return { asset: index, path: directoryIndex };
 
-    if (this.spaFallback) {
+    if (allowSpaFallback && this.spaFallback) {
       const fallback = this.assets.get("/index.html");
       if (fallback !== undefined) return { asset: fallback, path: "/index.html" };
     }
     return null;
   }
 
-  private async embeddedResponse(request: Request, pathname: string): Promise<Response | null> {
+  private async embeddedResponse(
+    request: Request,
+    pathname: string,
+    allowSpaFallback = true,
+  ): Promise<Response | null> {
     let found: ReturnType<StaticAssets["findEmbedded"]>;
     try {
-      found = this.findEmbedded(pathname);
+      found = this.findEmbedded(pathname, allowSpaFallback);
     } catch {
       return textResponse("Bad Request", { status: 400 });
     }
@@ -272,7 +279,7 @@ export class StaticAssets {
     const method = request.method.toUpperCase();
     if (method !== "GET" && method !== "HEAD") return null;
     if (this.assets.size > 0 && (this.mode === "embedded" || this.mode === "disk")) {
-      const response = await this.embeddedResponse(request, url.pathname);
+      const response = await this.embeddedResponse(request, url.pathname, this.mode === "embedded");
       if (response) return response;
       if (this.mode === "embedded") return null;
     }

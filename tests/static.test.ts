@@ -134,6 +134,35 @@ describe("static assets", () => {
     expect(await off.hasFile("/")).toBe(false);
   });
 
+  test("does not let embedded SPA fallback shadow disk files in disk mode", async () => {
+    const dir = publicDir();
+    writeFileSync(join(dir, "only-disk.txt"), "disk-only");
+    const assets = new StaticAssets(
+      {
+        mode: "disk",
+        dir,
+        spaFallback: true,
+        assets: { "/index.html": "embedded-home", "/embedded.txt": "embedded-only" },
+      },
+      dir,
+    );
+    const request = async (path: string) => {
+      const url = `http://localhost${path}`;
+      return assets.handle(new Request(url), new URL(url));
+    };
+
+    const diskFile = await request("/only-disk.txt");
+    expect(diskFile?.status).toBe(200);
+    expect(await diskFile!.text()).toBe("disk-only");
+
+    const missing = await request("/missing");
+    expect(missing?.status).toBe(200);
+    expect(await missing!.text()).toContain("Mubo");
+
+    const embedded = await request("/embedded.txt");
+    expect(await embedded!.text()).toBe("embedded-only");
+  });
+
   test("blocks path traversal attempts", async () => {
     const dir = publicDir();
     const assets = new StaticAssets({ mode: "disk", dir }, dir);
