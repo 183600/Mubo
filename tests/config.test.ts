@@ -126,6 +126,9 @@ export default defineConfig({
     expect(resolveConfig({}, { env: { MUBO_LOG_JSON: "0", MUBO_ENV: "production" }, argv: [] }).log.json).toBe(
       false,
     );
+    expect(resolveConfig({}, { env: { MUBO_LOG_JSON: "   ", MUBO_ENV: "production" }, argv: [] }).log.json).toBe(
+      true,
+    );
   });
 
   test("rejects invalid ports and migration table names", () => {

@@ -221,7 +221,7 @@ app.db.migrate(schema, { mode: "check" });
 
 ### WebSocket Context
 
-`ctx.id`、`ctx.ip`、`ctx.url`、`ctx.user`、`ctx.state`、`ctx.rooms`、`ctx.send()`、`ctx.emit()`、`ctx.publish()`、`ctx.subscribe()`、`ctx.unsubscribe()`、`ctx.close()`。`emit()` 使用 `{ t: "event", e, d, id? }` 协议。
+`ctx.id`、`ctx.ip`、`ctx.url`、`ctx.user`、`ctx.state`、`ctx.rooms`、`ctx.send()`、`ctx.emit()`、`ctx.publish()`、`ctx.broadcast()`、`ctx.subscribe()`、`ctx.unsubscribe()`、`ctx.close()`。`emit()` 使用 `{ t: "event", e, d, id? }` 协议。
 
 房间名必须是至少包含一个非空白字符的字符串；重复订阅同一房间是幂等的。`publish()` / `broadcast()` 返回成功发送的连接数，序列化或发送失败的连接会被记录日志且不计入返回值。
 

@@ -503,10 +503,11 @@ export function resolveConfig(
     log: { level: "info", json: appEnv === "production" },
   };
 
+  const rawLogJson = env.MUBO_LOG_JSON?.trim();
   const logJsonConfigured =
     options.fileConfig?.log?.json !== undefined ||
     overrides.log?.json !== undefined ||
-    (env.MUBO_LOG_JSON !== undefined && env.MUBO_LOG_JSON !== "");
+    (rawLogJson !== undefined && rawLogJson !== "");
   const merged = mergeConfig(
     mergeConfig(mergeConfig(defaults as unknown, options.fileConfig ?? {}), overrides as unknown),
     mergeConfig(envOverrides(env) as unknown, argvOverrides(options.argv ?? process.argv.slice(2)) as unknown),

@@ -83,6 +83,23 @@ describe("WebSocket room hub", () => {
     });
   });
 
+  test("exposes room publish and global broadcast counts on contexts", () => {
+    const hub = new WsRoomHub();
+    const first = fakeSocket();
+    const second = fakeSocket();
+    const firstCtx = hub.add(first.ws, null, logger, "127.0.0.1");
+    const secondCtx = hub.add(second.ws, null, logger, "127.0.0.1");
+    hub.subscribe(firstCtx, "lobby");
+    hub.subscribe(secondCtx, "lobby");
+
+    expect(firstCtx.publish("lobby", { event: 1 })).toBe(2);
+    expect(JSON.parse(second.sent[0] as string)).toEqual({ event: 1 });
+
+    expect(firstCtx.broadcast({ event: 2 }, { except: firstCtx.id })).toBe(1);
+    expect(JSON.parse(second.sent[1] as string)).toEqual({ event: 2 });
+    expect(first.sent).toHaveLength(1);
+  });
+
   test("is idempotent for duplicate socket registration", () => {
     const hub = new WsRoomHub();
     const socket = fakeSocket();

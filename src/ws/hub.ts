@@ -26,7 +26,8 @@ export interface MuboWsContext {
   readonly app: unknown;
   send(data: WsPayload): void;
   emit(event: string, data?: unknown, id?: string): void;
-  publish(room: string, data: WsPayload): void;
+  publish(room: string, data: WsPayload): number;
+  broadcast(data: WsPayload, options?: { except?: string }): number;
   subscribe(room: string): void;
   unsubscribe(room: string): void;
   close(code?: number, reason?: string): void;
@@ -122,6 +123,7 @@ export class WsRoomHub {
       send: (data) => safeSend(ws, data, this.logger),
       emit: (event, data, messageId) => safeSend(ws, { t: "event", e: event, d: data, id: messageId }, this.logger),
       publish: (room, data) => this.publish(room, data),
+      broadcast: (data, options) => this.broadcast(data, options),
       subscribe: (room) => this.subscribe(context, room),
       unsubscribe: (room) => this.unsubscribe(context, room),
       close: (code, reason) => ws.close(code, reason),
