@@ -135,4 +135,23 @@ describe("CLI", () => {
     expect(checks.find((check) => check.name === "data-dir")?.ok).toBe(true);
     expect(checks.find((check) => check.name === "port")?.ok).toBe(true);
   });
+
+  test("doctor flags an unusable configured database path", async () => {
+    const cwd = tempDir();
+    const dbPath = join(cwd, "db-dir");
+    mkdirSync(dbPath, { recursive: true });
+    const result = await runCli(cwd, [
+      "doctor",
+      "--json",
+      "--data-dir",
+      join(cwd, "data"),
+      "--db",
+      dbPath,
+      "--port",
+      "0",
+    ]);
+    expect(result.code).toBe(1);
+    const checks = JSON.parse(result.stdout) as Array<{ name: string; ok: boolean }>;
+    expect(checks.find((check) => check.name === "sqlite")?.ok).toBe(false);
+  });
 });

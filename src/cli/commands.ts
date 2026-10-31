@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { Database } from "bun:sqlite";
 import {
   loadAndResolveConfig,
   loadConfigFile,
@@ -147,16 +148,29 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
   let dbOk = false;
   let dbDetail = config.db.path;
   try {
-    if (config.db.path !== ":memory:") {
+    if (config.db.path === ":memory:") {
+      const db = new Database(":memory:", { strict: true });
+      dbOk = Boolean(db.query("SELECT 1 AS ok").get());
+      db.close();
+    } else {
       const parent = dirname(config.db.path);
       if (!existsSync(parent)) mkdirSync(parent, { recursive: true });
       const probe = join(parent, `.mubo-doctor-db-${process.pid}-${Date.now()}`);
       await Bun.write(probe, "");
       rmSync(probe, { force: true });
+      if (existsSync(config.db.path)) {
+        const db = new Database(config.db.path, { create: false, strict: true });
+        try {
+          const result = db.query("PRAGMA quick_check").get() as Record<string, unknown> | null;
+          dbOk = result !== null && Object.values(result)[0] === "ok";
+          if (!dbOk) dbDetail = `${config.db.path} (integrity check failed)`;
+        } finally {
+          db.close();
+        }
+      } else {
+        dbOk = true;
+      }
     }
-    const db = new MuboDatabase({ path: ":memory:" });
-    dbOk = db.ping();
-    db.close();
   } catch (error) {
     dbDetail = error instanceof Error ? error.message : String(error);
   }
