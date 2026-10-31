@@ -143,6 +143,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function requireSection(value: unknown, name: string): Record<string, unknown> {
+  if (!isPlainObject(value)) {
+    throw new MuboError("CONFIG_ERROR", `Invalid ${name} configuration`);
+  }
+  return value;
+}
+
 export function mergeConfig<T>(base: T, override: unknown): T {
   if (!isPlainObject(base) || !isPlainObject(override)) {
     return (override === undefined ? base : override) as T;
@@ -463,6 +470,16 @@ export function resolveConfig(
     mergeConfig(mergeConfig(defaults as unknown, options.fileConfig ?? {}), overrides as unknown),
     mergeConfig(envOverrides(env) as unknown, argvOverrides(options.argv ?? process.argv.slice(2)) as unknown),
   ) as ResolvedMuboConfig;
+
+  requireSection(merged.app, "app");
+  requireSection(merged.http, "HTTP");
+  requireSection(merged.db, "database");
+  requireSection(merged.db.migrations, "migrations");
+  requireSection(merged.static, "static");
+  requireSection(merged.static.cache, "static cache");
+  requireSection(merged.ws, "WebSocket");
+  requireSection(merged.ws.heartbeat, "WebSocket heartbeat");
+  requireSection(merged.log, "log");
 
   if (!logJsonConfigured) merged.log.json = merged.app.env === "production";
   if (merged.app.env !== "development" && merged.app.env !== "production" && merged.app.env !== "test") {

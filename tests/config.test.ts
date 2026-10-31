@@ -292,6 +292,22 @@ export default defineConfig({
     );
   });
 
+  test("rejects malformed config sections with configuration errors", () => {
+    const invalid: Array<[unknown, RegExp]> = [
+      [{ app: null }, /Invalid app configuration/],
+      [{ http: "invalid" }, /Invalid HTTP configuration/],
+      [{ db: null }, /Invalid database configuration/],
+      [{ db: { migrations: null } }, /Invalid migrations configuration/],
+      [{ static: [] }, /Invalid static configuration/],
+      [{ static: { cache: "invalid" } }, /Invalid static cache configuration/],
+      [{ ws: { heartbeat: null } }, /Invalid WebSocket heartbeat configuration/],
+      [{ log: "invalid" }, /Invalid log configuration/],
+    ];
+    for (const [config, pattern] of invalid) {
+      expect(() => resolveConfig(config as never, { env: {}, argv: [] })).toThrow(pattern);
+    }
+  });
+
   test("rejects invalid environment modes", () => {
     expect(() => resolveConfig({}, { env: { MUBO_MIGRATIONS_MODE: "sometimes" }, argv: [] })).toThrow(
       /Invalid MUBO_MIGRATIONS_MODE/,
