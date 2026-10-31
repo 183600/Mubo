@@ -418,6 +418,19 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("check mode does not create migration metadata", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const checked = await db.migrate(baseSchema, { mode: "check" });
+    expect(checked.status).toBe("pending");
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_mubo_migrations'").get(),
+    ).toBeNull();
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").get(),
+    ).toBeNull();
+    db.close();
+  });
+
   test("check mode reports pending migrations without applying them", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(baseSchema);

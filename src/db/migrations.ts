@@ -426,7 +426,7 @@ export function applyMigrations(
     return { status: "off", id: null, statements: [], changes: [] };
   }
 
-  db.exec(migrationTableSql(table));
+  if (mode === "apply") db.exec(migrationTableSql(table));
   const initial = planMigrations(db, schema, { table, safeOnly });
   if (initial.statements.length === 0) {
     return { status: "none", id: null, statements: [], changes: [] };
