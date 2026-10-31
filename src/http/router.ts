@@ -40,7 +40,8 @@ function compilePath(path: string): Segment[] {
   if (path.includes("?") || path.includes("#")) {
     throw new MuboError("CONFIG_ERROR", `Route path must not contain a query or fragment: ${path}`);
   }
-  const raw = path === "/" ? [] : path.replace(/^\/+|\/+$/g, "").split("/");
+  const trimmed = path.replace(/^\/+|\/+$/g, "");
+  const raw = trimmed === "" ? [] : trimmed.split("/");
   const parameters = new Set<string>();
   return raw.map((part, index) => {
     if (part === "*") {
@@ -76,8 +77,8 @@ function decode(value: string): string {
 }
 
 function pathSegments(pathname: string): string[] {
-  if (pathname === "/" || pathname === "") return [];
-  return pathname.replace(/^\/+|\/+$/g, "").split("/");
+  const trimmed = pathname.replace(/^\/+|\/+$/g, "");
+  return trimmed === "" ? [] : trimmed.split("/");
 }
 
 function matchSegments(route: Route, parts: string[]): Record<string, string> | null {

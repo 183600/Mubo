@@ -82,6 +82,23 @@ describe("router", () => {
     expect(await (third as Response).text()).toBe("third");
   });
 
+  test("treats slash-only routes and request paths as the root", async () => {
+    const router = new Router();
+    router.add("GET", "/", ok("first"));
+    router.add("GET", "///", ok("second"));
+    expect(router.routes).toHaveLength(1);
+    expect(router.routes[0]!.path).toBe("///");
+
+    for (const pathname of ["/", "//", "///"]) {
+      const match = router.match("GET", pathname);
+      expect(match).toMatchObject({ type: "match", params: {} });
+      const response = match.type === "match" ? await match.route.handler({} as never) : undefined;
+      expect(await (response as Response).text()).toBe("second");
+    }
+
+    expect(() => new Router().add("GET", "///", ok("root"))).not.toThrow();
+  });
+
   test("rejects ambiguous or malformed route definitions", () => {
     const invalid = [
       "users",
