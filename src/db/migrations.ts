@@ -305,6 +305,16 @@ function indexOwner(db: MuboDatabase, index: string): string | undefined {
     .get(index)?.tbl_name;
 }
 
+function viewExists(db: MuboDatabase, view: string): boolean {
+  return (
+    db
+      .query<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'view' AND name COLLATE NOCASE = ?",
+      )
+      .get(view) !== null
+  );
+}
+
 function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string): void {
   const owner = indexOwner(db, index);
   if (owner !== undefined && owner.toLowerCase() !== table.toLowerCase()) {
@@ -317,6 +327,12 @@ function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string
     throw new MuboError(
       "MIGRATION_ERROR",
       `Index ${index} conflicts with an existing table; use a different name or a manual migration`,
+    );
+  }
+  if (owner === undefined && viewExists(db, index)) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Index ${index} conflicts with an existing view; use a different name or a manual migration`,
     );
   }
 }
@@ -528,6 +544,12 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
         throw new MuboError(
           "MIGRATION_ERROR",
           `Table ${tableName} conflicts with an existing index on table ${existingIndex}; use a different name or a manual migration`,
+        );
+      }
+      if (viewExists(db, tableName)) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Table ${tableName} conflicts with an existing view; use a different name or a manual migration`,
         );
       }
       statements.push(createTableSql(tableName, table));

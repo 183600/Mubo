@@ -335,6 +335,39 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects collisions with existing SQLite views", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE VIEW legacy_view AS SELECT 1 AS id");
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            legacy_view: { columns: { id: { type: "integer", primaryKey: true } } },
+          },
+        }),
+      ),
+    ).toThrow(/Table legacy_view conflicts with an existing view/);
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            notes: {
+              columns: { id: { type: "integer", primaryKey: true } },
+              indexes: [{ name: "legacy_view", columns: ["id"] }],
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Index legacy_view conflicts with an existing view/);
+
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes'").get(),
+    ).toBeNull();
+    db.close();
+  });
+
   test("treats SQLite identifiers case-insensitively during planning", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(
