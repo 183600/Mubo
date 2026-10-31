@@ -63,6 +63,31 @@ describe("request context bodies", () => {
     expect((await alias.form()).get("title")).toBe("hello");
   });
 
+  test("provides JSON, text and failure response helpers", async () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+    const ok = ctx.ok({ ok: true }, { status: 201 });
+    expect(ok.status).toBe(201);
+    expect(await ok.json()).toEqual({ ok: true });
+
+    const json = ctx.json({ value: 1 });
+    expect(json.status).toBe(200);
+    expect(await json.json()).toEqual({ value: 1 });
+
+    const text = ctx.textResponse("hello");
+    expect(await text.text()).toBe("hello");
+
+    const failure = ctx.fail("VALIDATION_ERROR", "bad input", 422, { field: "name" });
+    expect(failure.status).toBe(422);
+    expect(await failure.json()).toEqual({
+      error: { code: "VALIDATION_ERROR", message: "bad input", details: { field: "name" } },
+      requestId: "req-context",
+    });
+
+    ctx.set("answer", 42);
+    expect(ctx.get<number>("answer")).toBe(42);
+    expect(ctx.get("missing")).toBeUndefined();
+  });
+
   test("rejects streamed bodies that exceed the limit without a content-length header", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {

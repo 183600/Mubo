@@ -228,6 +228,23 @@ describe("HTTP routing and middleware", () => {
     expect(wrongMethod.headers.get("allow")).toContain("OPTIONS");
   });
 
+  test("refuses to start when migrations are pending", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "pending-migrations-test", env: "test" },
+        db: { path: ":memory:", migrations: { mode: "check" } },
+        schema,
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    await expect(app.start()).rejects.toThrow(/migrations are pending/i);
+    expect(app.started).toBe(false);
+    expect(app.port).toBeUndefined();
+    await app.stop();
+  });
+
   test("enforces body limits and optionally handles CORS preflight", async () => {
     const app = await startApp({
       app: { name: "limits-test", env: "test" },
@@ -265,6 +282,21 @@ describe("HTTP routing and middleware", () => {
       body: "{}",
     });
     expect(actual.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+
+    const deniedPreflight = await fetch(`${base(app)}/data`, {
+      method: "OPTIONS",
+      headers: { origin: "http://denied.test" },
+    });
+    expect(deniedPreflight.status).toBe(405);
+    expect(deniedPreflight.headers.get("access-control-allow-origin")).toBeNull();
+
+    const deniedActual = await fetch(`${base(app)}/data`, {
+      method: "POST",
+      headers: { origin: "http://denied.test", "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(deniedActual.status).toBe(200);
+    expect(deniedActual.headers.get("access-control-allow-origin")).toBeNull();
 
     const wildcard = await startApp({
       app: { name: "cors-wildcard-test", env: "test" },
