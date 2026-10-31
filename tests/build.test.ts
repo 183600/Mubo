@@ -51,6 +51,16 @@ describe("single-file build", () => {
     );
   });
 
+  test("rejects a configured static directory that does not exist", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "");
+    writeFileSync(join(cwd, "mubo.config.ts"), `export default { static: { dir: "assets" } };\n`);
+
+    await expect(buildProject({ cwd, entry: "index.ts" })).rejects.toThrow(
+      /Static directory not found/,
+    );
+  });
+
   test("finds JavaScript entries when no TypeScript entry exists", async () => {
     const cwd = tempDir();
     mkdirSync(join(cwd, "src", "server"), { recursive: true });

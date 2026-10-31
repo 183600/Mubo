@@ -85,8 +85,9 @@ function findStaticDir(cwd: string, config: MuboConfig, requested?: string): str
     if (config.static.dir === "public") {
       const fallback = resolve(cwd, "dist/client");
       if (isDirectory(fallback)) return fallback;
+      return undefined;
     }
-    return undefined;
+    throw new MuboError("CONFIG_ERROR", `Static directory not found: ${absolute}`);
   }
   for (const candidate of ["public", "dist/client"]) {
     const absolute = resolve(cwd, candidate);
