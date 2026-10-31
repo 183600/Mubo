@@ -33,7 +33,11 @@ function compilePath(path: string): Segment[] {
   if (!path.startsWith("/")) {
     throw new MuboError("CONFIG_ERROR", `Route path must start with "/": ${path}`);
   }
+  if (path.includes("?") || path.includes("#")) {
+    throw new MuboError("CONFIG_ERROR", `Route path must not contain a query or fragment: ${path}`);
+  }
   const raw = path === "/" ? [] : path.replace(/^\/+|\/+$/g, "").split("/");
+  const parameters = new Set<string>();
   return raw.map((part, index) => {
     if (part === "*") {
       if (index !== raw.length - 1) {
@@ -46,6 +50,10 @@ function compilePath(path: string): Segment[] {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
         throw new MuboError("CONFIG_ERROR", `Invalid route parameter: ${part}`);
       }
+      if (parameters.has(name)) {
+        throw new MuboError("CONFIG_ERROR", `Duplicate route parameter: ${name}`);
+      }
+      parameters.add(name);
       return { kind: "param", value: name };
     }
     if (part === "") {
