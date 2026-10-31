@@ -42,6 +42,22 @@ describe("logger", () => {
     expect(entry.second).toEqual({ value: 1 });
   });
 
+  test("keeps human-readable entries on one line", () => {
+    const logger = createLogger({ level: "debug", json: false });
+    const lines = captureLogs(() => {
+      logger.info("payload", {
+        text: "first line\nsecond line",
+        safe: "token-1",
+        empty: "",
+      });
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('text="first line\\nsecond line"');
+    expect(lines[0]).toContain("safe=token-1");
+    expect(lines[0]).toContain('empty=""');
+  });
+
   test("falls back to a serializable log entry when a field cannot be converted", () => {
     const logger = createLogger({ level: "debug", json: true });
     const bad = {

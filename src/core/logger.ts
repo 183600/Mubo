@@ -17,7 +17,9 @@ export interface Logger {
 }
 
 function formatValue(value: unknown): string {
-  if (typeof value === "string") return value.includes(" ") ? JSON.stringify(value) : value;
+  if (typeof value === "string") {
+    return /^[A-Za-z0-9._:/@+-]+$/.test(value) ? value : JSON.stringify(value);
+  }
   if (value instanceof Error) return JSON.stringify(value.message);
   try {
     return JSON.stringify(value);
