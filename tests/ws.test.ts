@@ -199,6 +199,28 @@ describe("WebSocket rooms and broadcasting", () => {
     });
     expect(notUpgrade.status).toBe(426);
     expect(notUpgrade.headers.get("x-request-id")).toBe("ws-not-upgrade");
+
+    const disabled = await createMuboApp(
+      {
+        app: { name: "ws-disabled-test", env: "test" },
+        db: { path: ":memory:" },
+        http: { port: 0 },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { enabled: false },
+      },
+      { argv: [] },
+    );
+    disabled.ws("/ws", {});
+    await disabled.start();
+    apps.push(disabled);
+    const disabledResponse = await fetch(`http://127.0.0.1:${disabled.port}/ws`, {
+      headers: { upgrade: "websocket", "x-request-id": "ws-disabled" },
+    });
+    expect(disabledResponse.status).toBe(403);
+    expect(disabledResponse.headers.get("x-request-id")).toBe("ws-disabled");
+    const disabledPayload = (await disabledResponse.json()) as { requestId: string };
+    expect(disabledPayload.requestId).toBe("ws-disabled");
   });
 
   test("routes synchronous handler failures through onError", async () => {

@@ -195,13 +195,13 @@ export class MuboApp {
         headers: { upgrade: "websocket" },
       });
     }
-    if (!this.config.ws.enabled) {
-      return errorResponse(crypto.randomUUID(), new MuboError("FORBIDDEN", "WebSocket support is disabled"), true);
-    }
-
     const requestId = validRequestId(request.headers.get("x-request-id"))
       ? request.headers.get("x-request-id")!
       : crypto.randomUUID();
+    if (!this.config.ws.enabled) {
+      return errorResponse(requestId, new MuboError("FORBIDDEN", "WebSocket support is disabled"), true);
+    }
+
     let user: unknown;
     if (route.handlers.authorize) {
       try {
