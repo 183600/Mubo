@@ -32,6 +32,14 @@ function normalizeRoutePath(path: string): string {
   return trimmed ? `/${trimmed}` : "/";
 }
 
+function decodeRoutePath(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    throw new MuboError("BAD_REQUEST", `Malformed percent-encoding in URL: ${path}`);
+  }
+}
+
 function validRequestId(value: string | null): value is string {
   return value !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
 }
@@ -215,7 +223,10 @@ export class MuboApp {
     server: Server<WsSocketData>,
     requestId: string,
   ): Promise<Response | null> {
-    const route = this.wsRoutes.get(normalizeRoutePath(url.pathname));
+    if (this.wsRoutes.size === 0) return null;
+    const route =
+      this.wsRoutes.get(normalizeRoutePath(url.pathname)) ??
+      this.wsRoutes.get(normalizeRoutePath(decodeRoutePath(url.pathname)));
     if (!route) return null;
     const upgrade = (request.headers.get("upgrade") ?? "").toLowerCase();
     if (upgrade !== "websocket") {
