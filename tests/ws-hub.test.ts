@@ -121,8 +121,13 @@ describe("WebSocket room hub", () => {
 
     for (const room of ["", "   ", "\n\t"]) {
       expect(() => hub.subscribe(ctx, room)).toThrow(MuboError);
+      expect(() => hub.unsubscribe(ctx, room)).toThrow(MuboError);
+      expect(() => hub.publish(room, {})).toThrow(MuboError);
+      expect(() => hub.roomSize(room)).toThrow(MuboError);
     }
     expect(() => hub.subscribe(ctx, 42 as never)).toThrow(/Room name cannot be empty/);
+    expect(() => hub.publish(42 as never, {})).toThrow(/Room name cannot be empty/);
+    expect(() => hub.roomSize(42 as never)).toThrow(/Room name cannot be empty/);
     expect(hub.publish("lobby", { value: 1n })).toBe(0);
     expect(socket.sent).toHaveLength(0);
     expect(hub.broadcast({ value: 1n })).toBe(0);

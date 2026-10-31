@@ -73,6 +73,12 @@ export function serializePayload(data: unknown): string | ArrayBuffer | ArrayBuf
   return json;
 }
 
+function assertRoomName(room: unknown): asserts room is string {
+  if (typeof room !== "string" || room.trim().length === 0) {
+    throw new MuboError("VALIDATION_ERROR", "Room name cannot be empty");
+  }
+}
+
 function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Logger): boolean {
   try {
     ws.send(serializePayload(data) as any);
@@ -107,6 +113,7 @@ export class WsRoomHub {
   }
 
   roomSize(room: string): number {
+    assertRoomName(room);
     return this.rooms.get(room)?.size ?? 0;
   }
 
@@ -158,9 +165,7 @@ export class WsRoomHub {
   }
 
   subscribe(ctx: MuboWsContext, room: string): void {
-    if (typeof room !== "string" || room.trim().length === 0) {
-      throw new MuboError("VALIDATION_ERROR", "Room name cannot be empty");
-    }
+    assertRoomName(room);
     const client = this.clients.get(ctx.id);
     if (!client) return;
     if (client.rooms.has(room)) return;
@@ -174,6 +179,7 @@ export class WsRoomHub {
   }
 
   unsubscribe(ctx: MuboWsContext, room: string): void {
+    assertRoomName(room);
     const client = this.clients.get(ctx.id);
     if (!client) return;
     client.rooms.delete(room);
@@ -193,6 +199,7 @@ export class WsRoomHub {
   }
 
   publish(room: string, data: unknown, options: { except?: string } = {}): number {
+    assertRoomName(room);
     const members = this.rooms.get(room);
     return members ? this.deliver(members, data, options) : 0;
   }
