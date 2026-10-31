@@ -418,3 +418,7 @@ export function ensureDataDir(dbPath: string, dataDir: string): void {
     }
   }
 }
+
+export function defineConfig<const T extends MuboConfig>(config: T): T {
+  return config;
+}
