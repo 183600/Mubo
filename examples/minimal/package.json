@@ -1,0 +1,20 @@
+{
+  "name": "mubo-example-minimal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/server/index.ts",
+    "build": "bun run ../../src/cli/index.ts build",
+    "migrate": "bun run ../../src/cli/index.ts migrate",
+    "doctor": "bun run ../../src/cli/index.ts doctor",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "mubo": "file:../.."
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "^7.0.2"
+  }
+}

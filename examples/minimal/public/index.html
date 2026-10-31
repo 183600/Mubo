@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mubo Minimal Example</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { max-width: 760px; margin: 4rem auto; padding: 0 1.5rem; line-height: 1.6; }
+      form { display: flex; gap: .5rem; margin: 1rem 0; }
+      input, button { font: inherit; padding: .5rem .75rem; }
+      input { flex: 1; }
+      li { margin: .5rem 0; }
+      #status { font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <h1>Mubo Minimal Example</h1>
+    <p>Realtime status: <span id="status">connecting…</span></p>
+    <form id="note-form">
+      <input id="title" placeholder="Note title" required />
+      <button type="submit">Add note</button>
+    </form>
+    <ul id="notes"></ul>
+    <script>
+      const status = document.getElementById("status");
+      const notes = document.getElementById("notes");
+      const form = document.getElementById("note-form");
+      const title = document.getElementById("title");
+
+      async function load() {
+        const response = await fetch("/api/notes");
+        const data = await response.json();
+        notes.replaceChildren(...(data.notes ?? []).map(render));
+      }
+      function render(note) {
+        const item = document.createElement("li");
+        item.textContent = note.title + (note.body ? ` — ${note.body}` : "");
+        item.dataset.id = String(note.id);
+        return item;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await fetch("/api/notes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title: title.value }),
+        });
+        title.value = "";
+        await load();
+      });
+
+      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const socket = new WebSocket(protocol + "//" + location.host + "/ws");
+      socket.addEventListener("open", () => { status.textContent = "connected"; });
+      socket.addEventListener("close", () => { status.textContent = "disconnected"; });
+      socket.addEventListener("message", async (event) => {
+        const message = JSON.parse(event.data);
+        if (message.e === "note.created") await load();
+      });
+
+      load();
+    </script>
+  </body>
+</html>

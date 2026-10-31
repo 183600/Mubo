@@ -234,7 +234,9 @@ export class StaticAssets {
       if (response) return response;
       if (this.mode === "embedded") return null;
     }
-    if (this.mode === "disk") return this.diskResponse(request, url.pathname);
+    if (this.mode === "disk" || (this.mode === "embedded" && this.assets.size === 0)) {
+      return this.diskResponse(request, url.pathname);
+    }
     return null;
   }
 
