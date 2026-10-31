@@ -53,6 +53,16 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("exec runs multiple SQL statements", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE first (id INTEGER PRIMARY KEY); CREATE TABLE second (id INTEGER PRIMARY KEY);");
+    const tables = db
+      .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('first', 'second')")
+      .all();
+    expect(tables).toHaveLength(2);
+    db.close();
+  });
+
   test("persists migrations and applies additive changes after restart", async () => {
     const path = join(tempDir(), "app.sqlite");
     const v1 = new MuboDatabase({ path });

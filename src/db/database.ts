@@ -108,8 +108,8 @@ export class MuboDatabase {
     };
   }
 
-  exec(sql: string, ...params: unknown[]): { changes: number; lastInsertRowid: number | bigint } {
-    return this.timed(sql, () => (this.raw.run as (...args: unknown[]) => { changes: number; lastInsertRowid: number | bigint })(sql, ...normalizeParams(params)));
+  exec(sql: string): void {
+    this.timed(sql, () => this.raw.exec(sql));
   }
 
   transaction<T>(
@@ -120,12 +120,18 @@ export class MuboDatabase {
     const depth = this.transactionDepth;
     const savepoint = `mubo_sp_${depth}`;
     this.transactionDepth++;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      this.transactionDepth--;
+    };
     const commit = () => {
       try {
         if (depth === 0) this.raw.run("COMMIT");
         else this.raw.run(`RELEASE ${savepoint}`);
       } finally {
-        this.transactionDepth--;
+        finish();
       }
     };
     const rollback = () => {
@@ -138,7 +144,7 @@ export class MuboDatabase {
       } catch {
         // The original error is more useful than a rollback failure.
       } finally {
-        this.transactionDepth--;
+        finish();
       }
     };
     try {
