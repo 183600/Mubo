@@ -289,6 +289,52 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects table and index names that collide globally", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE legacy (id INTEGER PRIMARY KEY); CREATE INDEX idx_taken ON legacy(id);");
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            notes: {
+              columns: { id: { type: "integer", primaryKey: true } },
+              indexes: [{ name: "legacy", columns: ["id"] }],
+            },
+          },
+        }),
+      ),
+    ).toThrow(/conflicts with an existing table/);
+
+    expect(() =>
+      db.migrate(
+        defineSchema({
+          tables: {
+            idx_taken: { columns: { id: { type: "integer", primaryKey: true } } },
+          },
+        }),
+      ),
+    ).toThrow(/conflicts with an existing index/);
+
+    expect(() =>
+      db.plan(
+        defineSchema({
+          tables: {
+            users: {
+              columns: { id: { type: "integer", primaryKey: true } },
+              indexes: [{ name: "users", columns: ["id"] }],
+            },
+          },
+        }),
+      ),
+    ).toThrow(/Index name users conflicts with table users/);
+
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('notes', 'idx_taken')").get(),
+    ).toBeNull();
+    db.close();
+  });
+
   test("treats SQLite identifiers case-insensitively during planning", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(

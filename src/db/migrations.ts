@@ -313,6 +313,12 @@ function ensureIndexNameAvailable(db: MuboDatabase, table: string, index: string
       `Index ${index} already exists on table ${owner}; use a different name or a manual migration`,
     );
   }
+  if (owner === undefined && tableExists(db, index)) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Index ${index} conflicts with an existing table; use a different name or a manual migration`,
+    );
+  }
 }
 
 function indexWhere(sql: string | null | undefined): string | undefined {
@@ -478,26 +484,35 @@ export function validateSchema(schema: MuboSchema): void {
   if (!isObject(schema) || !isObject(schema.tables)) {
     throw new MuboError("MIGRATION_ERROR", "Invalid schema definition");
   }
-  const indexOwners = new Map<string, string>();
-  const tableNames = new Set<string>();
+  const indexOwners = new Map<string, { table: string; index: string }>();
+  const tableNames = new Map<string, string>();
   for (const [tableName, table] of Object.entries(schema.tables)) {
     const tableKey = tableName.toLowerCase();
     if (tableNames.has(tableKey)) {
       throw new MuboError("MIGRATION_ERROR", `Table ${tableName} is defined more than once`);
     }
-    tableNames.add(tableKey);
+    tableNames.set(tableKey, tableName);
     validateTable(tableName, table);
     for (const index of table.indexes ?? []) {
       const key = index.name.toLowerCase();
       const owner = indexOwners.get(key);
       if (owner !== undefined) {
         const detail =
-          owner.toLowerCase() === tableKey
+          owner.table.toLowerCase() === tableKey
             ? `Index name ${index.name} is defined more than once on table ${tableName}`
-            : `Index name ${index.name} is used by both ${owner} and ${tableName}`;
+            : `Index name ${index.name} is used by both ${owner.table} and ${tableName}`;
         throw new MuboError("MIGRATION_ERROR", detail);
       }
-      indexOwners.set(key, tableName);
+      indexOwners.set(key, { table: tableName, index: index.name });
+    }
+  }
+  for (const [key, owner] of indexOwners) {
+    const table = tableNames.get(key);
+    if (table !== undefined) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Index name ${owner.index} conflicts with table ${table}; use a different name`,
+      );
     }
   }
 }
@@ -508,6 +523,13 @@ function planForSchema(db: MuboDatabase, schema: MuboSchema, safeOnly: boolean):
   validateSchema(schema);
   for (const [tableName, table] of Object.entries(schema.tables)) {
     if (!tableExists(db, tableName)) {
+      const existingIndex = indexOwner(db, tableName);
+      if (existingIndex !== undefined) {
+        throw new MuboError(
+          "MIGRATION_ERROR",
+          `Table ${tableName} conflicts with an existing index on table ${existingIndex}; use a different name or a manual migration`,
+        );
+      }
       statements.push(createTableSql(tableName, table));
       changes.push(`create table ${tableName}`);
       for (const index of table.indexes ?? []) {
