@@ -1203,6 +1203,36 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("treats boolean SQL literals as numeric defaults", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const literals = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            enabled: { type: "boolean", sqlDefault: "TRUE" },
+            disabled: { type: "boolean", sqlDefault: "false" },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(literals)).status).toBe("applied");
+
+    const booleans = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            enabled: { type: "boolean", default: true },
+            disabled: { type: "boolean", default: false },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(booleans)).status).toBe("none");
+    db.close();
+  });
+
   test("treats parenthesized NULL sql defaults as no default", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const schema = defineSchema({

@@ -522,9 +522,11 @@ function normalizeDefault(value: string | null | undefined): string | null {
       return String(numeric);
     }
   }
-  if (/^(?:CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|TRUE|FALSE)$/i.test(text)) {
+  if (/^(?:CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME)$/i.test(text)) {
     return text.toUpperCase();
   }
+  if (/^TRUE$/i.test(text)) return "1";
+  if (/^FALSE$/i.test(text)) return "0";
   return text;
 }
 
