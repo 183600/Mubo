@@ -624,7 +624,7 @@ function configFileFromArgv(argv: string[]): string | undefined {
     if (token === "--") break;
     if (token === "--config") {
       const value = argv[index + 1];
-      if (value === undefined || value.startsWith("-")) {
+      if (value === undefined || value === "" || value.startsWith("-")) {
         throw new MuboError("CONFIG_ERROR", "Missing value for --config");
       }
       result = value;
@@ -645,6 +645,9 @@ export async function loadAndResolveConfig(
   const cwd = options.cwd ?? process.cwd();
   const argv = options.argv ?? process.argv.slice(2);
   const explicitFile = options.configFile ?? configFileFromArgv(argv);
+  if (explicitFile === "") {
+    throw new MuboError("CONFIG_ERROR", "Missing value for --config");
+  }
   if (!options.loadFile && explicitFile === undefined) {
     return resolveConfig(overrides, { ...options, cwd, argv });
   }

@@ -338,6 +338,12 @@ export default defineConfig({
     await expect(
       loadAndResolveConfig({}, { cwd: tempDir(), loadFile: true, argv: ["--config="], env: {} }),
     ).rejects.toThrow(/Missing value for --config/);
+    await expect(
+      loadAndResolveConfig({}, { cwd: tempDir(), loadFile: true, argv: ["--config", ""], env: {} }),
+    ).rejects.toThrow(/Missing value for --config/);
+    await expect(
+      loadAndResolveConfig({}, { cwd: tempDir(), loadFile: true, configFile: "", env: {} }),
+    ).rejects.toThrow(/Missing value for --config/);
   });
 
   test("reports config file loading failures and invalid environment values", async () => {
