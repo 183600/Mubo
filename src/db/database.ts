@@ -112,6 +112,10 @@ export class MuboDatabase {
     return !this.closed;
   }
 
+  get transactionBusy(): boolean {
+    return this.transactionActive || this.transactionQueue.length > 0;
+  }
+
   private assertOpen(): void {
     if (this.closed) throw new MuboError("MIGRATION_ERROR", "Database is closed");
   }

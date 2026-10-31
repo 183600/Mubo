@@ -895,6 +895,12 @@ export function applyMigrations(
 
   validateSchema(schema);
   if (mode === "apply") {
+    if (db.transactionBusy) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        "Cannot apply migrations while another transaction is active",
+      );
+    }
     ensureMigrationTableAvailable(db, table);
     db.exec(migrationTableSql(table));
     assertMigrationTableSchema(db, table);

@@ -1618,6 +1618,30 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("rejects applying migrations while another transaction is active", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const active = db.transaction(async () => {
+      await gate;
+      return "active";
+    });
+
+    expect(() => db.migrate(baseSchema)).toThrow(/another transaction is active/);
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").get(),
+    ).toBeNull();
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_mubo_migrations'").get(),
+    ).toBeNull();
+
+    release();
+    expect(await active).toBe("active");
+    db.close();
+  });
+
   test("refuses unsafe NOT NULL additions and rolls back transactions", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(baseSchema);
