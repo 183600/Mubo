@@ -493,7 +493,11 @@ export class MuboApp {
       const response = await this.dispatchHttp(request, url, server, requestId, match, started);
       return applyCors(request, response, this.config);
     } catch (error) {
-      const expected = isMuboError(error) && error.status < 500;
+      const expected =
+        isMuboError(error) &&
+        Number.isInteger(error.status) &&
+        error.status >= 400 &&
+        error.status < 500;
       const fields = {
         requestId,
         method: request.method,

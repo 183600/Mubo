@@ -41,7 +41,8 @@ export class MuboError extends Error {
     this.code = code;
     this.status = options.status ?? (Object.hasOwn(DEFAULT_STATUS, code) ? DEFAULT_STATUS[code]! : 500);
     this.details = options.details;
-    this.expose = options.expose ?? this.status < 500;
+    this.expose =
+      options.expose ?? (Number.isInteger(this.status) && this.status >= 400 && this.status < 500);
   }
 }
 

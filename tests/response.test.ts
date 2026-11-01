@@ -91,11 +91,14 @@ describe("response helpers", () => {
       });
     }
 
-    const invalidStatus = errorResponse(
-      "req-status",
-      new MuboError("BAD_REQUEST", "bad", { status: 204 }),
-    );
+    const invalidError = new MuboError("BAD_REQUEST", "bad", { status: 204 });
+    expect(invalidError.expose).toBe(false);
+    const invalidStatus = errorResponse("req-status", invalidError, true);
     expect(invalidStatus.status).toBe(500);
+    expect((await invalidStatus.json() as { error: unknown }).error).toEqual({
+      code: "BAD_REQUEST",
+      message: "Internal server error",
+    });
   });
 
   test("turn errors into tagged JSON responses", async () => {
