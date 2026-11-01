@@ -205,6 +205,16 @@ describe("WebSocket route registration", () => {
         ctx.send({ handler: "new" });
       },
     });
+    app.ws("/a%2Fb", {
+      onConnect(ctx) {
+        ctx.send({ handler: "old-slash" });
+      },
+    });
+    app.ws("/a%2fb", {
+      onConnect(ctx) {
+        ctx.send({ handler: "new-slash" });
+      },
+    });
     await app.start();
     apps.push(app);
 
@@ -213,6 +223,12 @@ describe("WebSocket route registration", () => {
       expect(await socket.next()).toEqual({ handler: "new" });
       socket.socket.close();
     }
+    for (const path of ["/a%2Fb", "/a%2fb"]) {
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}${path}`);
+      expect(await socket.next()).toEqual({ handler: "new-slash" });
+      socket.socket.close();
+    }
+    expect((await fetch(`http://127.0.0.1:${app.port}/a/b`)).status).toBe(404);
   });
 
   test("does not intercept HTTP paths with encoded query or fragment characters", async () => {

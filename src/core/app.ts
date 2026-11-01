@@ -50,12 +50,18 @@ function decodeLookupPath(path: string): string | undefined {
   return normalizeLookupPath(segments.join("/"));
 }
 
-function equivalentRoutePath(path: string): string | undefined {
-  try {
-    return decodeLookupPath(path);
-  } catch {
-    return undefined;
-  }
+function routeIdentity(path: string): string {
+  const normalized = normalizeLookupPath(path);
+  const segments = normalized === "/" ? [] : normalized.slice(1).split("/");
+  return JSON.stringify(
+    segments.map((segment) => {
+      try {
+        return ["decoded", decodeURIComponent(segment)];
+      } catch {
+        return ["raw", segment];
+      }
+    }),
+  );
 }
 
 function validRequestId(value: string | null): value is string {
@@ -193,17 +199,7 @@ export class MuboApp {
 
   ws(path: string, handlers: WsHandlers): this {
     const normalized = normalizeRoutePath(path);
-    const canonical = equivalentRoutePath(normalized);
-    if (canonical !== undefined) {
-      for (const [registeredPath] of this.wsRoutes) {
-        if (equivalentRoutePath(registeredPath) === canonical) this.wsRoutes.delete(registeredPath);
-      }
-    }
-    const route: WsRoute = { path: normalized, handlers };
-    this.wsRoutes.set(normalized, route);
-    if (canonical !== undefined && canonical !== normalized) {
-      this.wsRoutes.set(canonical, route);
-    }
+    this.wsRoutes.set(routeIdentity(normalized), { path: normalized, handlers });
     return this;
   }
 
@@ -253,9 +249,15 @@ export class MuboApp {
     requestId: string,
   ): Promise<Response | null> {
     if (this.wsRoutes.size === 0) return null;
-    const route =
-      this.wsRoutes.get(normalizeLookupPath(url.pathname)) ??
-      this.wsRoutes.get(decodeLookupPath(url.pathname) ?? "");
+    let route = this.wsRoutes.get(routeIdentity(url.pathname));
+    if (!route) {
+      try {
+        const decoded = decodeLookupPath(url.pathname);
+        if (decoded !== undefined) route = this.wsRoutes.get(routeIdentity(decoded));
+      } catch {
+        route = undefined;
+      }
+    }
     if (!route) return null;
     const upgrade = (request.headers.get("upgrade") ?? "").toLowerCase();
     if (upgrade !== "websocket") {
@@ -301,7 +303,7 @@ export class MuboApp {
   }
 
   private wsRoute(ws: ServerWebSocket<WsSocketData>): WsRoute | undefined {
-    return this.wsRoutes.get(ws.data.routePath);
+    return this.wsRoutes.get(routeIdentity(ws.data.routePath));
   }
 
   private handleWsOpen(ws: ServerWebSocket<WsSocketData>): void {
