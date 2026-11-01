@@ -6,7 +6,7 @@ import { WsRoomHub, type WsSocketData } from "../src/ws/hub.ts";
 
 const logger = createLogger({ level: "error" });
 
-function fakeSocket(): {
+function fakeSocket(sendStatus?: number): {
   ws: ServerWebSocket<WsSocketData>;
   sent: unknown[];
   readonly pings: number;
@@ -26,6 +26,7 @@ function fakeSocket(): {
     },
     send(data: unknown) {
       sent.push(data);
+      return sendStatus;
     },
     ping() {
       pings++;
@@ -131,6 +132,25 @@ describe("WebSocket room hub", () => {
     expect(hub.publish("lobby", { value: 1n })).toBe(0);
     expect(socket.sent).toHaveLength(0);
     expect(hub.broadcast({ value: 1n })).toBe(0);
+  });
+
+  test("counts only sends accepted by the socket", () => {
+    const hub = new WsRoomHub();
+    const dropped = fakeSocket(0);
+    const empty = fakeSocket(0);
+    const queued = fakeSocket(-1);
+    const sent = fakeSocket(12);
+    for (const socket of [dropped, empty, queued, sent]) {
+      hub.subscribe(hub.add(socket.ws, null, logger, ""), "lobby");
+    }
+
+    expect(hub.publish("lobby", { ok: true })).toBe(2);
+    expect(dropped.sent).toHaveLength(1);
+    expect(queued.sent).toHaveLength(1);
+    expect(sent.sent).toHaveLength(1);
+
+    expect(hub.publish("lobby", "")).toBe(4);
+    expect(empty.sent).toHaveLength(2);
   });
 
   test("direct sends reject payloads without JSON representations", () => {

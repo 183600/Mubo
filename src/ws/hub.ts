@@ -79,10 +79,28 @@ function assertRoomName(room: unknown): asserts room is string {
   }
 }
 
+function isEmptyPayload(payload: string | ArrayBuffer | ArrayBufferView | Blob): boolean {
+  if (typeof payload === "string") return payload.length === 0;
+  if (payload instanceof Blob) return payload.size === 0;
+  return payload.byteLength === 0;
+}
+
+function sendStatus(
+  ws: ServerWebSocket<WsSocketData>,
+  payload: string | ArrayBuffer | ArrayBufferView | Blob,
+  logger?: Logger,
+): boolean {
+  const status = ws.send(payload as any);
+  if (status === 0 && !isEmptyPayload(payload)) {
+    logger?.warn("WebSocket send failed", { error: "Message dropped" });
+    return false;
+  }
+  return true;
+}
+
 function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Logger): boolean {
   try {
-    ws.send(serializePayload(data) as any);
-    return true;
+    return sendStatus(ws, serializePayload(data), logger);
   } catch (error) {
     logger?.warn("WebSocket send failed", { error: errorMessage(error) });
     return false;
@@ -92,7 +110,7 @@ function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Log
 function sendDirect(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Logger): void {
   const payload = serializePayload(data);
   try {
-    ws.send(payload as any);
+    sendStatus(ws, payload, logger);
   } catch (error) {
     logger?.warn("WebSocket send failed", { error: errorMessage(error) });
   }
