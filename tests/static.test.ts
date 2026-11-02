@@ -116,6 +116,26 @@ describe("static assets", () => {
     expect(missing.status).toBe(404);
   });
 
+  test("rejects malformed and NUL paths", async () => {
+    const dir = publicDir();
+    const disk = new StaticAssets({ mode: "disk", dir, spaFallback: true }, dir);
+    for (const path of ["/%E0%A4%A", "/%00"]) {
+      const url = `http://localhost${path}`;
+      const response = await disk.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(400);
+    }
+
+    const embedded = new StaticAssets(
+      { mode: "embedded", spaFallback: true, assets: { "/index.html": "home" } },
+      dir,
+    );
+    for (const path of ["/%E0%A4%A", "/%00"]) {
+      const url = `http://localhost${path}`;
+      const response = await embedded.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(400);
+    }
+  });
+
   test("resolves disk and embedded paths when checking for files", async () => {
     const dir = publicDir();
     mkdirSync(join(dir, "nested"));
@@ -864,5 +884,16 @@ describe("static assets", () => {
 
     const response = await assets.handle(new Request(`http://localhost/${longName}`), new URL(`http://localhost/${longName}`));
     expect(response?.status).toBe(200);
+  });
+
+  test("blocks backslash path traversal", async () => {
+    const dir = publicDir();
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    const response = await assets.handle(
+      new Request("http://localhost/%5C%5C%5C..%5C%5C%5C..%5C%5C%5Cetc%5Cpasswd"),
+      new URL("http://localhost/%5C%5C%5C..%5C%5C%5C..%5C%5C%5Cetc%5Cpasswd"),
+    );
+    expect(response?.status).toBe(403);
+    expect(await response!.text()).not.toContain("root:");
   });
 });

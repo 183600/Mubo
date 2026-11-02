@@ -233,4 +233,25 @@ describe("WebSocket room hub", () => {
     expect(first.closes).toEqual([[1001, "restart"]]);
     expect(second.closes).toEqual([[1001, "restart"]]);
   });
+
+  test("rejects sending non-JSON-serializable payloads via ctx.send", () => {
+    const hub = new WsRoomHub();
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, logger, "");
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(() => ctx.send(circular)).toThrow(MuboError);
+    expect(() => ctx.send(function() { return 1; })).toThrow(MuboError);
+    expect(socket.sent).toHaveLength(0);
+  });
+
+  test("publish and broadcast with non-existent room return zero for publish, broadcast counts clients", () => {
+    const hub = new WsRoomHub();
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, logger, "");
+
+    expect(hub.publish("nonexistent", { data: 1 })).toBe(0);
+    expect(hub.broadcast({ data: 1 })).toBe(1);
+  });
 });
