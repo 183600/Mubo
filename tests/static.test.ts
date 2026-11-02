@@ -210,6 +210,34 @@ describe("static assets", () => {
     expect(await embedded!.text()).toBe("embedded-only");
   });
 
+  test("serves the embedded SPA shell in disk mode when the disk has nothing to serve", async () => {
+    const dir = tempDir();
+    const assets = new StaticAssets(
+      {
+        mode: "disk",
+        dir,
+        spaFallback: true,
+        assets: { "/index.html": "embedded-home", "/embedded.txt": "embedded-only" },
+      },
+      dir,
+    );
+    const request = async (path: string) => {
+      const url = `http://localhost${path}`;
+      return assets.handle(new Request(url), new URL(url));
+    };
+
+    const index = await request("/");
+    expect(index?.status).toBe(200);
+    expect(await index!.text()).toBe("embedded-home");
+
+    const fallback = await request("/client/route");
+    expect(fallback?.status).toBe(200);
+    expect(await fallback!.text()).toBe("embedded-home");
+
+    const embedded = await request("/embedded.txt");
+    expect(await embedded!.text()).toBe("embedded-only");
+  });
+
   test("falls back to public when configured with an empty directory", async () => {
     const dir = tempDir();
     mkdirSync(join(dir, "public"));

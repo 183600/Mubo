@@ -332,13 +332,19 @@ export class StaticAssets {
     if (!this.enabled) return null;
     const method = request.method.toUpperCase();
     if (method !== "GET" && method !== "HEAD") return null;
-    if (this.assets.size > 0 && (this.mode === "embedded" || this.mode === "disk")) {
+    const hasEmbedded = this.assets.size > 0;
+    if (hasEmbedded && (this.mode === "embedded" || this.mode === "disk")) {
       const response = await this.embeddedResponse(request, url.pathname, this.mode === "embedded");
       if (response) return response;
       if (this.mode === "embedded") return null;
     }
-    if (this.mode === "disk" || (this.mode === "embedded" && this.assets.size === 0)) {
-      return this.diskResponse(request, url.pathname);
+    if (this.mode === "disk" || (this.mode === "embedded" && !hasEmbedded)) {
+      const disk = await this.diskResponse(request, url.pathname);
+      if (disk) return disk;
+      if (this.mode === "disk" && hasEmbedded) {
+        return this.embeddedResponse(request, url.pathname, true);
+      }
+      return null;
     }
     return null;
   }
