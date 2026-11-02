@@ -230,6 +230,8 @@ export default defineConfig({
     expect(sanitizeAppName("../escape")).toBe("escape");
     expect(sanitizeAppName("---")).toBe("mubo-app");
     expect(sanitizeAppName("  My App  ")).toBe("My-App");
+    expect(sanitizeAppName("a---b")).toBe("a-b");
+    expect(sanitizeAppName("a   b")).toBe("a-b");
 
     const config = resolveConfig({ app: { name: ".." } }, { cwd: "/tmp", env: {}, argv: [] });
     expect(config.app.name).toBe("mubo-app");
