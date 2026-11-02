@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
@@ -129,4 +129,38 @@ describe("migration locking", () => {
     ).rejects.toThrow(/Invalid migration lock/);
     db.close();
   });
+
+  test("waits for queued migrations and keeps the file lock until they finish", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mubo-queued-migrate-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "queued.sqlite");
+    const db = new MuboDatabase({ path: dbPath });
+
+    // Hold the migration lock briefly so the migration has to wait for it.
+    const lockPath = join(dir, "._mubo_migrations.lock");
+    writeFileSync(lockPath, "held-by-test");
+    setTimeout(() => rmSync(lockPath, { force: true }), 50);
+
+    const migration = applyMigrations(db, testSchema, { lock: "file" });
+    await Bun.sleep(10);
+
+    // A transaction started while the migration waits for the lock forces the
+    // migration transaction to be queued instead of running immediately.
+    const holding = db.transaction(async () => {
+      await Bun.sleep(400);
+      return "held";
+    });
+
+    const result = await migration;
+    expect(result.status).toBe("applied");
+    expect(result.id).toBeString();
+    expect(await holding).toBe("held");
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get(),
+    ).toBeTruthy();
+    expect(
+      db.query<{ count: number }>("SELECT COUNT(*) AS count FROM _mubo_migrations").get(),
+    ).toEqual({ count: 1 });
+    db.close();
+  }, 20_000);
 });

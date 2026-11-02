@@ -957,7 +957,7 @@ export async function applyMigrations(
     if (lock === "file") {
       lockPath = await acquireFileLock(db.path, table);
     }
-    db.transaction(
+    await db.transaction(
       () => {
         const fresh = planMigrations(db, schema, { table, safeOnly });
         if (fresh.statements.length === 0 || fresh.id === null) return;
