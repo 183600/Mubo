@@ -660,8 +660,13 @@ export async function loadAndResolveConfig(
 }
 
 export function ensureDataDir(dbPath: string, dataDir: string): void {
-  const dir = dbPath === ":memory:" ? dataDir : dirname(dbPath);
-  if (dir) {
+  const dirs: string[] = [];
+  if (dataDir) dirs.push(dataDir);
+  if (dbPath !== ":memory:") {
+    const parent = dirname(dbPath);
+    if (parent && !dirs.includes(parent)) dirs.push(parent);
+  }
+  for (const dir of dirs) {
     try {
       mkdirSync(dir, { recursive: true });
     } catch (error) {

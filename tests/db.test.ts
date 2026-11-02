@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MuboDatabase } from "../src/db/database.ts";
@@ -1499,6 +1499,21 @@ describe("database and automatic migrations", () => {
     expect(() => new MuboDatabase({ path: ":memory:", foreignKeys: "true" as never })).toThrow(
       /Invalid database foreign keys setting/,
     );
+  });
+
+  test("creates the configured data directory even when the database lives elsewhere", () => {
+    const root = tempDir();
+    const dataDir = join(root, "data");
+    const dbPath = join(root, "storage", "app.sqlite");
+
+    const db = new MuboDatabase({ path: dbPath, dataDir });
+    try {
+      expect(existsSync(dataDir)).toBe(true);
+      expect(existsSync(join(root, "storage"))).toBe(true);
+      expect(existsSync(dbPath)).toBe(true);
+    } finally {
+      db.close();
+    }
   });
 
   test("rejects invalid migration options when called directly", async () => {
