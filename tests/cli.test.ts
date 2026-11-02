@@ -170,6 +170,21 @@ describe("CLI", () => {
     await expect(initProject("occupied", { cwd })).rejects.toThrow(/not a directory/);
   });
 
+  test("init generates a project whose sources parse without syntax errors", async () => {
+    const cwd = tempDir();
+    const dir = await initProject("parseable-app", { cwd });
+    const transpiler = new Bun.Transpiler({ loader: "tsx" });
+    for (const file of [
+      "mubo.config.ts",
+      "src/server/index.ts",
+      "src/server/schema.ts",
+      "src/server/schema.test.ts",
+    ]) {
+      const source = readFileSync(join(dir, file), "utf8");
+      expect(() => transpiler.scan(source)).not.toThrow();
+    }
+  });
+
   test("generated config treats empty HTTP environment values as unset", async () => {
     const cwd = tempDir();
     const dir = await initProject("empty-env-app", { cwd });
