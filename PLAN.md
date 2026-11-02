@@ -101,6 +101,8 @@ mubo/
       assets.ts       # 磁盘与内嵌静态资源
     ws/
       hub.ts          # WebSocket 连接、房间与广播
+    utils/
+      path.ts         # 路径规范化与解码工具
     index.ts          # 公共导出
   examples/
     minimal/

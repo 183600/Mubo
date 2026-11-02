@@ -19,50 +19,15 @@ import {
   type WsHandlers,
   type WsSocketData,
 } from "../ws/hub.ts";
+import {
+  normalizeRoutePath,
+  decodeLookupPath,
+  routeIdentity,
+} from "../utils/path.ts";
 
 export interface CreateMuboAppOptions extends ResolveConfigOptions {}
 
 type WsRoute = { path: string; handlers: WsHandlers };
-
-function normalizeLookupPath(path: string): string {
-  const trimmed = path.replace(/^\/+|\/+$/g, "");
-  return trimmed ? `/${trimmed}` : "/";
-}
-
-function normalizeRoutePath(path: string): string {
-  if (path.includes("?") || path.includes("#")) {
-    throw new MuboError("CONFIG_ERROR", `WebSocket path must not contain a query or fragment: ${path}`);
-  }
-  return normalizeLookupPath(path);
-}
-
-function decodeRoutePath(path: string): string {
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    throw new MuboError("BAD_REQUEST", `Malformed percent-encoding in URL: ${path}`);
-  }
-}
-
-function decodeLookupPath(path: string): string | undefined {
-  const segments = path.split("/").map((segment) => decodeRoutePath(segment));
-  if (segments.some((segment) => segment.includes("/"))) return undefined;
-  return normalizeLookupPath(segments.join("/"));
-}
-
-function routeIdentity(path: string): string {
-  const normalized = normalizeLookupPath(path);
-  const segments = normalized === "/" ? [] : normalized.slice(1).split("/");
-  return JSON.stringify(
-    segments.map((segment) => {
-      try {
-        return ["decoded", decodeURIComponent(segment)];
-      } catch {
-        return ["raw", segment];
-      }
-    }),
-  );
-}
 
 function validRequestId(value: string | null): value is string {
   return value !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(value);

@@ -1,6 +1,6 @@
 # Mubo
 
-边缘计算级的“全栈单体”框架（The “Hyper-Monolith” Framework）。
+边缘计算级的“全栈单体”框架。
 
 Mubo 只依赖 Bun 的内置能力：HTTP/WebSocket（`Bun.serve`）、SQLite（`bun:sqlite`）、静态资源与单文件编译。它把前端资源、后端逻辑和数据库迁移收进一个可执行文件，适合私有化部署的内部工具、CRM/ERP、边缘节点和小型 SaaS。
 
