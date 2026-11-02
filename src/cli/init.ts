@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { MuboError } from "../core/errors.ts";
 
 const MUBO_VERSION = "0.1.0";
@@ -17,6 +17,20 @@ function packageName(value: string): string {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^[._-]+|[._-]+$/g, "");
   return name || "mubo-app";
+}
+
+async function resolveMuboDependency(cwd: string): Promise<string> {
+  const muboPkg = resolve(cwd, "package.json");
+  try {
+    const pkg = JSON.parse(await Bun.file(muboPkg).text());
+    if (pkg.name === "mubo") return "file:.";
+  } catch {}
+  const frameworkRoot = resolve(import.meta.dir, "..", "..");
+  try {
+    const pkg = JSON.parse(await Bun.file(join(frameworkRoot, "package.json")).text());
+    if (pkg.name === "mubo") return `file:${relative(cwd, frameworkRoot)}`;
+  } catch {}
+  return `^${MUBO_VERSION}`;
 }
 
 async function write(path: string, content: string): Promise<void> {
@@ -75,6 +89,7 @@ export async function initProject(target: string, options: InitOptions): Promise
   mkdirSync(join(dir, "public"), { recursive: true });
 
   const name = packageName(basename(dir));
+  const muboDep = await resolveMuboDependency(dir);
   await write(
     join(dir, "package.json"),
     `${JSON.stringify(
@@ -92,7 +107,7 @@ export async function initProject(target: string, options: InitOptions): Promise
           typecheck: "tsc --noEmit",
           test: "bun test",
         },
-        dependencies: { mubo: `^${MUBO_VERSION}` },
+        dependencies: { mubo: muboDep },
         devDependencies: { "@types/bun": "^1.4.4", typescript: "^7.0.2" },
       },
       null,
