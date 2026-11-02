@@ -382,9 +382,10 @@ export function sanitizeAppName(name: string): string {
   const cleaned = name
     .trim()
     .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
     .replace(/^[.-]+|[.-]+$/g, "")
     .slice(0, 64)
-    .replace(/[.-]+$/g, "");
+    .replace(/-$/g, "");
   return cleaned || "mubo-app";
 }
 
