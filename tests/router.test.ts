@@ -195,5 +195,50 @@ describe("router", () => {
     const router = new Router();
     router.add("GET", "/users/:id", ok("user"));
     expect(() => router.match("GET", "/users/%E0%A4%A")).toThrow(/Malformed percent-encoding/);
+    expect(() => router.match("GET", "/users/%FF")).toThrow(/Malformed percent-encoding/);
+    expect(() => router.match("GET", "/users/%")).toThrow(/Malformed percent-encoding/);
+    expect(() => router.match("GET", "/users/%%")).toThrow(/Malformed percent-encoding/);
+  });
+
+  test("handles edge cases for root and empty paths", () => {
+    const router = new Router();
+    router.add("GET", "/", ok("root"));
+
+    expect(router.match("GET", "/")).toMatchObject({ type: "match", params: {} });
+    expect(router.match("GET", "")).toMatchObject({ type: "match", params: {} });
+  });
+
+  test("rejects parameter names with special characters", () => {
+    const invalid = [
+      ":/id",
+      ":id?",
+      ":id#",
+      ":id ",
+      ":/id",
+      "users/:id@name",
+      "users/:id:name",
+    ];
+    for (const path of invalid) {
+      expect(() => new Router().add("GET", `/users/${path}`, ok("invalid"))).toThrow(MuboError);
+    }
+  });
+
+  test("accepts wildcard routes with different configurations", () => {
+    const router = new Router();
+    router.add("GET", "/files/*", ok("wildcard"));
+    router.add("GET", "/api/*", ok("api-wildcard"));
+
+    expect(router.match("GET", "/files/path/to/file.txt")).toMatchObject({
+      type: "match",
+      params: { "*": "path/to/file.txt" },
+    });
+    expect(router.match("GET", "/api/v1/users")).toMatchObject({
+      type: "match",
+      params: { "*": "v1/users" },
+    });
+    expect(router.match("GET", "/files")).toMatchObject({
+      type: "match",
+      params: { "*": "" },
+    });
   });
 });

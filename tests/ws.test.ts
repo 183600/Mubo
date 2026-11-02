@@ -591,6 +591,10 @@ describe("WebSocket rooms and broadcasting", () => {
         ctx.send({ type: "message-seen" });
         throw new Error("message exploded");
       },
+      onClose(ctx) {
+        ctx.send({ type: "close" });
+        throw new Error("close exploded");
+      },
       onError(ctx, error) {
         errors.push(error instanceof Error ? error.message : String(error));
         ctx.send({ type: "error", message: errors.at(-1) });
@@ -608,10 +612,58 @@ describe("WebSocket rooms and broadcasting", () => {
       socket.socket.send("hi");
       expect(await socket.next()).toEqual({ type: "message-seen" });
       expect(await socket.next()).toEqual({ type: "error", message: "message exploded" });
-      expect(errors).toEqual(["connect exploded", "message exploded"]);
       socket.socket.close();
+      expect(errors.length).toBeGreaterThanOrEqual(2);
+      expect(errors).toEqual(["connect exploded", "message exploded"]);
+      socket.socket.addEventListener("close", () => {
+        expect(errors).toContain("close exploded");
+      });
     } finally {
       console.error = originalConsoleError;
     }
+  });
+
+  test("handles WebSocket with binary data", async () => {
+    const received: ArrayBuffer[] = [];
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-binary-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onMessage(ctx, message) {
+        if (typeof message === "string") {
+          ctx.send(new TextEncoder().encode(message.toUpperCase()));
+        } else {
+          ctx.send(message);
+        }
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const socket = new WebSocket(`ws://127.0.0.1:${app.port}/ws`);
+    await new Promise<void>((resolve) => {
+      socket.addEventListener("open", () => resolve());
+    });
+
+    const sendBinary = (data: ArrayBuffer) => {
+      return new Promise<ArrayBuffer>((resolve) => {
+        socket.addEventListener("message", (event) => {
+          resolve(event.data);
+        });
+        socket.send(data);
+      });
+    };
+
+    const binary = await sendBinary(new Uint8Array([1, 2, 3, 4, 5]).buffer);
+    expect(new Uint8Array(binary)).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+
+    socket.close();
   });
 });

@@ -671,6 +671,9 @@ export default defineConfig({
     expect(() => resolveConfig({ http: { bodyLimit: 0 } }, { env: {}, argv: [] })).toThrow(
       /Invalid body limit/,
     );
+    expect(() => resolveConfig({ http: { bodyLimit: -1 } }, { env: {}, argv: [] })).toThrow(
+      /Invalid body limit/,
+    );
     expect(() => resolveConfig({ http: { cors: { origin: "*", maxAgeSeconds: -1 } } }, { env: {}, argv: [] })).toThrow(
       /Invalid CORS max age/,
     );
@@ -694,6 +697,15 @@ export default defineConfig({
     );
     expect(() => resolveConfig({ db: { busyTimeoutMs: 1.5 } }, { env: {}, argv: [] })).toThrow(
       /Invalid busy timeout/,
+    );
+    expect(() => resolveConfig({ http: { port: -1 } }, { env: {}, argv: [] })).toThrow(
+      /Invalid HTTP port/,
+    );
+    expect(() => resolveConfig({ http: { port: 65536 } }, { env: {}, argv: [] })).toThrow(
+      /Invalid HTTP port/,
+    );
+    expect(() => resolveConfig({ http: { port: 3.14 } }, { env: {}, argv: [] })).toThrow(
+      /Invalid HTTP port/,
     );
   });
 });

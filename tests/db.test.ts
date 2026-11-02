@@ -1475,6 +1475,9 @@ describe("database and automatic migrations", () => {
     expect(() => new MuboDatabase({ path: ":memory:", busyTimeoutMs: 1.5 })).toThrow(
       /Invalid database busy timeout/,
     );
+    expect(() => new MuboDatabase({ path: ":memory:", busyTimeoutMs: "5000" as never })).toThrow(
+      /Invalid database busy timeout/,
+    );
     expect(() => new MuboDatabase({ path: ":memory:", slowQueryMs: -1 })).toThrow(
       /Invalid slow query threshold/,
     );
@@ -1484,10 +1487,16 @@ describe("database and automatic migrations", () => {
     expect(() => new MuboDatabase({ path: ":memory:", slowQueryMs: 1.5 })).toThrow(
       /Invalid slow query threshold/,
     );
+    expect(() => new MuboDatabase({ path: ":memory:", slowQueryMs: "200" as never })).toThrow(
+      /Invalid slow query threshold/,
+    );
     expect(() => new MuboDatabase({ path: ":memory:", wal: "yes" as never })).toThrow(
       /Invalid database WAL setting/,
     );
     expect(() => new MuboDatabase({ path: ":memory:", foreignKeys: 1 as never })).toThrow(
+      /Invalid database foreign keys setting/,
+    );
+    expect(() => new MuboDatabase({ path: ":memory:", foreignKeys: "true" as never })).toThrow(
       /Invalid database foreign keys setting/,
     );
   });

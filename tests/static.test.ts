@@ -820,4 +820,49 @@ describe("static assets", () => {
       expect(response?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
     }
   });
+
+  test("handles files with multiple hash-like tokens in filename", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.abc1234567890def.abc1234567890ef.js"), "multiple-hashes");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const response = await assets.handle(new Request("http://localhost/app.abc1234567890def.abc1234567890ef.js"), new URL("http://localhost/app.abc1234567890def.abc1234567890ef.js"));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  test("treats files with hash-like but short tokens as non-immutable", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.abc123.js"), "short-hash");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const response = await assets.handle(new Request("http://localhost/app.abc123.js"), new URL("http://localhost/app.abc123.js"));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=3600");
+  });
+
+  test("serves files with double extensions correctly", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "file.min.js"), "content");
+    writeFileSync(join(dir, "app.a1B2c3d4.min.js"), "hashed-min");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const regularJs = await assets.handle(new Request("http://localhost/file.min.js"), new URL("http://localhost/file.min.js"));
+    expect(regularJs?.status).toBe(200);
+    expect(regularJs?.headers.get("cache-control")).toBe("public, max-age=3600");
+
+    const hashedMin = await assets.handle(new Request("http://localhost/app.a1B2c3d4.min.js"), new URL("http://localhost/app.a1B2c3d4.min.js"));
+    expect(hashedMin?.status).toBe(200);
+    expect(hashedMin?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  test("handles very long file names", async () => {
+    const dir = tempDir();
+    const longName = "app." + "a".repeat(200) + ".js";
+    writeFileSync(join(dir, longName), "long name");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const response = await assets.handle(new Request(`http://localhost/${longName}`), new URL(`http://localhost/${longName}`));
+    expect(response?.status).toBe(200);
+  });
 });
