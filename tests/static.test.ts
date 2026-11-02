@@ -508,4 +508,316 @@ describe("static assets", () => {
       expect(response?.headers.get("etag")).toBe('"quoted,comma"');
     }
   });
+
+  test("serves files with leading slash in path", async () => {
+    const dir = publicDir();
+    writeFileSync(join(dir, "a.txt"), "hello");
+    const app = await startStatic(dir);
+    const root = `http://127.0.0.1:${app.port}`;
+    const file = await fetch(`${root}/a.txt`);
+    expect(file.status).toBe(200);
+    expect(await file.text()).toBe("hello");
+    await app.stop();
+  });
+
+  test("blocks path traversal with double NUL bytes", async () => {
+    const dir = publicDir();
+    const app = await startStatic(dir);
+    const root = `http://127.0.0.1:${app.port}`;
+    const response = await fetch(`${root}/%00%00etc/passwd`, { method: "GET" });
+    expect(response.status).toBe(400);
+    await app.stop();
+  });
+
+  test("rejects malformed percent-encoding with odd number of hex digits", async () => {
+    const dir = publicDir();
+    const app = await startStatic(dir);
+    const root = `http://127.0.0.1:${app.port}`;
+    const response = await fetch(`${root}/%FF`, { method: "GET" });
+    expect(response.status).toBe(400);
+    await app.stop();
+  });
+
+  test("serves directory index when path ends with slash", async () => {
+    const dir = publicDir();
+    mkdirSync(join(dir, "nested"));
+    writeFileSync(join(dir, "nested", "index.html"), "<!doctype html><title>Nested</title>");
+    const app = await startStatic(dir, true);
+    const root = `http://127.0.0.1:${app.port}`;
+    const nested = await fetch(`${root}/nested/`);
+    expect(nested.status).toBe(200);
+    expect(await nested.text()).toContain("Nested");
+    await app.stop();
+  });
+
+  test("falls back to SPA shell for non-existent paths when spaFallback is enabled", async () => {
+    const dir = publicDir();
+    const app = await startStatic(dir, true);
+    const root = `http://127.0.0.1:${app.port}`;
+    const spa = await fetch(`${root}/client/route`);
+    expect(spa.status).toBe(200);
+    await app.stop();
+  });
+
+  test("returns 404 for POST requests to static files", async () => {
+    const dir = publicDir();
+    const app = await startStatic(dir, true);
+    const root = `http://127.0.0.1:${app.port}`;
+    const notFound = await fetch(`${root}/index.html`, { method: "POST" });
+    expect(notFound.status).toBe(404);
+    await app.stop();
+  });
+
+  test("serves embedded assets in disk mode when embedded not found", async () => {
+    const dir = publicDir();
+    writeFileSync(join(dir, "embedded.txt"), "from disk");
+    const app = await startStatic(dir, true);
+    const root = `http://127.0.0.1:${app.port}`;
+    const diskFile = await fetch(`${root}/embedded.txt`);
+    expect(diskFile?.status).toBe(200);
+    expect(await diskFile!.text()).toBe("from disk");
+    await app.stop();
+  });
+
+  test("applies default immutable extensions when constructed directly", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.a1b2c3d4.js"), "hashed");
+    writeFileSync(join(dir, "plain.js"), "plain");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const hashedUrl = "http://localhost/app.a1b2c3d4.js";
+    const hashed = await assets.handle(new Request(hashedUrl), new URL(hashedUrl));
+    expect(hashed?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+
+    const plainUrl = "http://localhost/plain.js";
+    const plain = await assets.handle(new Request(plainUrl), new URL(plainUrl));
+    expect(plain?.headers.get("cache-control")).toBe("public, max-age=3600");
+  });
+
+  test("normalizes immutable extension settings and ignores human-readable names", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.a1b2c3d4.js"), "hashed");
+    writeFileSync(join(dir, "vendor.12345678.chunk.css"), "hashed");
+    writeFileSync(join(dir, "apple-touch-icon.png"), "icon");
+    writeFileSync(join(dir, "hero-image-large.png"), "hero");
+    writeFileSync(join(dir, "main.abcdefgh.js"), "lowercase");
+    const assets = new StaticAssets(
+      {
+        mode: "disk",
+        dir,
+        cache: { immutableExtensions: [".JS", " CSS ", "png"] },
+      },
+      dir,
+    );
+
+    const cacheFor = async (path: string) => {
+      const url = `http://localhost${path}`;
+      const response = await assets.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(200);
+      return response?.headers.get("cache-control");
+    };
+
+    expect(await cacheFor("/app.a1b2c3d4.js")).toBe("public, max-age=31536000, immutable");
+    expect(await cacheFor("/vendor.12345678.chunk.css")).toBe("public, max-age=31536000, immutable");
+    expect(await cacheFor("/apple-touch-icon.png")).toBe("public, max-age=3600");
+    expect(await cacheFor("/hero-image-large.png")).toBe("public, max-age=3600");
+    expect(await cacheFor("/main.abcdefgh.js")).toBe("public, max-age=3600");
+  });
+
+  test("serves embedded assets without touching disk", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "embedded-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: {
+          mode: "embedded",
+          dir: "/definitely/not/here",
+          assets: {
+            "/index.html": { data: "<h1>embedded</h1>", type: "text/html; charset=utf-8" },
+            "/app.js": {
+              data: Buffer.from("embedded-js").toString("base64"),
+              encoding: "base64",
+              etag: '"custom-etag"',
+            },
+          },
+        },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+    const index = await fetch(`${root}/`);
+    expect(await index.text()).toBe("<h1>embedded</h1>");
+    const route = await fetch(`${root}/client/side/route`);
+    expect(await route.text()).toBe("<h1>embedded</h1>");
+    const script = await fetch(`${root}/app.js`);
+    expect(await script.text()).toBe("embedded-js");
+    expect(script.headers.get("etag")).toBe('"custom-etag"');
+
+    const cached = await fetch(`${root}/app.js`, { headers: { "if-none-match": '"custom-etag"' } });
+    expect(cached.status).toBe(304);
+
+    const head = await fetch(`${root}/app.js`, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("content-length")).toBe("11");
+
+    await app.stop();
+  });
+
+  test("uses weak comparison for weak ETags on either side", async () => {
+    const dir = publicDir();
+    const assets = new StaticAssets(
+      {
+        mode: "embedded",
+        assets: { "/weak.js": { data: "weak", etag: 'W/"weak-etag"' } },
+      },
+      dir,
+    );
+
+    for (const header of ['"weak-etag"', 'W/"weak-etag"', `"other", W/"weak-etag"`]) {
+      const url = "http://localhost/weak.js";
+      const response = await assets.handle(
+        new Request(url, { headers: { "if-none-match": header } }),
+        new URL(url),
+      );
+      expect(response?.status).toBe(304);
+      expect(response?.headers.get("etag")).toBe('W/"weak-etag"');
+    }
+  });
+
+  test("does not split commas inside quoted ETags", async () => {
+    const dir = publicDir();
+    const assets = new StaticAssets(
+      {
+        mode: "embedded",
+        assets: { "/quoted.js": { data: "quoted", etag: '"quoted,comma"' } },
+      },
+      dir,
+    );
+
+    const url = "http://localhost/quoted.js";
+    for (const header of ['"quoted,comma"', `"other", "quoted,comma"`]) {
+      const response = await assets.handle(
+        new Request(url, { headers: { "if-none-match": header } }),
+        new URL(url),
+      );
+      expect(response?.status).toBe(304);
+      expect(response?.headers.get("etag")).toBe('"quoted,comma"');
+    }
+  });
+
+  test("blocks path traversal attempts", async () => {
+    const dir = publicDir();
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    const malicious = "http://localhost/%2e%2e%2f%2e%2e%2fetc/passwd";
+    const response = await assets.handle(new Request(malicious), new URL(malicious));
+    expect(response?.status).toBe(403);
+    expect(await response!.text()).not.toContain("root:");
+  });
+
+  test("rejects malformed and NUL paths", async () => {
+    const dir = publicDir();
+    const disk = new StaticAssets({ mode: "disk", dir, spaFallback: true }, dir);
+    for (const path of ["/%E0%A4%A", "/%00"]) {
+      const url = `http://localhost${path}`;
+      const response = await disk.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(400);
+    }
+
+    const embedded = new StaticAssets(
+      { mode: "embedded", spaFallback: true, assets: { "/index.html": "home" } },
+      dir,
+    );
+    for (const path of ["/%E0%A4%A", "/%00"]) {
+      const url = `http://localhost${path}`;
+      const response = await embedded.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(400);
+    }
+  });
+
+  test("app.static configures static serving after creation", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "static-configure-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    expect(app.static({ mode: "embedded", spaFallback: false, assets: { "/hello.txt": "hello" } })).toBe(app);
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+    expect(await (await fetch(`${root}/hello.txt`)).text()).toBe("hello");
+    expect((await fetch(`${root}/missing`)).status).toBe(404);
+  });
+
+  test("serves embedded directory indexes before falling back to the SPA shell", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "embedded-index-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: {
+          mode: "embedded",
+          spaFallback: true,
+          assets: {
+            "/index.html": "<h1>home</h1>",
+            "/docs/index.html": "<h1>docs</h1>",
+          },
+        },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    for (const path of ["/docs", "/docs/"]) {
+      const response = await fetch(`${root}${path}`);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("<h1>docs</h1>");
+      expect(response.headers.get("cache-control")).toBe("no-cache");
+      expect(response.headers.get("content-type")).toContain("text/html");
+    }
+
+    const fallback = await fetch(`${root}/client/route`);
+    expect(await fallback.text()).toBe("<h1>home</h1>");
+  });
+
+  test("keeps every HTML extension uncached regardless of case", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "index.htm"), "<h1>legacy</h1>");
+    writeFileSync(join(dir, "page.HTML"), "<h1>upper</h1>");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    for (const path of ["/index.htm", "/page.HTML"]) {
+      const url = `http://localhost${path}`;
+      const response = await assets.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(200);
+      expect(response?.headers.get("cache-control")).toBe("no-cache");
+      expect(response?.headers.get("content-type")).toContain("text/html");
+    }
+  });
+
+  test("treats hashed assets with extra suffix extensions as immutable", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.a1b2c3d4.min.js"), "console.log('min')");
+    writeFileSync(join(dir, "vendor.12345678.chunk.css"), "body{}");
+    const assets = new StaticAssets(
+      { mode: "disk", dir, cache: { immutableExtensions: ["js", "css"] } },
+      dir,
+    );
+
+    for (const path of ["/app.a1b2c3d4.min.js", "/vendor.12345678.chunk.css"]) {
+      const url = `http://localhost${path}`;
+      const response = await assets.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(200);
+      expect(response?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    }
+  });
 });
