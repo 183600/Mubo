@@ -305,4 +305,25 @@ export default defineConfig({
     const checks = JSON.parse(result.stdout) as Array<{ name: string; ok: boolean }>;
     expect(checks.find((check) => check.name === "sqlite")?.ok).toBe(false);
   });
+
+  test("doctor reports invalid configuration instead of crashing", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "mubo.config.ts"), "export default { http: { port: 99999 } };\n");
+    const result = await runCli(cwd, ["doctor", "--json"]);
+    expect(result.code).toBe(1);
+    const checks = JSON.parse(result.stdout) as Array<{ name: string; ok: boolean; detail: string }>;
+    const config = checks.find((check) => check.name === "config");
+    expect(config?.ok).toBe(false);
+    expect(config?.detail).toContain("Invalid HTTP port");
+  });
+
+  test("doctor reports a missing config file instead of crashing", async () => {
+    const cwd = tempDir();
+    const result = await runCli(cwd, ["doctor", "--json", "--config", "missing.config.ts"]);
+    expect(result.code).toBe(1);
+    const checks = JSON.parse(result.stdout) as Array<{ name: string; ok: boolean; detail: string }>;
+    const config = checks.find((check) => check.name === "config");
+    expect(config?.ok).toBe(false);
+    expect(config?.detail).toContain("Config file not found");
+  });
 });

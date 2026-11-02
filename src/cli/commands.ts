@@ -114,10 +114,21 @@ async function checkWritableDirectory(path: string): Promise<boolean> {
   }
 }
 
+type DoctorCheck = { name: string; ok: boolean; detail: string; fatal?: boolean };
+
+function reportDoctorChecks(checks: DoctorCheck[], json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(checks, null, 2));
+  } else {
+    for (const check of checks) {
+      console.log(`[${check.ok ? "ok" : "warn"}] ${check.name}: ${check.detail}`);
+    }
+  }
+  if (checks.some((check) => check.fatal && !check.ok)) process.exitCode = 1;
+}
+
 export async function doctorCommand(context: CommandContext): Promise<void> {
-  const config = await projectConfig(context);
-  const configInfo = await loadConfigFile(context.cwd, stringFlag(context.args, "config"));
-  const checks: Array<{ name: string; ok: boolean; detail: string; fatal?: boolean }> = [];
+  const checks: DoctorCheck[] = [];
   checks.push({ name: "bun", ok: true, detail: `${Bun.version} (${Bun.revision.slice(0, 12)})`, fatal: true });
   checks.push({
     name: "platform",
@@ -125,11 +136,22 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
     detail: `${process.platform} ${process.arch}`,
     fatal: true,
   });
-  const configOk = Boolean(configInfo.path);
+  const json = boolFlag(context.args, "json");
+  let config: ResolvedMuboConfig;
+  let configPath: string | undefined;
+  try {
+    config = await projectConfig(context);
+    configPath = (await loadConfigFile(context.cwd, stringFlag(context.args, "config"))).path;
+  } catch (error) {
+    checks.push({ name: "config", ok: false, detail: errorMessage(error), fatal: true });
+    reportDoctorChecks(checks, json);
+    return;
+  }
+  const configOk = Boolean(configPath);
   checks.push({
     name: "config",
     ok: configOk,
-    detail: configInfo.path ?? "mubo.config.* not found (using defaults)",
+    detail: configPath ?? "mubo.config.* not found (using defaults)",
   });
   const dataWritable = await checkWritableDirectory(config.dataDir);
   checks.push({ name: "data-dir", ok: dataWritable, detail: config.dataDir, fatal: true });
@@ -184,13 +206,5 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
   }
   checks.push({ name: "schema", ok: schemaOk, detail: schemaDetail, fatal: true });
 
-  const json = boolFlag(context.args, "json");
-  if (json) {
-    console.log(JSON.stringify(checks, null, 2));
-  } else {
-    for (const check of checks) {
-      console.log(`[${check.ok ? "ok" : "warn"}] ${check.name}: ${check.detail}`);
-    }
-  }
-  if (checks.some((check) => check.fatal && !check.ok)) process.exitCode = 1;
+  reportDoctorChecks(checks, json);
 }
