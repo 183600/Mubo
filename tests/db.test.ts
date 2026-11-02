@@ -49,7 +49,7 @@ describe("database and automatic migrations", () => {
     );
     expect(user?.name).toBe("Alice");
 
-    const second = db.migrate(baseSchema);
+    const second = await db.migrate(baseSchema);
     expect(second.status).toBe("none");
     expect(db.ping()).toBe(true);
     db.close();
@@ -171,7 +171,7 @@ describe("database and automatic migrations", () => {
         },
       },
     });
-    expect(() => db.migrate(unsafeUnique)).toThrow(/UNIQUE column/);
+    await expect(db.migrate(unsafeUnique)).rejects.toThrow(/UNIQUE column/);
     db.close();
   });
   test("detects unique-column and partial-index changes on existing schema", async () => {
@@ -189,7 +189,7 @@ describe("database and automatic migrations", () => {
     });
     await db.migrate(initial);
 
-    expect(() =>
+    await expect(
       db.migrate(
         defineSchema({
           tables: {
@@ -203,9 +203,9 @@ describe("database and automatic migrations", () => {
           },
         }),
       ),
-    ).toThrow(/UNIQUE constraint change/);
+    ).rejects.toThrow(/UNIQUE constraint change/);
 
-    expect(() =>
+    await expect(
       db.migrate(
         defineSchema({
           tables: {
@@ -219,7 +219,7 @@ describe("database and automatic migrations", () => {
           },
         }),
       ),
-    ).toThrow(/different definition/);
+    ).rejects.toThrow(/different definition/);
 
     const singleUniqueIndex = defineSchema({
       tables: {
@@ -243,7 +243,7 @@ describe("database and automatic migrations", () => {
       "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT); " +
         "CREATE INDEX idx_users_email ON users(email COLLATE NOCASE);",
     );
-    expect(() =>
+    await expect(
       db.migrate(
         defineSchema({
           tables: {
@@ -257,7 +257,7 @@ describe("database and automatic migrations", () => {
           },
         }),
       ),
-    ).toThrow(/different definition/);
+    ).rejects.toThrow(/different definition/);
     db.close();
   });
 
@@ -591,9 +591,9 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
-  test("accepts common parameterized column types", () => {
+  test("accepts common parameterized column types", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
-    const result = db.migrate(
+    const result = await db.migrate(
       defineSchema({
         tables: {
           prices: {
@@ -1459,7 +1459,7 @@ describe("database and automatic migrations", () => {
     expect(() => afterClose.next()).toThrow(/Database is closed/);
   });
 
-  test("rejects invalid database options before opening SQLite", () => {
+  test("rejects invalid database options before opening SQLite", async () => {
     expect(() => new MuboDatabase({ path: "" })).toThrow(/path must not be empty/);
     expect(() => new MuboDatabase({ path: "   " })).toThrow(/path must not be empty/);
     const trimmed = new MuboDatabase({ path: "  :memory:  " });
@@ -1501,27 +1501,28 @@ describe("database and automatic migrations", () => {
     );
   });
 
-  test("rejects invalid migration options when called directly", () => {
+  test("rejects invalid migration options when called directly", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const schema = defineSchema({
       tables: { notes: { columns: { id: { type: "integer", primaryKey: true } } } },
     });
 
-    expect(() => db.migrate(schema, { mode: "sometimes" as never })).toThrow(
+    await expect(db.migrate(schema, { mode: "sometimes" as never })).rejects.toThrow(
       /Invalid migration mode/,
     );
-    expect(() => db.migrate(schema, { safeOnly: "yes" as never })).toThrow(
+    await expect(db.migrate(schema, { safeOnly: "yes" as never })).rejects.toThrow(
       /Invalid safeOnly migration setting/,
     );
-    expect(() => db.migrate(schema, { table: "bad-name" })).toThrow(/Invalid SQL identifier/);
+    await expect(db.migrate(schema, { table: "bad-name" })).rejects.toThrow(/Invalid SQL identifier/);
     expect(() => db.plan(schema, { table: "bad-name" })).toThrow(/Invalid SQL identifier/);
-    expect((db.migrate(schema, { mode: "off" })).status).toBe("off");
+    const offResult = await db.migrate(schema, { mode: "off" });
+    expect(offResult.status).toBe("off");
     db.close();
   });
 
   test("validates schema before creating migration metadata", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
-    expect(() =>
+    await expect(
       db.migrate(
         defineSchema({
           tables: {
@@ -1532,7 +1533,7 @@ describe("database and automatic migrations", () => {
           },
         }),
       ),
-    ).toThrow(/Invalid SQL identifier/);
+    ).rejects.toThrow(/Invalid SQL identifier/);
     expect(
       db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_mubo_migrations'").get(),
     ).toBeNull();
@@ -1577,7 +1578,7 @@ describe("database and automatic migrations", () => {
 
     let caught: unknown;
     try {
-      db.migrate(invalid);
+      await db.migrate(invalid);
     } catch (error) {
       caught = error;
     }

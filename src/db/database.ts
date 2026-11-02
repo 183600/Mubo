@@ -445,10 +445,10 @@ export class MuboDatabase {
     return planMigrations(this, schema, { table: "_mubo_migrations", safeOnly: true, ...options });
   }
 
-  migrate(
+  async migrate(
     schema: MuboSchema = this.schema ?? { tables: {} },
     options: MigrationOptions = {},
-  ): MigrationResult {
+  ): Promise<MigrationResult> {
     this.assertOpen();
     return applyMigrations(this, schema, { table: "_mubo_migrations", safeOnly: true, ...options });
   }

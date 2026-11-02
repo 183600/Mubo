@@ -1,13 +1,28 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
+import { MuboDatabase } from "../src/db/database.ts";
+import { defineSchema } from "../src/db/schema.ts";
+import { applyMigrations, planMigrations } from "../src/db/migrations.ts";
 
 const tempDirs: string[] = [];
 const worker = resolve(import.meta.dir, "fixtures/migrate-worker.ts");
 afterEach(() => {
   while (tempDirs.length) rmSync(tempDirs.pop()!, { recursive: true, force: true });
+});
+
+const testSchema = defineSchema({
+  tables: {
+    jobs: {
+      columns: {
+        id: { type: "integer", primaryKey: true, autoIncrement: true },
+        name: { type: "text", notNull: true },
+      },
+      indexes: [{ name: "idx_jobs_name", columns: ["name"] }],
+    },
+  },
 });
 
 describe("migration locking", () => {
@@ -43,4 +58,75 @@ describe("migration locking", () => {
     expect(history?.count).toBe(1);
     db.close();
   }, 30_000);
+
+  test("file lock prevents concurrent migrations across processes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mubo-file-lock-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "filelock.sqlite");
+
+    const runMigration = async (): Promise<{ status: string; id: string | null }> => {
+      const db = new MuboDatabase({ path: dbPath });
+      try {
+        const result = await applyMigrations(db, testSchema, { lock: "file" });
+        return { status: result.status, id: result.id };
+      } finally {
+        db.close();
+      }
+    };
+
+    const results = await Promise.all([runMigration(), runMigration()]);
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses).toEqual(["applied", "none"]);
+
+    const db = new Database(dbPath);
+    expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").get()).toBeTruthy();
+    const history = db.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM _mubo_migrations").get();
+    expect(history?.count).toBe(1);
+    db.close();
+
+    const lockDir = join(dir, "..", ".mubo-locks");
+    const lockFile = join(lockDir, "._mubo_migrations.lock");
+    expect(existsSync(lockFile)).toBe(false);
+  });
+
+  test("sqlite lock (default) prevents concurrent migrations within same process", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mubo-sqlite-lock-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "sqlitelock.sqlite");
+
+    const db1 = new MuboDatabase({ path: dbPath });
+    const db2 = new MuboDatabase({ path: dbPath });
+
+    const result1 = await applyMigrations(db1, testSchema, { lock: "sqlite" });
+    expect(result1.status).toBe("applied");
+
+    const result2 = await applyMigrations(db2, testSchema, { lock: "sqlite" });
+    expect(result2.status).toBe("none");
+
+    db1.close();
+    db2.close();
+  });
+
+  test("planMigrations does not acquire locks", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mubo-plan-lock-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "planlock.sqlite");
+
+    const db = new MuboDatabase({ path: dbPath });
+    const plan = planMigrations(db, testSchema, { lock: "file" });
+    expect(plan.statements.length).toBeGreaterThan(0);
+    db.close();
+
+    const lockDir = join(dir, "..", ".mubo-locks");
+    const lockFile = join(lockDir, "._mubo_migrations.lock");
+    expect(existsSync(lockFile)).toBe(false);
+  });
+
+  test("invalid lock option is rejected", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    await expect(
+      applyMigrations(db, testSchema, { lock: "redis" as never }),
+    ).rejects.toThrow(/Invalid migration lock/);
+    db.close();
+  });
 });

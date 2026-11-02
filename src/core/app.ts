@@ -9,6 +9,7 @@ import {
 } from "./config.ts";
 import { MuboDatabase } from "../db/database.ts";
 import type { MuboSchema } from "../db/schema.ts";
+import type { MigrationResult } from "../db/migrations.ts";
 import { createRequestContext, type MuboRequestContext } from "../http/context.ts";
 import { errorPayload, errorResponse, jsonResponse, textResponse } from "../http/response.ts";
 import { Router, type HttpMethod, type RouteHandler, type RouteMatch, type RouteMiddleware } from "../http/router.ts";
@@ -168,7 +169,7 @@ export class MuboApp {
     return this;
   }
 
-  migrate(schema: MuboSchema | undefined = this.config.schema): ReturnType<MuboDatabase["migrate"]> {
+  async migrate(schema: MuboSchema | undefined = this.config.schema): Promise<MigrationResult> {
     return this.db.migrate(schema ?? { tables: {} }, this.config.db.migrations);
   }
 

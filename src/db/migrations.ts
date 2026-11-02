@@ -1,11 +1,14 @@
 import { isMuboError, MuboError } from "../core/errors.ts";
 import type { MuboDatabase } from "./database.ts";
 import type { ColumnDefinition, IndexDefinition, MuboSchema, TableDefinition } from "./schema.ts";
+import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 export interface MigrationOptions {
   mode?: "apply" | "check" | "off";
   safeOnly?: boolean;
   table?: string;
+  lock?: "file" | "sqlite";
 }
 
 export interface MigrationPlan {
@@ -856,6 +859,7 @@ interface NormalizedMigrationOptions {
   mode: "apply" | "check" | "off";
   safeOnly: boolean;
   table: string;
+  lock: "file" | "sqlite";
 }
 
 function normalizeMigrationOptions(options: MigrationOptions): NormalizedMigrationOptions {
@@ -869,7 +873,39 @@ function normalizeMigrationOptions(options: MigrationOptions): NormalizedMigrati
   if (typeof safeOnly !== "boolean") {
     throw new MuboError("MIGRATION_ERROR", "Invalid safeOnly migration setting");
   }
-  return { mode, table, safeOnly };
+  const lock = options.lock ?? "sqlite";
+  if (lock !== "file" && lock !== "sqlite") {
+    throw new MuboError("MIGRATION_ERROR", `Invalid migration lock: ${String(lock)}`);
+  }
+  return { mode, table, safeOnly, lock };
+}
+
+async function acquireFileLock(dbPath: string, table: string): Promise<string> {
+  const lockDir = dirname(dbPath === ":memory:" ? resolve(".mubo-locks") : dbPath);
+  mkdirSync(lockDir, { recursive: true });
+  const lockPath = join(lockDir, `.${table}.lock`);
+  let acquired = false;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try {
+      writeFileSync(lockPath, `${process.pid}\n${Date.now()}`, { flag: "wx" });
+      acquired = true;
+      break;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  if (!acquired) {
+    throw new MuboError("MIGRATION_ERROR", `Could not acquire file lock for migrations: ${lockPath}`);
+  }
+  return lockPath;
+}
+
+function releaseFileLock(lockPath: string): void {
+  try {
+    rmSync(lockPath, { force: true });
+  } catch {
+    // Lock file may have been cleaned up externally.
+  }
 }
 
 export function planMigrations(
@@ -883,12 +919,12 @@ export function planMigrations(
   return { id: migrationId(statements), statements, changes };
 }
 
-export function applyMigrations(
+export async function applyMigrations(
   db: MuboDatabase,
   schema: MuboSchema,
   options: MigrationOptions = {},
-): MigrationResult {
-  const { mode, table, safeOnly } = normalizeMigrationOptions(options);
+): Promise<MigrationResult> {
+  const { mode, table, safeOnly, lock } = normalizeMigrationOptions(options);
   if (mode === "off") {
     return { status: "off", id: null, statements: [], changes: [] };
   }
@@ -915,50 +951,58 @@ export function applyMigrations(
     return { status: "pending", id: initial.id, statements: initial.statements, changes: initial.changes };
   }
 
+  let lockPath: string | undefined;
   let applied: MigrationPlan | null = null;
-  db.transaction(
-    () => {
-      const fresh = planMigrations(db, schema, { table, safeOnly });
-      if (fresh.statements.length === 0 || fresh.id === null) return;
-      for (const statement of fresh.statements) {
+  try {
+    if (lock === "file") {
+      lockPath = await acquireFileLock(db.path, table);
+    }
+    db.transaction(
+      () => {
+        const fresh = planMigrations(db, schema, { table, safeOnly });
+        if (fresh.statements.length === 0 || fresh.id === null) return;
+        for (const statement of fresh.statements) {
+          try {
+            db.exec(statement);
+          } catch (error) {
+            if (isMuboError(error)) throw error;
+            const summary = statement.replace(/\s+/g, " ").slice(0, 200);
+            throw new MuboError("MIGRATION_ERROR", `Failed to apply migration statement: ${summary}`, {
+              cause: error,
+              details: { statement },
+            });
+          }
+        }
+        const appliedAt = Date.now();
+        const meta = JSON.stringify({ statements: fresh.statements, changes: fresh.changes });
         try {
-          db.exec(statement);
+          const alreadyApplied = db
+            .query<{ id: string }>(`SELECT id FROM ${quoteIdentifier(table)} WHERE id = ?`)
+            .get(fresh.id);
+          if (alreadyApplied) {
+            db.query(
+              `UPDATE ${quoteIdentifier(table)} SET applied_at = ?, checksum = ?, meta = ? WHERE id = ?`,
+            ).run(appliedAt, fresh.id, meta, fresh.id);
+          } else {
+            db.query(
+              `INSERT INTO ${quoteIdentifier(table)} (id, applied_at, checksum, meta) VALUES (?, ?, ?, ?)`,
+            ).run(fresh.id, appliedAt, fresh.id, meta);
+          }
         } catch (error) {
           if (isMuboError(error)) throw error;
-          const summary = statement.replace(/\s+/g, " ").slice(0, 200);
-          throw new MuboError("MIGRATION_ERROR", `Failed to apply migration statement: ${summary}`, {
-            cause: error,
-            details: { statement },
-          });
+          throw new MuboError(
+            "MIGRATION_ERROR",
+            `Failed to record migration history for ${fresh.id}`,
+            { cause: error, details: { migration: fresh.id } },
+          );
         }
-      }
-      const appliedAt = Date.now();
-      const meta = JSON.stringify({ statements: fresh.statements, changes: fresh.changes });
-      try {
-        const alreadyApplied = db
-          .query<{ id: string }>(`SELECT id FROM ${quoteIdentifier(table)} WHERE id = ?`)
-          .get(fresh.id);
-        if (alreadyApplied) {
-          db.query(
-            `UPDATE ${quoteIdentifier(table)} SET applied_at = ?, checksum = ?, meta = ? WHERE id = ?`,
-          ).run(appliedAt, fresh.id, meta, fresh.id);
-        } else {
-          db.query(
-            `INSERT INTO ${quoteIdentifier(table)} (id, applied_at, checksum, meta) VALUES (?, ?, ?, ?)`,
-          ).run(fresh.id, appliedAt, fresh.id, meta);
-        }
-      } catch (error) {
-        if (isMuboError(error)) throw error;
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Failed to record migration history for ${fresh.id}`,
-          { cause: error, details: { migration: fresh.id } },
-        );
-      }
-      applied = fresh;
-    },
-    { immediate: true },
-  );
+        applied = fresh;
+      },
+      { immediate: true },
+    );
+  } finally {
+    if (lockPath !== undefined) releaseFileLock(lockPath);
+  }
 
   const result = applied as MigrationPlan | null;
   if (!result) {
