@@ -96,4 +96,18 @@ describe("logger", () => {
     expect(entry.message).toBe("bad payload");
     expect(entry.loggingError).toBe("Log fields could not be serialized");
   });
+
+  test("escapes carriage returns in human-readable messages and fields", () => {
+    const logger = createLogger({ level: "debug", json: false });
+    const lines = captureLogs(() => {
+      logger.info("first\rsecond", {
+        "bad\rcarriage": "value",
+        nested: { text: "a\rb" },
+      });
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("first\\rsecond");
+    expect(lines[0]).not.toContain("\r");
+  });
 });
