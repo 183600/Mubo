@@ -734,6 +734,9 @@ export default defineConfig({
     expect(() => resolveConfig({ static: { cache: { defaultMaxAgeSeconds: -1 } } }, { env: {}, argv: [] })).toThrow(
       /Invalid static max age/,
     );
+    expect(() => resolveConfig({ static: { cache: { defaultMaxAgeSeconds: 31536001 } } }, { env: {}, argv: [] })).toThrow(
+      /Invalid static max age/,
+    );
     expect(() => resolveConfig({ ws: { maxPayloadBytes: 0 } }, { env: {}, argv: [] })).toThrow(
       /Invalid WebSocket max payload/,
     );

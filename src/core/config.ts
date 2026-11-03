@@ -622,7 +622,7 @@ export function resolveConfig(
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(merged.db.migrations.table)) {
     throw new MuboError("CONFIG_ERROR", `Invalid migrations table name: ${merged.db.migrations.table}`);
   }
-  requireInteger("static max age", merged.static.cache.defaultMaxAgeSeconds, { min: 0 });
+  requireInteger("static max age", merged.static.cache.defaultMaxAgeSeconds, { min: 0, max: 31536000 });
   requireInteger("WebSocket max payload", merged.ws.maxPayloadBytes, { exclusiveMin: 0 });
   requireInteger("WebSocket heartbeat interval", merged.ws.heartbeat.intervalMs, { min: 0 });
   requireInteger("WebSocket heartbeat timeout", merged.ws.heartbeat.timeoutMs, { exclusiveMin: 0 });
