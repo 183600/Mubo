@@ -232,4 +232,70 @@ describe("request context bodies", () => {
     expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
     expect(await response.json()).toEqual({ success: true });
   });
+
+  test("handles empty JSON body correctly", async () => {
+    const ctx = contextFor(new Request("http://localhost/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "",
+    }));
+    const result = await ctx.body();
+    expect(result).toBeNull();
+  });
+
+  test("handles JSON body with only whitespace", async () => {
+    const ctx = contextFor(new Request("http://localhost/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "   \n\t  ",
+    }));
+    await expect(ctx.body()).rejects.toThrow(/Invalid JSON body/);
+  });
+
+  test("fail() returns proper error response with default details undefined", async () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+    const response = ctx.fail("VALIDATION_ERROR", "validation failed");
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    const json = await response.json() as { error: { code: string; message: string; details?: unknown }; requestId: string };
+    expect(json.error.code).toBe("VALIDATION_ERROR");
+    expect(json.error.message).toBe("validation failed");
+    expect(json.error.details).toBeUndefined();
+    expect(json.requestId).toBe("req-context");
+  });
+
+  test("fail() omits details field when details is explicitly undefined", async () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+    const response = ctx.fail("NOT_FOUND", "not found", 404, undefined);
+    expect(response.status).toBe(404);
+    const json = await response.json() as { error: { code: string; message: string; details?: unknown }; requestId: string };
+    expect(json.error.code).toBe("NOT_FOUND");
+    expect(json.error.message).toBe("not found");
+    expect(json.error.details).toBeUndefined();
+  });
+
+  test("fail() includes details when provided", async () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+    const response = ctx.fail("VALIDATION_ERROR", "invalid field", 422, { field: "email" });
+    expect(response.status).toBe(422);
+    const json = await response.json() as { error: { code: string; message: string; details: { field: string } }; requestId: string };
+    expect(json.error.code).toBe("VALIDATION_ERROR");
+    expect(json.error.message).toBe("invalid field");
+    expect(json.error.details).toEqual({ field: "email" });
+  });
+
+  test("fail() uses 400 as default status when not specified", async () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+    const response = ctx.fail("BAD_REQUEST", "invalid input");
+    expect(response.status).toBe(400);
+  });
+
+  test("fail() allows custom status code override", async () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+    const response = ctx.fail("CUSTOM_ERROR", "custom error", 503);
+    expect(response.status).toBe(503);
+    const json = await response.json() as { error: { code: string; message: string } };
+    expect(json.error.code).toBe("CUSTOM_ERROR");
+    expect(json.error.message).toBe("custom error");
+  });
 });
