@@ -397,7 +397,7 @@ export function sanitizeAppName(name: string): string {
     .replace(/-+/g, "-")
     .replace(/^[.-]+|[.-]+$/g, "")
     .slice(0, 64)
-    .replace(/-$/g, "");
+    .replace(/[.-]+$/g, "");
   return cleaned || "mubo-app";
 }
 

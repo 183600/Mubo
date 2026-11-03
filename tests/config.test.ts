@@ -543,6 +543,11 @@ export default defineConfig({
     expect(name.length).toBeLessThanOrEqual(64);
     expect(name.endsWith(".")).toBe(false);
     expect(sanitizeAppName(`${"b".repeat(63)}-`)).toHaveLength(63);
+    // truncation must not leave trailing dots or dashes (invalid directory names on Windows)
+    expect(sanitizeAppName(`${"x".repeat(63)}.y`)).toBe("x".repeat(63));
+    expect(sanitizeAppName(`${"x".repeat(62)}..y`)).toBe("x".repeat(62));
+    expect(sanitizeAppName(`${"y".repeat(64)}`)).toHaveLength(64);
+    expect(sanitizeAppName(".-".repeat(40))).toBe("mubo-app");
   });
 
   test("rejects invalid modes and log levels from explicit config", () => {
