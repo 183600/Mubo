@@ -334,15 +334,27 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
   const busyTimeoutMs = readNumber(env.MUBO_BUSY_TIMEOUT_MS, "MUBO_BUSY_TIMEOUT_MS");
   const migrationMode = readChoice(env.MUBO_MIGRATIONS_MODE, "MUBO_MIGRATIONS_MODE", MIGRATION_MODES);
   const migrationTable = env.MUBO_MIGRATIONS_TABLE?.trim() || undefined;
+  const migrationLock = readChoice(env.MUBO_MIGRATIONS_LOCK, "MUBO_MIGRATIONS_LOCK", ["file", "sqlite"]) as "file" | "sqlite" | undefined;
   const safeOnly = readBoolean(env.MUBO_MIGRATIONS_SAFE_ONLY);
-  if (dbPath || busyTimeoutMs !== undefined || migrationMode || migrationTable || safeOnly !== undefined) {
+  const foreignKeys = readBoolean(env.MUBO_FOREIGN_KEYS);
+  const wal = readBoolean(env.MUBO_WAL);
+  const slowQueryMs = readNumber(env.MUBO_SLOW_QUERY_MS, "MUBO_SLOW_QUERY_MS");
+  if (
+    dbPath || busyTimeoutMs !== undefined || migrationMode || migrationTable ||
+    migrationLock !== undefined || safeOnly !== undefined || foreignKeys !== undefined ||
+    wal !== undefined || slowQueryMs !== undefined
+  ) {
     result.db = {
       path: dbPath,
       busyTimeoutMs,
+      foreignKeys,
+      wal,
+      slowQueryMs,
       migrations: {
         mode: migrationMode,
         table: migrationTable,
         safeOnly,
+        lock: migrationLock,
       },
     };
   }

@@ -788,4 +788,55 @@ export default defineConfig({
       resolveConfig({}, { env: { MUBO_WS_MAX_PAYLOAD: "0" }, argv: [] }),
     ).toThrow(/Invalid WebSocket max payload/);
   });
+
+  test("parses MUBO_SLOW_QUERY_MS from environment", () => {
+    const config = resolveConfig({}, { env: { MUBO_SLOW_QUERY_MS: "500" }, argv: [] });
+    expect(config.db.slowQueryMs).toBe(500);
+  });
+
+  test("parses MUBO_WAL and MUBO_FOREIGN_KEYS from environment", () => {
+    const config = resolveConfig(
+      {},
+      { env: { MUBO_WAL: "0", MUBO_FOREIGN_KEYS: "false" }, argv: [] },
+    );
+    expect(config.db.wal).toBe(false);
+    expect(config.db.foreignKeys).toBe(false);
+  });
+
+  test("parses MUBO_MIGRATIONS_LOCK from environment", () => {
+    const config = resolveConfig({}, { env: { MUBO_MIGRATIONS_LOCK: "file" }, argv: [] });
+    expect(config.db.migrations.lock).toBe("file");
+    const sqliteConfig = resolveConfig({}, { env: { MUBO_MIGRATIONS_LOCK: "sqlite" }, argv: [] });
+    expect(sqliteConfig.db.migrations.lock).toBe("sqlite");
+  });
+
+  test("rejects invalid MUBO_SLOW_QUERY_MS from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_SLOW_QUERY_MS: "-1" }, argv: [] }),
+    ).toThrow(/Invalid slow query threshold/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_SLOW_QUERY_MS: "1.5" }, argv: [] }),
+    ).toThrow(/Invalid slow query threshold/);
+  });
+
+  test("rejects invalid MUBO_MIGRATIONS_LOCK from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_MIGRATIONS_LOCK: "redis" }, argv: [] }),
+    ).toThrow(/Invalid MUBO_MIGRATIONS_LOCK/);
+  });
+
+  test("accepts valid boolean values for MUBO_WAL and MUBO_FOREIGN_KEYS from environment", () => {
+    const trueConfig = resolveConfig(
+      {},
+      { env: { MUBO_WAL: "true", MUBO_FOREIGN_KEYS: "yes" }, argv: [] },
+    );
+    expect(trueConfig.db.wal).toBe(true);
+    expect(trueConfig.db.foreignKeys).toBe(true);
+  });
+
+  test("rejects invalid boolean values for MUBO_WAL from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WAL: "maybe" }, argv: [] }),
+    ).toThrow(/Invalid boolean value/);
+  });
 });
