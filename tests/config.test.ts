@@ -889,4 +889,28 @@ export default defineConfig({
       resolveConfig({}, { env: { MUBO_MIGRATIONS_TABLE: "invalid-table!" }, argv: [] }),
     ).toThrow(/Invalid migrations table name/);
   });
+
+  test("rejects invalid MUBO_PORT from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_PORT: "-1" }, argv: [] }),
+    ).toThrow(/Invalid HTTP port/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_PORT: "3.14" }, argv: [] }),
+    ).toThrow(/Invalid HTTP port/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_PORT: "70000" }, argv: [] }),
+    ).toThrow(/Invalid HTTP port/);
+  });
+
+  test("accepts valid MUBO_PORT from environment", () => {
+    const config = resolveConfig({}, { env: { MUBO_PORT: "0" }, argv: [] });
+    expect(config.http.port).toBe(0);
+    const config8080 = resolveConfig({}, { env: { MUBO_PORT: "8080" }, argv: [] });
+    expect(config8080.http.port).toBe(8080);
+  });
+
+  test("parses MUBO_HOST from environment", () => {
+    const config = resolveConfig({}, { env: { MUBO_HOST: "0.0.0.0" }, argv: [] });
+    expect(config.http.host).toBe("0.0.0.0");
+  });
 });
