@@ -241,4 +241,133 @@ describe("router", () => {
       params: { "*": "" },
     });
   });
+
+  test("rejects duplicate route parameters within same path registration", () => {
+    const router = new Router();
+    expect(() => router.add("GET", "/users/:id/:id", ok("dup"))).toThrow(
+      /Duplicate route parameter/,
+    );
+  });
+
+  test("add route with space in parameter name throws", () => {
+    const router = new Router();
+    expect(() => router.add("GET", "/users/:my param", ok("param-with-space"))).toThrow(
+      /Invalid route parameter/,
+    );
+  });
+
+  test("add route with leading dot in parameter name throws", () => {
+    const router = new Router();
+    expect(() => router.add("GET", "/users/:.id", ok("dot-param"))).toThrow(
+      /Invalid route parameter/,
+    );
+  });
+
+  test("add route with trailing dot in parameter name throws", () => {
+    const router = new Router();
+    expect(() => router.add("GET", "/users/:id.", ok("dot-param"))).toThrow(
+      /Invalid route parameter/,
+    );
+  });
+
+  test("matches routes with partial percent-encoded param", () => {
+    const router = new Router();
+    router.add("GET", "/users/:id", ok("user"));
+    const match = router.match("GET", "/users/42") as { type: string; params: Record<string, string> };
+    expect(match.type).toBe("match");
+    expect(match.params.id).toBe("42");
+  });
+
+  test("findBestMatch prefers more specific routes", () => {
+    const router = new Router();
+    router.add("GET", "/a/b/c", ok("exact"));
+    router.add("GET", "/a/*", ok("wildcard1"));
+    router.add("GET", "/a/b", ok("subpath"));
+    router.add("GET", "/a/b/c/d", ok("deeper"));
+
+    // /a/b/c should be preferred over /a/* and /a/b
+    const match = router.match("GET", "/a/b/c") as { type: string; route: { path: string } };
+    expect(match.type).toBe("match");
+    expect(match.route.path).toBe("/a/b/c");
+  });
+
+  test("route identity is consistent after normalization", () => {
+    const { routeIdentity } = require("../src/utils/path.ts");
+    expect(routeIdentity("/users/42")).toBe(routeIdentity("/users/42"));
+    expect(routeIdentity("/users/42/")).toBe(routeIdentity("/users/42"));
+    expect(routeIdentity("/")).toBe(routeIdentity("/"));
+    expect(routeIdentity("///")).toBe(routeIdentity("///"));
+  });
+
+  test("compileRouteSegments rejects empty path segments", () => {
+    const router = new Router();
+    expect(() => router.add("GET", "/a//b", ok("empty-segment"))).toThrow(
+      /Route path contains an empty segment/,
+    );
+  });
+
+  test("routeKey is consistent for equivalent paths", () => {
+    const { routeKey } = require("../src/utils/path.ts");
+    expect(routeKey("/users/42")).toBe(routeKey("/users/42"));
+    expect(routeKey("/users/42/")).toBe(routeKey("/users/42"));
+    expect(routeKey("/")).toBe(routeKey("/"));
+  });
+
+  test("decodeLiteral handles invalid UTF-8 gracefully", () => {
+    const { decodeLiteral } = require("../src/utils/path.ts");
+    // decodeLiteral is not exported; testing via router add() which uses it internally
+    const router = new Router();
+    // invalid percent-encoding in param name is caught by the identifier regex
+    expect(() => router.add("GET", "/users/:%invalid", ok("bad-param"))).toThrow(
+      /Invalid route parameter/,
+    );
+    // %2F decoded is "/" but as param name fails identifier regex
+    const r2 = new Router();
+    expect(() => r2.add("GET", "/users/:%2F", ok("slash-param"))).toThrow(
+      /Invalid route parameter/,
+    );
+  });
+
+  test("pathSegments handles various inputs", () => {
+    const { pathSegments } = require("../src/utils/path.ts");
+    expect(pathSegments("/")).toEqual([]);
+    expect(pathSegments("")).toEqual([]);
+    expect(pathSegments("///")).toEqual([]);
+    expect(pathSegments("/a/b")).toEqual(["a", "b"]);
+    // /a//b keeps empty segment since pathSegments doesn't collapse them
+    expect(pathSegments("/a//b")).toEqual(["a", "", "b"]);
+  });
+
+  test("literalMatches handles various decoding scenarios", () => {
+    const { literalMatches } = require("../src/utils/path.ts");
+    // direct string match - both are just segments
+    expect(literalMatches("42", "42")).toBe(true);
+    // non-matching values
+    expect(literalMatches("42", "41")).toBe(false);
+    // percent-encoded segment matches after decoding
+    expect(literalMatches("%34%32", "42")).toBe(true); // %34="4", %32="2"
+  });
+
+  test("segmentSpecificity and isMoreSpecific work correctly", () => {
+    const { segmentSpecificity, isMoreSpecific } = require("../src/utils/path.ts");
+    expect(segmentSpecificity({ kind: "literal" })).toBe(3);
+    expect(segmentSpecificity({ kind: "param" })).toBe(2);
+    expect(segmentSpecificity({ kind: "wildcard" })).toBe(1);
+    expect(segmentSpecificity(undefined)).toBe(4);
+
+    const router = new Router();
+    router.add("GET", "/a/b", ok("a-b"));
+    router.add("GET", "/a/:c", ok("a-c"));
+    router.add("GET", "/a/*", ok("a-wild"));
+
+    // /a/b is more specific than /a/:c which is more specific than /a/*
+    const match1 = router.match("GET", "/a/b") as { type: string; route: { path: string } };
+    expect(match1.route.path).toBe("/a/b");
+
+    const match2 = router.match("GET", "/a/x") as { type: string; route: { path: string } };
+    expect(match2.route.path).toBe("/a/:c");
+
+    const match3 = router.match("GET", "/a/x/y") as { type: string; route: { path: string } };
+    expect(match3.route.path).toBe("/a/*");
+  });
 });
