@@ -518,6 +518,35 @@ describe("WebSocket rooms and broadcasting", () => {
     expect(disabledPayload.requestId).toBe("ws-disabled");
   });
 
+  test("rejects WebSocket upgrades when authorize returns false", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-authorize-false-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      authorize() {
+        return false;
+      },
+    });
+    await app.start();
+    apps.push(app);
+    const base = `http://127.0.0.1:${app.port}`;
+
+    const rejected = await fetch(`${base}/ws`, {
+      headers: { upgrade: "websocket", "x-request-id": "ws-authorize-false" },
+    });
+    expect(rejected.status).toBe(401);
+    expect(rejected.headers.get("x-request-id")).toBe("ws-authorize-false");
+    const payload = (await rejected.json()) as { requestId: string };
+    expect(payload.requestId).toBe("ws-authorize-false");
+  });
+
   test("logs successful WebSocket upgrades as HTTP 101", async () => {
     const app = await createMuboApp(
       {

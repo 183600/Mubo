@@ -550,3 +550,88 @@ describe("HTTP routing and middleware", () => {
     expect(wildcardResponse.headers.get("vary")).toContain("Origin");
   });
 });
+
+describe("middleware boundaries", () => {
+  test("throws INTERNAL_ERROR when a middleware calls next() more than once", async () => {
+    const app = await startApp({
+      app: { name: "middleware-multi-next-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.use(async (ctx, next) => {
+      await next();
+      await next(); // second call throws INTERNAL_ERROR
+      return new Response("ok");
+    });
+    app.get("/hit", (ctx) => ctx.json({ ok: true }));
+
+    const response = await fetch(`${base(app)}/hit`);
+    expect(response.status).toBe(500);
+    const payload = (await response.json()) as { error: { code: string } };
+    expect(payload.error.code).toBe("INTERNAL_ERROR");
+  });
+
+  test("supports a terminal middleware that short-circuits without calling next", async () => {
+    const app = await startApp({
+      app: { name: "middleware-short-circuit-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    let downstreamRan = false;
+    app.use(async () => {
+      return ctxJsonBlocked();
+    });
+    app.use(async (ctx, next) => {
+      downstreamRan = true;
+      return next();
+    });
+    app.get("/hit", (ctx) => {
+      downstreamRan = true;
+      return ctx.json({ ok: true });
+    });
+
+    function ctxJsonBlocked() {
+      return new Response(JSON.stringify({ blocked: true }), {
+        status: 403,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+
+    const response = await fetch(`${base(app)}/hit`);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ blocked: true });
+    expect(downstreamRan).toBe(false);
+  });
+
+  test("runs all middleware when every handler calls next exactly once", async () => {
+    const order: string[] = [];
+    const app = await startApp({
+      app: { name: "middleware-once-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.use(async (ctx, next) => {
+      order.push("a-before");
+      const response = await next();
+      order.push("a-after");
+      return response;
+    });
+    app.use(async (ctx, next) => {
+      order.push("b-before");
+      const response = await next();
+      order.push("b-after");
+      return response;
+    });
+    app.get("/hit", (ctx) => {
+      order.push("handler");
+      return ctx.json({ ok: true });
+    });
+
+    const response = await fetch(`${base(app)}/hit`);
+    expect(response.status).toBe(200);
+    expect(order).toEqual(["a-before", "b-before", "handler", "b-after", "a-after"]);
+  });
+});

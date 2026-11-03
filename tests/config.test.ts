@@ -755,6 +755,19 @@ export default defineConfig({
     );
   });
 
+  test("rejects non-numeric and non-integer ports passed via CLI argv", () => {
+    expect(() => resolveConfig({}, { env: {}, argv: ["--port", "abc"] })).toThrow(
+      /--port must be a number/,
+    );
+    expect(() => resolveConfig({}, { env: {}, argv: ["--port", "3.14"] })).toThrow(
+      /Invalid HTTP port/,
+    );
+    expect(() => resolveConfig({}, { env: {}, argv: ["--port=3.14"] })).toThrow(/Invalid HTTP port/);
+    expect(() => resolveConfig({}, { env: {}, argv: ["--port", "70000"] })).toThrow(
+      /Invalid HTTP port/,
+    );
+  });
+
   test("parses MUBO_BODY_LIMIT and MUBO_WS_MAX_PAYLOAD from environment", () => {
     const config = resolveConfig(
       {},
