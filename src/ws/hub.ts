@@ -73,7 +73,7 @@ export function serializePayload(data: unknown): string | ArrayBuffer | ArrayBuf
   return json;
 }
 
-function assertRoomName(room: unknown): asserts room is string {
+function assertRoomName(room: string): void {
   if (typeof room !== "string" || room.trim().length === 0) {
     throw new MuboError("VALIDATION_ERROR", "Room name cannot be empty");
   }
@@ -157,10 +157,10 @@ export class WsRoomHub {
       send: (data) => sendDirect(ws, data, this.logger),
       emit: (event, data, messageId) =>
         sendDirect(ws, { t: "event", e: event, d: data, id: messageId }, this.logger),
-      publish: (room, data) => this.publish(room, data),
-      broadcast: (data, options) => this.broadcast(data, options),
-      subscribe: (room) => this.subscribe(context, room),
-      unsubscribe: (room) => this.unsubscribe(context, room),
+      publish: (room, data) => this.publishToRoom(room, data),
+      broadcast: (data, options) => this.broadcastToAll(data, options),
+      subscribe: (room) => this.subscribeToRoom(context, room),
+      unsubscribe: (room) => this.unsubscribeFromRoom(context, room),
       close: (code, reason) => ws.close(code, reason),
     };
     client = { ctx: context, ws, rooms: new Set() };
@@ -176,13 +176,25 @@ export class WsRoomHub {
   remove(ws: ServerWebSocket<WsSocketData>): MuboWsContext | undefined {
     const client = this.clientsBySocket.get(ws);
     if (!client) return undefined;
-    for (const room of [...client.rooms]) this.unsubscribe(client.ctx, room);
+    for (const room of [...client.rooms]) this.unsubscribeFromRoom(client.ctx, room);
     this.clients.delete(client.ctx.id);
     this.clientsBySocket.delete(ws);
     return client.ctx;
   }
 
-  subscribe(ctx: MuboWsContext, room: string): void {
+  subscribe(ctx: MuboWsContext | string, room?: string): void {
+    const context = typeof ctx === "string" ? this.clients.get(ctx as string)?.ctx : ctx;
+    const roomName = typeof ctx === "string" ? room! : room!;
+    this.subscribeToRoom(context!, roomName);
+  }
+
+  unsubscribe(ctx: MuboWsContext | string, room?: string): void {
+    const context = typeof ctx === "string" ? this.clients.get(ctx as string)?.ctx : ctx;
+    const roomName = typeof ctx === "string" ? room! : room!;
+    this.unsubscribeFromRoom(context!, roomName);
+  }
+
+  private subscribeToRoom(ctx: MuboWsContext, room: string): void {
     assertRoomName(room);
     const client = this.clients.get(ctx.id);
     if (!client) return;
@@ -196,7 +208,7 @@ export class WsRoomHub {
     members.add(client);
   }
 
-  unsubscribe(ctx: MuboWsContext, room: string): void {
+  private unsubscribeFromRoom(ctx: MuboWsContext, room: string): void {
     assertRoomName(room);
     const client = this.clients.get(ctx.id);
     if (!client) return;
@@ -207,23 +219,34 @@ export class WsRoomHub {
     if (members.size === 0) this.rooms.delete(room);
   }
 
-  private deliver(clients: Iterable<Client>, data: unknown, options: { except?: string } = {}): number {
+  publish(room: string, data: unknown, options: { except?: string } = {}): number {
+    assertRoomName(room);
+    return this.publishToRoom(room, data, options);
+  }
+
+  private publishToRoom(room: string, data: unknown, options: { except?: string } = {}): number {
+    assertRoomName(room);
+    const members = this.rooms.get(room);
+    if (!members) return 0;
     let sent = 0;
-    for (const client of clients) {
+    for (const client of members) {
       if (options.except && client.ctx.id === options.except) continue;
       if (safeSend(client.ws, data, this.logger)) sent++;
     }
     return sent;
   }
 
-  publish(room: string, data: unknown, options: { except?: string } = {}): number {
-    assertRoomName(room);
-    const members = this.rooms.get(room);
-    return members ? this.deliver(members, data, options) : 0;
+  broadcast(data: unknown, options: { except?: string } = {}): number {
+    return this.broadcastToAll(data, options);
   }
 
-  broadcast(data: unknown, options: { except?: string } = {}): number {
-    return this.deliver(this.clients.values(), data, options);
+  private broadcastToAll(data: unknown, options: { except?: string } = {}): number {
+    let sent = 0;
+    for (const client of this.clients.values()) {
+      if (options.except && client.ctx.id === options.except) continue;
+      if (safeSend(client.ws, data, this.logger)) sent++;
+    }
+    return sent;
   }
 
   pingAll(): void {
@@ -231,7 +254,6 @@ export class WsRoomHub {
       try {
         client.ws.ping();
       } catch {
-        // The close handler removes dead connections.
       }
     }
   }
@@ -241,7 +263,6 @@ export class WsRoomHub {
       try {
         client.ws.close(code, reason);
       } catch {
-        // Already closed.
       }
     }
   }

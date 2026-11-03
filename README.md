@@ -1,81 +1,81 @@
 # Mubo
 
-边缘计算级的“全栈单体”框架。
+A "hyper-monolith" framework built on Bun's native capabilities.
 
-Mubo 只依赖 Bun 的内置能力：HTTP/WebSocket（`Bun.serve`）、SQLite（`bun:sqlite`）、静态资源与单文件编译。它把前端资源、后端逻辑和数据库迁移收进一个可执行文件，适合私有化部署的内部工具、CRM/ERP、边缘节点和小型 SaaS。
+Mubo depends only on Bun's built-in features: HTTP/WebSocket (`Bun.serve`), SQLite (`bun:sqlite`), static assets and single-file compilation. It bundles frontend assets, backend logic and database migrations into a single executable, suitable for private internal tools, CRM/ERP, edge nodes and small SaaS applications.
 
-> 设计细节与实现约束见 [PLAN.md](./PLAN.md)；可运行示例见 [`examples/minimal`](./examples/minimal)。
+> Design details and implementation constraints: [PLAN.md](./PLAN.md) | Working example: [`examples/minimal`](./examples/minimal)
 
-## 目录
+## Table of Contents
 
-- [为什么是 Hyper-Monolith](#为什么是-hyper-monolith)
-- [核心能力](#核心能力)
-- [快速开始](#快速开始)
-- [项目结构](#项目结构)
-- [基础用法](#基础用法)
-- [配置](#配置)
-- [部署](#部署)
-- [安全与限制](#安全与限制)
-- [开发与测试](#开发与测试)
+- [Why Hyper-Monolith?](#why-hyper-monolith)
+- [Core Capabilities](#core-capabilities)
+- [Quick Start](#quick-start)
+- [Project Structure](#project-structure)
+- [Basic Usage](#basic-usage)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Security & Limitations](#security--limitations)
+- [Development & Testing](#development--testing)
 - [License](#license)
 
-## 为什么是 Hyper-Monolith
+## Why Hyper-Monolith?
 
-一个普通的小型内部系统，往往要先准备这些基础设施：
+A small internal application typically requires significant infrastructure:
 
-- Docker/Compose
-- PostgreSQL/MySQL
+- Docker or Docker Compose
+- PostgreSQL or MySQL
 - Redis
-- S3/对象存储
-- 反向代理、证书和配置管理
+- Object storage (S3)
+- Reverse proxy, certificates, configuration management
 
-Mubo 的目标是把这些“基础设施成本”尽量压到零：应用以单个可执行文件交付，首次启动自动创建数据库并执行迁移，升级时替换二进制即可。
+Mubo reduces this "infrastructure cost" to near zero: applications ship as a single executable, databases are created automatically on first start, and upgrades are just binary replacements.
 
-它不追求取代 Kubernetes、大型微服务体系或完整的 ORM。Mubo 优先保证**可靠、可控、可迁移**，并允许前端使用 React、Vue、Svelte 或纯静态页面。
+It's not trying to replace Kubernetes, large microservice architectures or full-featured ORMs. Mubo prioritizes **reliability, controllability, portability**, while allowing frontend frameworks like React, Vue, Svelte or plain static pages.
 
-## 核心能力
+## Core Capabilities
 
-| 能力 | 说明 |
+| Capability | Description |
 | --- | --- |
-| HTTP 服务 | 基于 `Bun.serve` 的路由、中间件、JSON/表单解析、统一错误响应 |
-| SQLite | 内置数据库连接、WAL、busy timeout、prepared statement 缓存与事务封装 |
-| 自动迁移 | 根据声明式 schema 生成追加式迁移；迁移历史可追踪、重复启动幂等 |
-| WebSocket | 原生 WebSocket、鉴权钩子、房间订阅、广播、心跳与连接清理 |
-| 静态资源 | 磁盘/内嵌资源、ETag、缓存策略、目录索引、SPA fallback |
-| 单文件发布 | 前端资源、后端入口与迁移逻辑一起编译为单个可执行文件 |
-| 可观测性 | 结构化日志、请求 ID、慢查询提示、`/healthz` 与 `/readyz` |
+| HTTP Service | Routing, middleware, JSON/form parsing, unified error responses |
+| SQLite | WAL mode, busy timeout, prepared statement caching, transactions |
+| Auto Migrations | Append-only migrations from declarative schema |
+| WebSocket | Connection handling, rooms, broadcasting, heartbeats |
+| Static Assets | Disk or embedded, ETag, caching, directory index, SPA fallback |
+| Single-File Builds | Frontend, backend entry and migrations in one executable |
+| Observability | Structured logging, request IDs, slow query hints, `/healthz` and `/readyz` |
 
-## 快速开始
+## Quick Start
 
-### 环境要求
+### Requirements
 
 - Bun >= 1.2
-- macOS、Linux 或 Windows
+- macOS, Linux, or Windows
 
 ```bash
 curl -fsSL https://bun.sh/install | bash
 bun --version
 ```
 
-### 创建项目
+### Create a Project
 
 ```bash
 bunx mubo init my-app
 cd my-app
 bun install
 bun run dev
-# 默认监听 http://localhost:3000
+# Default: http://localhost:3000
 ```
 
-在本仓库内开发时，也可以直接运行 CLI：
+When developing inside this repo:
 
 ```bash
 bun run src/cli/index.ts init /tmp/my-app
 ```
 
-`mubo init` 会生成 `package.json`、`tsconfig.json`、`mubo.config.ts`、示例 schema、路由、WebSocket 处理器和一个最小测试。使用 `--force` 覆盖非空目录，使用 `--install` 在创建后立即安装依赖。
+`mubo init` generates `package.json`, `tsconfig.json`, `mubo.config.ts`, example schema, routes, WebSocket handlers and a minimal test. Use `--force` to overwrite non-empty directories, `--install` to run `npm install` after creation.
 
-### 运行示例项目
+### Run the Example
 
 ```bash
 cd examples/minimal
@@ -83,64 +83,67 @@ bun install
 bun run dev
 ```
 
-示例提供：
+The example provides:
 
-- `GET /api/notes` 与 `POST /api/notes`
-- WebSocket `/ws` 的 `ping`、`echo` 与房间广播
-- 静态首页与 `notes` 表迁移
+- `GET /api/notes` and `POST /api/notes`
+- WebSocket `/ws` with `ping`, `echo` and room broadcasting
+- Static homepage and `notes` table migrations
 
-### 构建与运行单文件
+### Build and Run Single-File
 
 ```bash
 bun run build
-# 产物默认位于 ./dist/<app-name>（Windows 为 .exe）
+# Output: ./dist/<app-name> (Windows: .exe)
 
 ./dist/my-app
-# 指定数据目录（数据库会自动创建并迁移）
+# With custom data directory:
 ./dist/my-app --data-dir /var/lib/my-app
 ```
 
-### 诊断与迁移
+### Diagnostics and Migrations
 
 ```bash
-bunx mubo doctor          # Bun/SQLite/数据目录/端口检查
-bunx mubo doctor --json   # 机器可读的诊断输出
-bunx mubo migrate --check # 只检查是否有待执行的迁移
-bunx mubo migrate         # 显式执行迁移（应用启动时也会自动执行）
+bunx mubo doctor          # Check Bun/SQLite/data-dir/port
+bunx mubo doctor --json   # Machine-readable diagnostics
+bunx mubo migrate --check # Check for pending migrations
+bunx mubo migrate         # Apply migrations (auto-applied on startup)
 ```
 
-### CLI 参数
+### CLI Reference
 
 ```bash
 mubo init <dir> [--force] [--install]
 mubo dev [--entry <file>] [--port <port>] [--host <host>] [--data-dir <dir>]
-mubo build [--entry <file>] [--outfile <file>] [--static-dir <dir>] [--target <target>] [--minify] [--config <file>]
+         [--db <path>] [--static-dir <dir>] [--log-level <level>] [--config <file>]
+         [--no-static] [--no-ws]
+mubo build [--entry <file>] [--outfile <file>] [--static-dir <dir>] [--target <target>]
+           [--minify] [--config <file>]
 mubo migrate [--check] [--config <file>] [--data-dir <dir>]
 mubo doctor [--json] [--config <file>]
 ```
 
-CLI 参数优先级最高。缺失的开关值、非法布尔值或非法日志级别会直接报错，而不是静默忽略。`mubo build` 同样遵循配置优先级：`MUBO_APP_NAME`、`MUBO_STATIC_MODE`、`MUBO_STATIC_DIR` 会影响产物名称和嵌入的静态资源，`--static-dir` 优先级最高。
+CLI flags have highest priority. Missing flag values, invalid booleans or invalid log levels throw errors rather than silently ignoring. `--static-dir` affects the embedded static assets in the build output.
 
-## 项目结构
+## Project Structure
 
 ```txt
 my-app/
   src/
     server/
-      index.ts            # 入口：创建 app、注册路由/WS、启动服务
-      schema.ts           # 声明式 schema
-      routes/             # HTTP 路由（按项目需要拆分）
-      ws/                 # WebSocket 事件/房间/广播
-      db/queries/         # SQL 查询与仓储层
-    client/               # 任意前端（可选）
-  public/                 # 静态资源（开发时直出，构建时内嵌）
-  mubo.config.ts          # 可选：框架配置
+      index.ts            # Entry: create app, register routes/WS, start
+      schema.ts           # Declarative schema
+      routes/             # HTTP routes (optional)
+      ws/                 # WebSocket events/rooms/broadcasts (optional)
+      db/queries/         # SQL queries and repository layer (optional)
+  client/                 # Frontend (optional)
+  public/                 # Static assets (served in dev, embedded in build)
+  mubo.config.ts          # Optional framework configuration
   package.json
 ```
 
-## 基础用法
+## Basic Usage
 
-### 创建应用
+### Creating an Application
 
 ```ts
 import { createMuboApp, defineSchema } from "mubo";
@@ -171,9 +174,9 @@ app.get("/healthz", () => Response.json({ ok: true }));
 await app.start();
 ```
 
-`createMuboApp` 未传入显式配置时会加载当前目录的 `mubo.config.*`；传入任意显式配置项时默认不加载文件，也可以用 `{ loadFile: true }` 强制加载。显式传入 `--config <file>` 或 `{ configFile }` 时始终加载该文件，并用它覆盖代码内联配置（环境变量与其余 CLI 参数仍优先）。CLI 生成的入口会直接导入并传入配置，因此单文件二进制不依赖运行目录中的配置文件。
+When `createMuboApp` receives no explicit config, it loads the local `mubo.config.*`; any explicit config disables file loading (use `{ loadFile: true }` to force it). Explicit `--config <file>` always loads that file, overriding inline config. Environment variables and other CLI flags still take precedence over everything. CLI-generated entry files import config directly, so single-file binaries don't depend on runtime config files.
 
-### 路由与中间件
+### Routes and Middleware
 
 ```ts
 app.get("/api/notes/:id", (ctx) =>
@@ -198,13 +201,13 @@ app.use(async (ctx, next) => {
 });
 ```
 
-路由支持静态路径、参数路径（`/users/:id`）和末尾通配符（`/assets/*`）。`HEAD` 请求会自动回退到匹配的 `GET` 路由。
+Routes support static paths (`/healthz`), parameter paths (`:id`), and trailing wildcards (`*`). `HEAD` requests automatically fall back to matching `GET` routes.
 
-### 请求上下文
+### Request Context
 
-`ctx.req`、`ctx.url`、`ctx.method`、`ctx.params`、`ctx.query`、`ctx.requestId`、`ctx.state`、`ctx.db`、`ctx.log`、`ctx.set/get`、`ctx.body()`、`ctx.text()`、`ctx.formData()`（别名 `ctx.form()`）、`ctx.json()`、`ctx.textResponse()`、`ctx.ok()`、`ctx.fail()`。
+Properties: `ctx.req`, `ctx.url`, `ctx.method`, `ctx.params`, `ctx.query`, `ctx.requestId`, `ctx.state`, `ctx.db`, `ctx.log`, `ctx.set/get`, `ctx.body()`, `ctx.text()`, `ctx.formData()` (alias `ctx.form()`), `ctx.json()`, `ctx.textResponse()`, `ctx.ok()`, `ctx.fail()`.
 
-请求体只会被读取一次并由上下文缓存。如果业务代码已经直接消费了 `ctx.req` 的流，再调用 `ctx.body()` / `ctx.text()` 会返回明确的 `BAD_REQUEST`，而不是底层流错误。未捕获的 `MuboError` 会转换为统一 JSON：
+Request body is read only once and cached. If business code consumes the stream directly before calling `ctx.body()` / `ctx.text()`, those methods return a clear `BAD_REQUEST` error. Unhandled `MuboError` exceptions produce JSON:
 
 ```json
 {
@@ -213,9 +216,9 @@ app.use(async (ctx, next) => {
 }
 ```
 
-响应头同时包含 `x-request-id`。
+Response includes `x-request-id` header.
 
-### 数据库
+### Database
 
 ```ts
 app.db.exec("CREATE TABLE ...; CREATE INDEX ...;");
@@ -230,7 +233,7 @@ app.db.transaction((db) => {
 });
 ```
 
-事务回调为同步时直接返回结果，为异步时返回 Promise；嵌套事务使用 `SAVEPOINT`。迁移默认只允许建表、加列和加索引，破坏性变更需手写 SQL。查询会复用缓存的 prepared statement；迁移 SQL 执行失败会回滚并抛出带语句上下文的 `MIGRATION_ERROR`。
+Transaction callbacks are sync when given sync functions, return `Promise` for async. Nested transactions use `SAVEPOINT`. Queries use cached prepared statements; migration failures roll back and throw `MIGRATION_ERROR`.
 
 ### WebSocket
 
@@ -238,7 +241,7 @@ app.db.transaction((db) => {
 app.ws("/ws", {
   authorize(request) {
     const token = new URL(request.url).searchParams.get("token");
-    return token ? { token } : null; // null / false 拒绝连接
+    return token ? { token } : null; // Reject connection with null/false
   },
   onConnect(ctx) {
     ctx.subscribe("lobby");
@@ -253,90 +256,92 @@ app.ws("/ws", {
 });
 ```
 
-WebSocket 上下文包含 `ctx.id`、`ctx.ip`、`ctx.url`、`ctx.user`、`ctx.state`、`ctx.rooms`、`ctx.send()`、`ctx.emit()`、`ctx.publish()`、`ctx.broadcast()`、`ctx.subscribe()`、`ctx.unsubscribe()`、`ctx.close()`。`emit()` 使用 `{ t: "event", e, d, id? }` 协议。
+WebSocket context: `ctx.id`, `ctx.ip`, `ctx.url`, `ctx.user`, `ctx.state`, `ctx.rooms`, `ctx.send()`, `ctx.emit()`, `ctx.publish()`, `ctx.broadcast()`, `ctx.subscribe()`, `ctx.unsubscribe()`, `ctx.close()`. The `emit()` protocol uses `{ t: "event", e, d, id? }`.
 
-房间名必须是至少包含一个非空白字符的字符串；重复订阅同一房间是幂等的。`publish()` / `broadcast()` 返回成功发送的连接数，序列化或发送失败的连接会被记录日志且不计入返回值。启用 `http.trustProxy` 后，HTTP 日志与 WebSocket 的 `ctx.ip` 会优先使用 `x-forwarded-for`（首个地址）或 `x-real-ip`。
+Room names must contain non-whitespace. Duplicate subscriptions are idempotent. `publish()` / `broadcast()` return successful connection count. Failed sends are logged but not counted.
 
-### 静态资源
+With `http.trustProxy`, HTTP logs and WebSocket `ctx.ip` prefer `x-forwarded-for` (first address) or `x-real-ip`.
+
+### Static Assets
 
 ```ts
 app.static({
-  mode: "embedded",       // "embedded" | "disk" | "off"
+  mode: "embedded",        // "embedded" | "disk" | "off"
   dir: "public",
   spaFallback: true,
   cache: { immutableExtensions: ["js", "css", "woff2"] },
 });
 ```
 
-- 开发时可直接从 `public/` 输出；需要代理前端 dev server 时可自行接入中间件。
-- 生产时可将前端构建产物内嵌到二进制中，或继续使用 `disk` 模式。
-- `/docs` 与 `/docs/` 都会尝试 `docs/index.html`。
-- HTML 默认 `no-cache`；带内容哈希的静态资源默认一年 `immutable`。
-- 支持 `ETag` / `If-None-Match` / `304` 与 `HEAD`。
-- 哈希识别基于文件名（如 `app.3f9a1c2d.js`），不会因目录名或普通单词误判；`immutableExtensions` 不区分大小写并忽略前导点。
+- Use `disk` mode for development or when proxying an external dev server
+- Use `embedded` mode to bundle frontend builds into the binary
+- `/docs` and `/docs/` attempt `docs/index.html`
+- HTML defaults to `no-cache`; content-hashed assets default to 1-year `immutable`
+- Supports `ETag` / `If-None-Match` / `304` and `HEAD`
+- Hash detection based on filename tokens like `app.3f9a1c2d.js`
 
-## 配置
+## Configuration
 
-配置优先级从高到低：
+Priority order (highest to lowest):
 
-1. CLI 参数（`--port`、`--host`、`--data-dir`、`--db`、`--static-dir` 等）
-2. 环境变量（`MUBO_*`）
+1. CLI arguments (`--port`, `--host`, `--data-dir`, `--db`, `--static-dir`, etc.)
+2. Environment variables (`MUBO_*`)
 3. `mubo.config.ts` / `mubo.config.js` / `mubo.config.mjs`
-4. 默认值
+4. Default values
 
-配置文件可用 `--config <file>` 指定。常见环境变量：
+Specify config file with `--config <file>`. Common environment variables:
 
-| 变量 | 说明 | 默认值 |
+| Variable | Description | Default |
 | --- | --- | --- |
-| `MUBO_APP_NAME` | 应用名（会清洗为安全目录名） | `mubo-app` |
-| `MUBO_ENV` | 运行环境（`development` / `production` / `test`） | `development` |
-| `MUBO_HOST` | 监听地址 | `127.0.0.1` |
-| `MUBO_PORT` | 监听端口 | `3000` |
-| `MUBO_BODY_LIMIT` | 请求体最大字节数 | `1048576` |
-| `MUBO_DATA_DIR` | 数据目录（DB、日志等） | 用户目录下的 `.mubo/<appName>` |
-| `MUBO_DB_PATH` | SQLite 文件路径 | `<dataDir>/mubo.sqlite` |
+| `MUBO_APP_NAME` | Application name (sanitized) | `mubo-app` |
+| `MUBO_ENV` | Environment (`development` / `production` / `test`) | `development` |
+| `MUBO_HOST` | HTTP listen address | `127.0.0.1` |
+| `MUBO_PORT` | HTTP listen port | `3000` |
+| `MUBO_BODY_LIMIT` | Max request body bytes | `1048576` |
+| `MUBO_DATA_DIR` | Data directory for DB, logs | `$HOME/.mubo/<appName>` |
+| `MUBO_DB_PATH` | SQLite file path | `<dataDir>/mubo.sqlite` |
 | `MUBO_BUSY_TIMEOUT_MS` | SQLite busy timeout | `5000` |
 | `MUBO_MIGRATIONS_MODE` | `apply` / `check` / `off` | `apply` |
-| `MUBO_MIGRATIONS_SAFE_ONLY` | 仅允许追加式自动迁移 | `true` |
-| `MUBO_MIGRATIONS_TABLE` | 迁移历史表名 | `_mubo_migrations` |
+| `MUBO_MIGRATIONS_SAFE_ONLY` | Only append-only migrations | `true` |
+| `MUBO_MIGRATIONS_TABLE` | Migration history table | `_mubo_migrations` |
 | `MUBO_STATIC_MODE` | `embedded` / `disk` / `off` | `disk` |
-| `MUBO_STATIC_DIR` | 静态资源目录 | `public` |
-| `MUBO_STATIC_SPA_FALLBACK` | 未命中静态资源时返回 `index.html` | `true` |
-| `MUBO_WS_ENABLED` | 启用 WebSocket | `true` |
-| `MUBO_WS_MAX_PAYLOAD` | WebSocket 最大消息字节数 | `1048576` |
+| `MUBO_STATIC_DIR` | Static assets directory | `public` |
+| `MUBO_STATIC_SPA_FALLBACK` | Return `index.html` on 404 | `true` |
+| `MUBO_WS_ENABLED` | Enable WebSocket | `true` |
+| `MUBO_WS_MAX_PAYLOAD` | Max WebSocket message bytes | `1048576` |
 | `MUBO_LOG_LEVEL` | `debug` / `info` / `warn` / `error` | `info` |
-| `MUBO_LOG_JSON` | JSON 结构化日志 | 生产环境为 `true` |
+| `MUBO_LOG_JSON` | JSON structured logging | `true` in production |
 
-数据目录默认值：
+Default data directory:
 
-- macOS/Linux：`$HOME/.mubo/<appName>`
-- Windows：`%APPDATA%\Mubo\<appName>`
+- macOS/Linux: `$HOME/.mubo/<appName>/`
+- Windows: `%APPDATA%\Mubo\<appName>\`
 
-数值型配置（端口、body limit、超时、心跳、缓存时间等）会在启动前校验；非法值会以 `CONFIG_ERROR` 失败。超时类配置必须是非负整数；应用名会清洗并截断到 64 字符；非空的非法 `MUBO_ENV` 会直接报错，而非法 `NODE_ENV` 会被忽略并回退到 `development`。
+Numeric configs (port, body limits, timeouts, caches) are validated at startup. Invalid values fail with `CONFIG_ERROR`. Timeouts must be non-negative integers. App names are sanitized and truncated to 64 characters. Empty `MUBO_ENV` triggers validation error; invalid `NODE_ENV` is ignored and falls back to `development`.
 
-## 部署
+## Deployment
 
-### 单机私有化
+### Private Single-Node
 
-- 将编译出的单文件复制到目标机器。
-- 双击运行，或注册为系统服务。
-- 数据默认写入用户目录或应用目录，可用 `--data-dir` / `MUBO_DATA_DIR` 配置。
-- 首次启动自动创建数据库并执行迁移；升级时替换二进制即可。
+- Copy the compiled single-file to the target machine
+- Run directly or register as a system service
+- Data defaults to user directory, configurable via `--data-dir` / `MUBO_DATA_DIR`
+- Databases and migrations auto-create on first run; upgrades are binary swaps
 
-### 边缘环境
+### Edge Environments
 
-- 适合具备文件系统的边缘节点。
-- 可在弱网络下独立运行，后续再按需扩展同步机制。
+- Suitable for file-system equipped edge nodes
+- Runs independently on weak networks; can sync to larger systems when available
 
-## 安全与限制
+## Security & Limitations
 
-- 生产环境默认绑定 `127.0.0.1`，推荐通过反向代理对外暴露。
-- WebSocket 建议启用鉴权（token / session）。
-- 对外 API 建议按需加入速率限制。
-- SQLite 适合中小规模业务与边缘场景；极端并发写入场景需单独评估。
-- 依赖 Bun 运行时（开发与编译）。
+- Production binds to `127.0.0.1` by default; use reverse proxy for external access
+- WebSocket connections should enable authorization (token/session)
+- Consider rate limiting on public APIs
+- SQLite suits medium-scale workloads; evaluate for extreme concurrent writes
+- Requires Bun runtime for development and building
 
-## 开发与测试
+## Development & Testing
 
 ```bash
 bun install
@@ -344,8 +349,8 @@ bun run check     # tsc --noEmit + bun test
 bun test
 ```
 
-新增功能请同时补充测试，并保持“默认简单、可选强大”的原则：宁可少做，也不引入外部依赖链。
+New features require corresponding tests. Maintain the "simple by default, powerful when needed" principle: prefer fewer dependencies over extensive chains.
 
 ## License
 
-MIT，详见 [LICENSE](./LICENSE)。
+MIT. See [LICENSE](./LICENSE).

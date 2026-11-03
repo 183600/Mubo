@@ -152,8 +152,6 @@ export default defineConfig({
     migrations: { mode: "apply", safeOnly: true },
   },
   static: {
-    // In development the empty embedded manifest falls back to ./public.
-    // "mubo build" embeds those files into the final executable.
     mode: "embedded",
     dir: "public",
     spaFallback: true,

@@ -102,7 +102,6 @@ export class MuboDatabase {
       try {
         this.raw.run("PRAGMA journal_mode = WAL");
       } catch {
-        // Some filesystems (or :memory:) do not support WAL; SQLite falls back safely.
       }
     }
     this.raw.run("PRAGMA synchronous = NORMAL");
@@ -346,7 +345,6 @@ export class MuboDatabase {
           this.raw.run(`RELEASE ${savepoint}`);
         }
       } catch {
-        // The original error is more useful than a rollback failure.
       } finally {
         finish();
       }

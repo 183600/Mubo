@@ -59,7 +59,7 @@ function originAllowed(request: Request, config: ResolvedMuboConfig): string | u
   return cors.origin.includes(origin) ? origin : undefined;
 }
 
-function addVary(headers: Headers, value: string): void {
+function addVaryHeader(headers: Headers, value: string): void {
   const current = headers.get("vary");
   if (!current) {
     headers.set("vary", value);
@@ -81,7 +81,7 @@ function applyCors(request: Request, response: Response, config: ResolvedMuboCon
     headers.set("access-control-allow-origin", allowOrigin);
     if (cors.credentials) headers.set("access-control-allow-credentials", "true");
   }
-  if (varyOrigin) addVary(headers, "Origin");
+  if (varyOrigin) addVaryHeader(headers, "Origin");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 

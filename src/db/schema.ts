@@ -14,7 +14,6 @@ export interface ColumnDefinition {
   notNull?: boolean;
   unique?: boolean;
   default?: string | number | boolean | null;
-  /** Raw SQL default expression, for example `CURRENT_TIMESTAMP`. */
   sqlDefault?: string;
   references?: ReferenceDefinition;
 }
