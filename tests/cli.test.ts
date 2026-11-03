@@ -250,6 +250,16 @@ describe("CLI", () => {
     const result = await runCli(cwd, ["doctor", "--json", "--data-dir", join(cwd, "data"), "--port", "0"]);
     expect(result.code).toBe(0);
     const checks = JSON.parse(result.stdout) as Array<{ name: string; ok: boolean }>;
+    const names = checks.map((check) => check.name);
+    expect(names).toEqual([
+      "bun",
+      "platform",
+      "config",
+      "data-dir",
+      "sqlite",
+      "port",
+      "schema",
+    ]);
     expect(checks.find((check) => check.name === "bun")?.ok).toBe(true);
     expect(checks.find((check) => check.name === "sqlite")?.ok).toBe(true);
     expect(checks.find((check) => check.name === "data-dir")?.ok).toBe(true);
