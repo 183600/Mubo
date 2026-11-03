@@ -317,7 +317,7 @@ Default data directory:
 - macOS/Linux: `$HOME/.mubo/<appName>/`
 - Windows: `%APPDATA%\Mubo\<appName>\`
 
-Numeric configs (port, body limits, timeouts, caches) are validated at startup. Invalid values fail with `CONFIG_ERROR`. Timeouts must be non-negative integers. App names are sanitized and truncated to 64 characters. Empty `MUBO_ENV` triggers validation error; invalid `NODE_ENV` is ignored and falls back to `development`.
+Numeric configs (port, body limits, timeouts, caches) are validated at startup. Invalid values fail with `CONFIG_ERROR`. Timeouts must be non-negative integers, and WebSocket heartbeat timeout must be greater than interval. App names are sanitized and truncated to 64 characters. Empty `MUBO_ENV` triggers validation error; invalid `NODE_ENV` is ignored and falls back to `development`.
 
 ## Deployment
 
