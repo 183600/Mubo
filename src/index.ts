@@ -13,7 +13,14 @@ export {
 } from "./core/config.ts";
 export { MuboError, isMuboError, type ErrorCode } from "./core/errors.ts";
 export { createLogger, isLogLevel, type Logger, type LoggerOptions, type LogLevel } from "./core/logger.ts";
-export { defineSchema, type ColumnDefinition, type IndexDefinition, type MuboSchema, type TableDefinition } from "./db/schema.ts";
+export {
+  defineSchema,
+  type ColumnDefinition,
+  type IndexDefinition,
+  type MuboSchema,
+  type ReferenceDefinition,
+  type TableDefinition,
+} from "./db/schema.ts";
 export { MuboDatabase, type MuboDatabaseOptions, type QueryResult } from "./db/database.ts";
 export {
   applyMigrations,
