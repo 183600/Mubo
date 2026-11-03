@@ -738,6 +738,9 @@ export default defineConfig({
     expect(() => resolveConfig({ ws: { heartbeat: { timeoutMs: 0 } } }, { env: {}, argv: [] })).toThrow(
       /Invalid WebSocket heartbeat timeout/,
     );
+    expect(() => resolveConfig({ ws: { heartbeat: { intervalMs: 60000, timeoutMs: 30000 } } }, { env: {}, argv: [] })).toThrow(
+      /WebSocket heartbeat timeout.*must be greater than interval/,
+    );
     expect(() => resolveConfig({ db: { busyTimeoutMs: 1.5 } }, { env: {}, argv: [] })).toThrow(
       /Invalid busy timeout/,
     );

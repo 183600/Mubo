@@ -614,6 +614,12 @@ export function resolveConfig(
   requireInteger("WebSocket max payload", merged.ws.maxPayloadBytes, { exclusiveMin: 0 });
   requireInteger("WebSocket heartbeat interval", merged.ws.heartbeat.intervalMs, { min: 0 });
   requireInteger("WebSocket heartbeat timeout", merged.ws.heartbeat.timeoutMs, { exclusiveMin: 0 });
+  if (merged.ws.heartbeat.timeoutMs <= merged.ws.heartbeat.intervalMs) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      `WebSocket heartbeat timeout (${merged.ws.heartbeat.timeoutMs}ms) must be greater than interval (${merged.ws.heartbeat.intervalMs}ms)`,
+    );
+  }
   return merged;
 }
 
