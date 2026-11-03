@@ -123,4 +123,77 @@ describe("static asset boundary conditions", () => {
     expect(dollar.status).toBe(200);
     await app.stop();
   });
+
+  test("treats files with hash-like but short tokens as non-immutable", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.abc123.js"), "short-hash");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const response = await assets.handle(new Request("http://localhost/app.abc123.js"), new URL("http://localhost/app.abc123.js"));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=3600");
+  });
+
+  test("treats 8-char all-lowercase tokens as non-immutable", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.abcdefgh.js"), "eight-lower");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const response = await assets.handle(new Request("http://localhost/app.abcdefgh.js"), new URL("http://localhost/app.abcdefgh.js"));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=3600");
+  });
+
+  test("treats 8-char mixed-case tokens as immutable", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.aBcDeFgH.js"), "eight-mixed");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const response = await assets.handle(new Request("http://localhost/app.aBcDeFgH.js"), new URL("http://localhost/app.aBcDeFgH.js"));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  test("treats 8-char token with digit as immutable", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.abcdef1g.js"), "eight-with-digit");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const response = await assets.handle(new Request("http://localhost/app.abcdef1g.js"), new URL("http://localhost/app.abcdef1g.js"));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  test("rejects 7-char tokens as non-immutable", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.abcdef.js"), "seven-chars");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const response = await assets.handle(new Request("http://localhost/app.abcdef.js"), new URL("http://localhost/app.abcdef.js"));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=3600");
+  });
+
+  test("rejects 65-char tokens as non-immutable (out of range)", async () => {
+    const dir = tempDir();
+    const longToken = "a".repeat(65);
+    writeFileSync(join(dir, `app.${longToken}.js`), "long-hash");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const response = await assets.handle(new Request(`http://localhost/app.${longToken}.js`), new URL(`http://localhost/app.${longToken}.js`));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=3600");
+  });
+
+  test("rejects tokens with special characters as non-immutable", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "app.abc_def.js"), "underscore-in-token");
+    writeFileSync(join(dir, "app.abc-def.js"), "hyphen-in-token");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const underscoreResp = await assets.handle(new Request("http://localhost/app.abc_def.js"), new URL("http://localhost/app.abc_def.js"));
+    const hyphenResp = await assets.handle(new Request("http://localhost/app.abc-def.js"), new URL("http://localhost/app.abc-def.js"));
+    expect(underscoreResp?.headers.get("cache-control")).toBe("public, max-age=3600");
+    expect(hyphenResp?.headers.get("cache-control")).toBe("public, max-age=3600");
+  });
 });

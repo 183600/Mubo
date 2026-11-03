@@ -316,6 +316,32 @@ export default defineConfig({
     expect(checks.find((check) => check.name === "sqlite")?.ok).toBe(false);
   });
 
+  test("migrate --check on fresh database reports pending migrations", async () => {
+    const cwd = tempDir();
+    const dbPath = join(cwd, "app.sqlite");
+    writeFileSync(join(cwd, "mubo.config.ts"), configSource(dbPath, false));
+    const checked = await runCli(cwd, ["migrate", "--check"]);
+    expect(checked.code).toBe(1);
+    expect(checked.stdout).toContain("pending migration");
+    const checkDb = new Database(dbPath);
+    expect(
+      checkDb.query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get(),
+    ).toBeNull();
+    checkDb.close();
+  });
+
+  test("migrate --check after prior migrations applies reports up to date", async () => {
+    const cwd = tempDir();
+    const dbPath = join(cwd, "app.sqlite");
+    writeFileSync(join(cwd, "mubo.config.ts"), configSource(dbPath, false));
+    await runCli(cwd, ["migrate"]);  // apply mode creates users table
+    const checked = await runCli(cwd, ["migrate", "--check"]);
+    expect(checked.code).toBe(0);
+    expect(checked.stdout).toContain("up to date");
+    const checkDb = new Database(dbPath);
+    checkDb.close();
+  });
+
   test("doctor reports invalid configuration instead of crashing", async () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "mubo.config.ts"), "export default { http: { port: 99999 } };\n");

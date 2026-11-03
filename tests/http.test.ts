@@ -260,6 +260,50 @@ describe("HTTP routing and middleware", () => {
     expect(payload.error.message).toContain("already been consumed");
   });
 
+  test("allows reading body then text after body is cached", async () => {
+    const app = await startApp({
+      app: { name: "body-then-text-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.post("/body-then-text", async (ctx) => {
+      const body = await ctx.body();
+      const text = await ctx.text();
+      return ctx.json({ body: body ?? null, text });
+    });
+
+    const response = await fetch(`${base(app)}/body-then-text`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hello: "world" }),
+    });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { text: string; body: unknown };
+    expect(payload.text).toBe('{"hello":"world"}');
+    expect(payload.body).toEqual({ hello: "world" });
+  });
+
+  test("rejects oversized bodies just over the limit", async () => {
+    const app = await startApp({
+      app: { name: "body-limit-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: { bodyLimit: 10 },
+    });
+    app.post("/over", async (ctx) => ctx.json({ body: await ctx.body() }));
+
+    const response = await fetch(`${base(app)}/over`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ data: "01234567890" }),
+    });
+    expect(response.status).toBe(413);
+    const payload = (await response.json()) as { error: { code: string; message: string } };
+    expect(payload.error.code).toBe("PAYLOAD_TOO_LARGE");
+  });
+
   test("provides health, readiness, 404 and 405 responses", async () => {
     const app = await startApp({
       app: { name: "health-test", env: "test" },
