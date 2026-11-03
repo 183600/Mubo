@@ -1858,4 +1858,47 @@ describe("database and automatic migrations", () => {
     expect(db.query("SELECT value FROM events").all()).toEqual([]);
     db.close();
   });
+
+  test("plan() passes through safeOnly and other migration options", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+
+    await db.migrate(
+      defineSchema({
+        tables: {
+          settings: {
+            columns: { id: { type: "integer", primaryKey: true }, note: { type: "text" } },
+          },
+        },
+      }),
+    );
+
+    const withNotNull = defineSchema({
+      tables: {
+        settings: {
+          columns: { id: { type: "integer", primaryKey: true }, note: { type: "text", notNull: true } },
+        },
+      },
+    });
+
+    expect(() => db.plan(withNotNull, { safeOnly: true })).toThrow(/safeOnly is enabled/);
+    expect(() => db.plan(withNotNull, { safeOnly: false })).toThrow(/automatic destructive migrations/);
+
+    const unchanged = defineSchema({
+      tables: {
+        settings: {
+          columns: { id: { type: "integer", primaryKey: true }, note: { type: "text" } },
+        },
+      },
+    });
+    expect(db.plan(unchanged, { safeOnly: false })).toMatchObject({
+      id: null,
+      statements: [],
+      changes: [],
+    });
+
+    const offResult = await db.migrate(unchanged, { mode: "off" });
+    expect(offResult.status).toBe("off");
+
+    db.close();
+  });
 });
