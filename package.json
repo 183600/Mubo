@@ -25,6 +25,7 @@
     "test": "bun test",
     "check": "bun run typecheck && bun test"
   },
+  "workspaces": ["examples/minimal"],
   "engines": {
     "bun": ">=1.2.0"
   },
