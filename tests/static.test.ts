@@ -464,6 +464,19 @@ describe("static assets", () => {
     expect(await cacheFor("/main.abcdefgh.js")).toBe("public, max-age=3600");
   });
 
+  test("respects defaultMaxAgeSeconds of 0 for no caching", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "plain.js"), "plain");
+    const assets = new StaticAssets(
+      { mode: "disk", dir, cache: { defaultMaxAgeSeconds: 0 } },
+      dir,
+    );
+
+    const response = await assets.handle(new Request("http://localhost/plain.js"), new URL("http://localhost/plain.js"));
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=0");
+  });
+
   test("serves embedded assets without touching disk", async () => {
     const app = await createMuboApp(
       {
