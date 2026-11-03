@@ -77,6 +77,9 @@ function assertRoomName(room: string): void {
   if (typeof room !== "string" || room.trim().length === 0) {
     throw new MuboError("VALIDATION_ERROR", "Room name cannot be empty");
   }
+  if (/\s/.test(room)) {
+    throw new MuboError("VALIDATION_ERROR", "Room name cannot contain whitespace");
+  }
 }
 
 function isEmptyPayload(payload: string | ArrayBuffer | ArrayBufferView | Blob): boolean {

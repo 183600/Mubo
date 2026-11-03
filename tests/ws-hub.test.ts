@@ -234,6 +234,16 @@ describe("WebSocket room hub", () => {
     expect(second.closes).toEqual([[1001, "restart"]]);
   });
 
+  test("rejects room names containing whitespace", () => {
+    const hub = new WsRoomHub();
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, logger, "");
+    expect(() => hub.subscribe(ctx, "my room")).toThrow(MuboError);
+    expect(() => hub.subscribe(ctx, "room\t")).toThrow(MuboError);
+    expect(() => hub.subscribe(ctx, " room")).toThrow(MuboError);
+    expect(() => hub.publish("bad name", {})).toThrow(MuboError);
+  });
+
   test("rejects sending non-JSON-serializable payloads via ctx.send", () => {
     const hub = new WsRoomHub();
     const socket = fakeSocket();
