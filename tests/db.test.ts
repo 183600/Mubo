@@ -1459,6 +1459,40 @@ describe("database and automatic migrations", () => {
     expect(() => afterClose.next()).toThrow(/Database is closed/);
   });
 
+  test("nested transaction rollback rolls back the outer transaction", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)");
+    let caught: unknown;
+    try {
+      db.transaction(() => {
+        db.query("INSERT INTO items (name) VALUES (?)").run("outer");
+        db.transaction(() => {
+          db.query("INSERT INTO items (name) VALUES (?)").run("inner");
+          throw new Error("inner boom");
+        });
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(
+      db.query<{ count: number }>("SELECT COUNT(*) AS count FROM items").get(),
+    ).toEqual({ count: 0 });
+    db.close();
+  });
+
+  test("iterate works outside a transaction and stops after close", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)");
+    db.query("INSERT INTO items (name) VALUES ('a'), ('b')").run();
+    const rows = [
+      ...db.query<{ name: string }>("SELECT name FROM items ORDER BY id").iterate(),
+    ];
+    expect(rows.map((row) => row.name)).toEqual(["a", "b"]);
+    db.close();
+    expect(() => db.query("SELECT 1").iterate().next()).toThrow(/Database is closed/);
+  });
+
   test("rejects invalid database options before opening SQLite", async () => {
     expect(() => new MuboDatabase({ path: "" })).toThrow(/path must not be empty/);
     expect(() => new MuboDatabase({ path: "   " })).toThrow(/path must not be empty/);
