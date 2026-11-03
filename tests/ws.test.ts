@@ -91,6 +91,84 @@ describe("WebSocket payload serialization", () => {
     circular.self = circular;
     expect(() => serializePayload(circular)).toThrow(MuboError);
   });
+
+  test("handles null and various primitive types", () => {
+    expect(serializePayload(null)).toBe("null");
+    expect(serializePayload(true)).toBe("true");
+    expect(serializePayload(false)).toBe("false");
+    expect(serializePayload(0)).toBe("0");
+    expect(serializePayload(123)).toBe("123");
+    expect(serializePayload(3.14)).toBe("3.14");
+    expect(serializePayload("")).toBe("");
+    expect(serializePayload("hello")).toBe("hello");
+  });
+
+  test("handles ArrayBuffer and ArrayBufferView types", () => {
+    const arrayBuffer = new ArrayBuffer(4);
+    expect(serializePayload(arrayBuffer)).toBe(arrayBuffer);
+
+    const uint8 = new Uint8Array([1, 2, 3, 4]);
+    expect(serializePayload(uint8)).toBe(uint8);
+
+    const int32 = new Int32Array(2);
+    expect(serializePayload(int32)).toBe(int32);
+
+    const float64 = new Float64Array(1);
+    expect(serializePayload(float64)).toBe(float64);
+  });
+
+  test("handles Blob types", () => {
+    const blob = new Blob(["hello world"], { type: "text/plain" });
+    expect(serializePayload(blob)).toBe(blob);
+    expect(blob.size).toBe(11);
+
+    const emptyBlob = new Blob([]);
+    expect(serializePayload(emptyBlob)).toBe(emptyBlob);
+    expect(emptyBlob.size).toBe(0);
+  });
+
+  test("stringifies JSON objects with circular reference detection", () => {
+    const obj: Record<string, unknown> = { name: "test" };
+    obj.self = obj;
+
+    expect(() => serializePayload(obj)).toThrow(/not JSON serializable/);
+  });
+
+  test("handles NaN and Infinity values in JSON", () => {
+    const nanResult = serializePayload({ value: Number.NaN });
+    expect(nanResult).toBe('{"value":null}');
+
+    const infResult = serializePayload({ value: Number.POSITIVE_INFINITY });
+    expect(infResult).toBe('{"value":null}');
+
+    const negInfResult = serializePayload({ value: Number.NEGATIVE_INFINITY });
+    expect(negInfResult).toBe('{"value":null}');
+  });
+
+  test("handles Date objects which serialize to ISO strings", () => {
+    const date = new Date("2024-01-15T10:30:00.000Z");
+    const result = serializePayload({ timestamp: date });
+    expect(result).toBe('{"timestamp":"2024-01-15T10:30:00.000Z"}');
+  });
+
+  test("preserves nested object structure", () => {
+    const nested = {
+      level1: {
+        level2: {
+          level3: {
+            value: "deep",
+          },
+        },
+      },
+    };
+    expect(serializePayload(nested)).toBe(JSON.stringify(nested));
+  });
+
+  test("handles arrays correctly", () => {
+    expect(serializePayload([])).toBe("[]");
+    expect(serializePayload([1, 2, 3])).toBe("[1,2,3]");
+    expect(serializePayload(["a", "b", "c"])).toBe('["a","b","c"]');
+  });
 });
 
 describe("WebSocket route registration", () => {
