@@ -7,7 +7,7 @@ export function normalizePath(path: string): string {
 
 export function normalizeRoutePath(path: string): string {
   if (path.includes("?") || path.includes("#")) {
-    throw new MuboError("CONFIG_ERROR", `Path must not contain a query or fragment: ${path}`);
+    throw new MuboError("CONFIG_ERROR", `must not contain a query or fragment: ${path}`);
   }
   return normalizePath(path);
 }
