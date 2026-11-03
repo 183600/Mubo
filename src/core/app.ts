@@ -21,6 +21,7 @@ import {
   type WsSocketData,
 } from "../ws/hub.ts";
 import {
+  normalizePath,
   normalizeRoutePath,
   decodeLookupPath,
   routeIdentity,
@@ -230,7 +231,8 @@ export class MuboApp {
   }
 
   private async healthResponse(ctx: MuboRequestContext, pathname: string): Promise<Response | null> {
-    const path = pathname.replace(/^\/+|\/+$/g, "");
+    const normalized = normalizePath(pathname);
+    const path = normalized.replace(/^\/+|\/+$/g, "");
     if (path !== "healthz" && path !== "readyz") return null;
     if (ctx.method !== "GET" && ctx.method !== "HEAD") return null;
     if (path === "readyz") {
