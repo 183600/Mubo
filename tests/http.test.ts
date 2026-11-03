@@ -293,6 +293,39 @@ describe("HTTP routing and middleware", () => {
     expect(wrongMethod.headers.get("allow")).toContain("OPTIONS");
   });
 
+  test("OPTIONS to a GET-only route returns 405 with Allow and request id", async () => {
+    const app = await startApp({
+      app: { name: "options-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/users/:id", (ctx) => ctx.json({ id: ctx.params.id }));
+
+    const response = await fetch(`${base(app)}/users/1`, { method: "OPTIONS" });
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toContain("GET");
+    expect(response.headers.get("allow")).toContain("HEAD");
+    expect(response.headers.get("allow")).toContain("OPTIONS");
+    expect(response.headers.get("x-request-id")).toBeString();
+    const payload = (await response.json()) as { error: { code: string } };
+    expect(payload.error.code).toBe("METHOD_NOT_ALLOWED");
+  });
+
+  test("GET with no body returns null from ctx.body", async () => {
+    const app = await startApp({
+      app: { name: "no-body-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/no-body", async (ctx) => ctx.json({ body: await ctx.body() }));
+
+    const response = await fetch(`${base(app)}/no-body`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ body: null });
+  });
+
   test("adds a request id to Bun.serve fallback errors", async () => {
     const app = await startApp({
       app: { name: "serve-error-test", env: "test" },
