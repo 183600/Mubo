@@ -298,4 +298,46 @@ describe("request context bodies", () => {
     expect(json.error.code).toBe("CUSTOM_ERROR");
     expect(json.error.message).toBe("custom error");
   });
+
+  test("formData() after body() returns the same cached bytes", async () => {
+    const body = "title=hello&body=world";
+    const ctx = contextFor(postRequest(body, "application/x-www-form-urlencoded"));
+    const parsed = await ctx.body();
+    expect(parsed).toEqual({ title: "hello", body: "world" });
+    const form = await ctx.formData();
+    expect(form.get("title")).toBe("hello");
+    expect(form.get("body")).toBe("world");
+  });
+
+  test("text() after formData() returns the raw body text", async () => {
+    const body = "raw body text";
+    const ctx = contextFor(postRequest(body, "application/x-www-form-urlencoded"));
+    await ctx.formData();
+    expect(await ctx.text()).toBe(body);
+  });
+
+  test("body() after formData() returns the same parsed result", async () => {
+    const ctx = contextFor(postRequest("a=1&b=2", "application/x-www-form-urlencoded"));
+    await ctx.formData();
+    const parsed = await ctx.body();
+    expect(parsed).toEqual({ a: "1", b: "2" });
+  });
+
+  test("multipart body parsed via body() returns raw bytes, not form fields", async () => {
+    const boundary = "----mubo-boundary";
+    const body = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="title"',
+      "",
+      "hello",
+      `--${boundary}--`,
+      "",
+    ].join("\r\n");
+    const ctx = contextFor(postRequest(body, `multipart/form-data; boundary=${boundary}`));
+    const parsed = await ctx.body();
+    expect(parsed).toBeInstanceOf(Uint8Array);
+    const text = new TextDecoder().decode(parsed as Uint8Array);
+    expect(text).toContain('name="title"');
+    expect(text).toContain("hello");
+  });
 });
