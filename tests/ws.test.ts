@@ -888,4 +888,46 @@ describe("WebSocket rooms and broadcasting", () => {
     // verify the app didn't crash and check what happened
     socket.socket.close();
   });
+
+  test("onError returning a Promise is awaited and its rejections are logged", async () => {
+    const errors: string[] = [];
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-onerror-promise-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+        throw new Error("connect exploded");
+      },
+      onError(ctx, error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        return Promise.resolve().then(() => {
+          errors.push("on-error-promise-resolved");
+          ctx.send({ type: "error-handled" });
+        });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+      expect(await socket.next()).toEqual({ type: "ready" });
+      expect(await socket.next()).toEqual({ type: "error-handled" });
+      expect(errors).toContain("connect exploded");
+      expect(errors).toContain("on-error-promise-resolved");
+      socket.socket.close();
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
 });
