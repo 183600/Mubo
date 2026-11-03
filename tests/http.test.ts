@@ -409,6 +409,64 @@ describe("HTTP routing and middleware", () => {
     }
   });
 
+  test("validates request ID format and falls back to UUID", async () => {
+    const app = await startApp({
+      app: { name: "request-id-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/check", (ctx) => ctx.json({ requestId: ctx.requestId }));
+
+    const validIds = [
+      "simple-id",
+      "with.numbers_123",
+      "with-dashes-and.dots",
+      "UPPERCASE",
+      "a".repeat(128),
+    ];
+    for (const id of validIds) {
+      const response = await fetch(`${base(app)}/check`, { headers: { "x-request-id": id } });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { requestId: string };
+      expect(body.requestId).toBe(id);
+    }
+
+    const invalidIds = [
+      "",
+      "with spaces",
+      "with/slash",
+      "with?query",
+      "with#hash",
+      "with@symbol",
+      "a".repeat(129),
+    ];
+    for (const id of invalidIds) {
+      const response = await fetch(`${base(app)}/check`, { headers: { "x-request-id": id } });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { requestId: string };
+      expect(body.requestId).not.toBe(id);
+      expect(body.requestId).toMatch(/^[a-f0-9-]{36}$/);
+    }
+  });
+
+  test("returns 400 for completely invalid URL", async () => {
+    const app = await startApp({
+      app: { name: "invalid-url-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/normal", (ctx) => ctx.json({ ok: true }));
+
+    const response = await fetch(`http://127.0.0.1:${app.port}/%80%80`, {
+      headers: { "x-request-id": "test-req" },
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("BAD_REQUEST");
+  });
+
   test("refuses to start when migrations are pending", async () => {
     const app = await createMuboApp(
       {
