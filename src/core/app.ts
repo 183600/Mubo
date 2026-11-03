@@ -30,6 +30,44 @@ export interface CreateMuboAppOptions extends ResolveConfigOptions {}
 
 type WsRoute = { path: string; handlers: WsHandlers };
 
+type ShutdownSignal = "SIGINT" | "SIGTERM";
+
+const SHUTDOWN_SIGNALS: ShutdownSignal[] = ["SIGINT", "SIGTERM"];
+
+const runningApps = new Set<MuboApp>();
+let shutdownHandlers: Array<[ShutdownSignal, () => void]> | undefined;
+
+function installShutdownHandlers(): void {
+  if (shutdownHandlers) return;
+  const handlers: Array<[ShutdownSignal, () => void]> = [];
+  for (const signal of SHUTDOWN_SIGNALS) {
+    const handler = () => {
+      void shutdownRunningApps(signal);
+    };
+    process.on(signal, handler);
+    handlers.push([signal, handler]);
+  }
+  shutdownHandlers = handlers;
+}
+
+function removeShutdownHandlers(): void {
+  if (!shutdownHandlers) return;
+  for (const [signal, handler] of shutdownHandlers) process.removeListener(signal, handler);
+  shutdownHandlers = undefined;
+}
+
+async function shutdownRunningApps(signal: ShutdownSignal): Promise<void> {
+  const apps = [...runningApps];
+  for (const app of apps) {
+    try {
+      await app.stop();
+    } catch (error) {
+      app.logger.error("Graceful shutdown failed", { signal, error: errorMessage(error) });
+    }
+  }
+  if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+}
+
 function validRequestId(value: string | null): value is string {
   return value !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
 }
@@ -96,6 +134,7 @@ export class MuboApp {
   private readonly wsRoutes = new Map<string, WsRoute>();
   private server?: Server<WsSocketData>;
   private starting?: Promise<Server<WsSocketData>>;
+  private stopping?: Promise<void>;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private startedAt?: number;
 
@@ -549,6 +588,8 @@ export class MuboApp {
       this.heartbeatTimer = setInterval(() => this.wsHub.pingAll(), this.config.ws.heartbeat.intervalMs);
       this.heartbeatTimer.unref?.();
     }
+    runningApps.add(this);
+    installShutdownHandlers();
     this.logger.info("Mubo app listening", {
       app: this.config.app.name,
       host: this.config.http.host,
@@ -561,6 +602,19 @@ export class MuboApp {
   }
 
   async stop(): Promise<void> {
+    if (this.stopping) return this.stopping;
+    const stopping = this.stopOnce();
+    this.stopping = stopping;
+    try {
+      await stopping;
+    } finally {
+      if (this.stopping === stopping) this.stopping = undefined;
+    }
+  }
+
+  private async stopOnce(): Promise<void> {
+    runningApps.delete(this);
+    if (runningApps.size === 0) removeShutdownHandlers();
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = undefined;
