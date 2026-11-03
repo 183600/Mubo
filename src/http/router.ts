@@ -5,6 +5,7 @@ import {
   compileRouteSegments,
   decode,
   literalMatches,
+  normalizePath,
   pathSegments,
   matchSegments,
   segmentSpecificity,
@@ -55,7 +56,8 @@ export class Router {
 
   match(method: string, pathname: string): RouteMatch {
     const upper = method.toUpperCase();
-    const parts = pathSegments(pathname);
+    const normalizedPathname = normalizePath(pathname);
+    const parts = pathSegments(normalizedPathname);
 
     const best = findBestMatch(this.routes as readonly { method: string; path: string; segments: { kind: "literal" | "param" | "wildcard"; value: string }[]; handler: unknown }[], upper, parts) ?? (upper === "HEAD" ? findBestMatch(this.routes as readonly { method: string; path: string; segments: { kind: "literal" | "param" | "wildcard"; value: string }[]; handler: unknown }[], "GET", parts) : undefined);
     if (best) return { type: "match", route: best.route as Route, params: best.params };

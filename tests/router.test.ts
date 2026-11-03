@@ -208,6 +208,25 @@ describe("router", () => {
     expect(router.match("GET", "")).toMatchObject({ type: "match", params: {} });
   });
 
+  test("normalizes multiple slashes in request paths", () => {
+    const router = new Router();
+    router.add("GET", "/users/:id", ok("user"));
+    router.add("GET", "/api/test", ok("api"));
+
+    for (const path of ["/users/42", "/users//42", "//users//42"]) {
+      const match = router.match("GET", path);
+      expect(match.type).toBe("match");
+      expect(match.type === "match" ? match.route.path : undefined).toBe("/users/:id");
+      expect(match.type === "match" ? match.params.id : undefined).toBe("42");
+    }
+
+    for (const path of ["/api/test", "/api//test", "//api//test"]) {
+      const match = router.match("GET", path);
+      expect(match.type).toBe("match");
+      expect(match.type === "match" ? match.route.path : undefined).toBe("/api/test");
+    }
+  });
+
   test("rejects parameter names with special characters", () => {
     const invalid = [
       ":/id",

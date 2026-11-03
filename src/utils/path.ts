@@ -1,7 +1,8 @@
 import { MuboError } from "../core/errors.ts";
 
 export function normalizePath(path: string): string {
-  const trimmed = path.replace(/^\/+|\/+$/g, "");
+  const collapsed = path.replace(/\/+/g, "/");
+  const trimmed = collapsed.replace(/^\/+|\/+$/g, "");
   return trimmed ? `/${trimmed}` : "/";
 }
 

@@ -83,7 +83,7 @@ describe("path utilities", () => {
 
     test("normalizes slashes and returns valid paths", () => {
       expect(decodeLookupPath("/a/b/")).toBe("/a/b");
-      expect(decodeLookupPath("///a//b")).toBe("/a//b");
+      expect(decodeLookupPath("///a//b")).toBe("/a/b");
     });
 
     test("handles root paths", () => {
