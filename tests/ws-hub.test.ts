@@ -254,4 +254,16 @@ describe("WebSocket room hub", () => {
     expect(hub.publish("nonexistent", { data: 1 })).toBe(0);
     expect(hub.broadcast({ data: 1 })).toBe(1);
   });
+
+  test("broadcast with a non-existent except id reaches every client", () => {
+    const hub = new WsRoomHub();
+    const first = fakeSocket();
+    const second = fakeSocket();
+    hub.add(first.ws, null, logger, "127.0.0.1");
+    hub.add(second.ws, null, logger, "127.0.0.1");
+
+    expect(hub.broadcast({ event: 1 }, { except: "does-not-exist" })).toBe(2);
+    expect(JSON.parse(first.sent[0] as string)).toEqual({ event: 1 });
+    expect(JSON.parse(second.sent[0] as string)).toEqual({ event: 1 });
+  });
 });

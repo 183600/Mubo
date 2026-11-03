@@ -666,4 +666,33 @@ describe("WebSocket rooms and broadcasting", () => {
 
     socket.close();
   });
+
+  test("ctx.close(code, reason) propagates a close frame to the client", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-close-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.close(4000, "bye");
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const socket = new WebSocket(`ws://127.0.0.1:${app.port}/ws`);
+    const closed = await new Promise<{ code: number; reason: string }>((resolve) => {
+      socket.addEventListener("close", (event) =>
+        resolve({ code: event.code, reason: event.reason }),
+      );
+    });
+    expect(closed.code).toBe(4000);
+    expect(closed.reason).toBe("bye");
+  });
 });
