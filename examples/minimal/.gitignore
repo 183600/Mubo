@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.mubo/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.*
+tmp/
