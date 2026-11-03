@@ -182,6 +182,23 @@ describe("static assets", () => {
     expect(await off.hasFile("/")).toBe(false);
   });
 
+  test("hasFile reflects mode changes via configure", async () => {
+    const dir = publicDir();
+    writeFileSync(join(dir, "disk-only.txt"), "from disk");
+
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    expect(await assets.hasFile("/disk-only.txt")).toBe(true);
+    expect(await assets.hasFile("/missing")).toBe(false);
+
+    assets.configure({ mode: "embedded", assets: { "/embedded-only.txt": "from embedded" } });
+    expect(await assets.hasFile("/disk-only.txt")).toBe(false);
+    expect(await assets.hasFile("/embedded-only.txt")).toBe(true);
+
+    assets.configure({ mode: "off" });
+    expect(await assets.hasFile("/embedded-only.txt")).toBe(false);
+    expect(await assets.hasFile("/disk-only.txt")).toBe(false);
+  });
+
   test("prefers exact embedded asset keys over decoded aliases", async () => {
     const assets = new StaticAssets({
       mode: "embedded",
