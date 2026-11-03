@@ -839,4 +839,54 @@ export default defineConfig({
       resolveConfig({}, { env: { MUBO_WAL: "maybe" }, argv: [] }),
     ).toThrow(/Invalid boolean value/);
   });
+
+  test("rejects invalid MUBO_BUSY_TIMEOUT_MS from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_BUSY_TIMEOUT_MS: "-1" }, argv: [] }),
+    ).toThrow(/Invalid busy timeout/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_BUSY_TIMEOUT_MS: "1.5" }, argv: [] }),
+    ).toThrow(/Invalid busy timeout/);
+  });
+
+  test("accepts zero and positive MUBO_BUSY_TIMEOUT_MS from environment", () => {
+    const config = resolveConfig({}, { env: { MUBO_BUSY_TIMEOUT_MS: "0" }, argv: [] });
+    expect(config.db.busyTimeoutMs).toBe(0);
+    const config100 = resolveConfig({}, { env: { MUBO_BUSY_TIMEOUT_MS: "100" }, argv: [] });
+    expect(config100.db.busyTimeoutMs).toBe(100);
+  });
+
+  test("rejects non-numeric MUBO_BUSY_TIMEOUT_MS from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_BUSY_TIMEOUT_MS: "abc" }, argv: [] }),
+    ).toThrow(/must be a number/);
+  });
+
+  test("rejects invalid MUBO_SLOW_QUERY_MS from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_SLOW_QUERY_MS: "-1" }, argv: [] }),
+    ).toThrow(/Invalid slow query threshold/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_SLOW_QUERY_MS: "Infinity" }, argv: [] }),
+    ).toThrow(/must be a number/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_SLOW_QUERY_MS: "1.5" }, argv: [] }),
+    ).toThrow(/Invalid slow query threshold/);
+  });
+
+  test("accepts zero and positive MUBO_SLOW_QUERY_MS from environment", () => {
+    const config = resolveConfig({}, { env: { MUBO_SLOW_QUERY_MS: "0" }, argv: [] });
+    expect(config.db.slowQueryMs).toBe(0);
+    const config500 = resolveConfig({}, { env: { MUBO_SLOW_QUERY_MS: "500" }, argv: [] });
+    expect(config500.db.slowQueryMs).toBe(500);
+  });
+
+  test("rejects invalid table name via MUBO_MIGRATIONS_TABLE", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_MIGRATIONS_TABLE: "123_invalid" }, argv: [] }),
+    ).toThrow(/Invalid migrations table name/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_MIGRATIONS_TABLE: "invalid-table!" }, argv: [] }),
+    ).toThrow(/Invalid migrations table name/);
+  });
 });
