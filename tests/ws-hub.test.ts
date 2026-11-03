@@ -120,7 +120,7 @@ describe("WebSocket room hub", () => {
     const ctx = hub.add(socket.ws, null, logger, "");
     hub.subscribe(ctx, "lobby");
 
-    for (const room of ["", "   ", "\n\t"]) {
+    for (const room of ["", "   ", "\n\t", "\0", "\x01"]) {
       expect(() => hub.subscribe(ctx, room)).toThrow(MuboError);
       expect(() => hub.unsubscribe(ctx, room)).toThrow(MuboError);
       expect(() => hub.publish(room, {})).toThrow(MuboError);

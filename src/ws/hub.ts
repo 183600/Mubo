@@ -80,6 +80,9 @@ function assertRoomName(room: string): void {
   if (/\s/.test(room)) {
     throw new MuboError("VALIDATION_ERROR", "Room name cannot contain whitespace");
   }
+  if (/\0/.test(room) || /[\x01-\x1F\x7F]/.test(room)) {
+    throw new MuboError("VALIDATION_ERROR", "Room name cannot contain control characters");
+  }
 }
 
 function isEmptyPayload(payload: string | ArrayBuffer | ArrayBufferView | Blob): boolean {
