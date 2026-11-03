@@ -1353,7 +1353,7 @@ describe("database and automatic migrations", () => {
     await db.migrate(initial);
     db.exec("INSERT INTO settings (id) VALUES (1)");
 
-    for (const sqlDefault of ["CURRENT_TIMESTAMP", "(lower('X'))", "(1 + 2)"]) {
+    for (const sqlDefault of ["(lower('X'))", "(1 + 2)"]) {
       const next = defineSchema({
         tables: {
           settings: {

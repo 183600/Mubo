@@ -535,7 +535,10 @@ function normalizeDefault(value: string | null | undefined): string | null {
 
 function isConstantAddColumnDefault(value: string): boolean {
   const text = stripOuterParentheses(value);
-  if (/^(?:NULL|TRUE|FALSE)$/i.test(text)) return true;
+  if (
+    /^(?:NULL|TRUE|FALSE|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME)$/i.test(text)
+  )
+    return true;
   if (
     /^[+-]?(?:0x[0-9a-f]+|\d[\d_]*(?:\.[\d_]*)?(?:[eE][+-]?\d[\d_]*)?|\.[\d_]+(?:[eE][+-]?\d[\d_]*)?)$/i.test(
       text,
