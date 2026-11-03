@@ -896,4 +896,93 @@ describe("static assets", () => {
     expect(response?.status).toBe(403);
     expect(await response!.text()).not.toContain("root:");
   });
+
+  test("handles empty static directory", async () => {
+    const dir = tempDir();
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    const response = await assets.handle(
+      new Request("http://localhost/anything"),
+      new URL("http://localhost/anything"),
+    );
+    expect(response).toBeNull();
+  });
+
+  test("serves embedded assets with unicode-friendly names", async () => {
+    const assets = new StaticAssets({
+      mode: "embedded",
+      assets: {
+        "/résumé.txt": "funny",
+        "/naïve.js": "fancy",
+      },
+    });
+    const url = "http://localhost/résumé.txt";
+    const response = await assets.handle(new Request(url), new URL(url));
+    expect(await response!.text()).toBe("funny");
+
+    const url2 = "http://localhost/naïve.js";
+    const response2 = await assets.handle(new Request(url2), new URL(url2));
+    expect(await response2!.text()).toBe("fancy");
+  });
+
+  test("embedding assets with duplicate decoded keys resolves correctly", async () => {
+    const assets = new StaticAssets({
+      mode: "embedded",
+      assets: {
+        "/%70aram.txt": "param-value",
+        "/param.txt": "exact-value",
+      },
+    });
+    const exactUrl = "http://localhost/param.txt";
+    const exact = await assets.handle(new Request(exactUrl), new URL(exactUrl));
+    expect(await exact!.text()).toBeDefined();
+
+    const decodedUrl = "http://localhost/%70aram.txt";
+    const decoded = await assets.handle(new Request(decodedUrl), new URL(decodedUrl));
+    expect(await decoded!.text()).toBeDefined();
+  });
+
+  test("disk mode serves assets from disk when embedded not found", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "hello.txt"), "from-disk");
+    const assets = new StaticAssets({
+      mode: "disk",
+      dir,
+    });
+    const url = "http://localhost/hello.txt";
+    const response = await assets.handle(new Request(url), new URL(url));
+    expect(await response!.text()).toBe("from-disk");
+  });
+
+  test("handles path with trailing multiple slashes", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "file.txt"), "content");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    for (const path of ["//file.txt", "///file.txt"]) {
+      const url = `http://localhost${path}`;
+      const response = await assets.handle(new Request(url), new URL(url));
+      expect(response?.status).toBe(200);
+      expect(await response!.text()).toBe("content");
+    }
+  });
+
+  test("embedded mode serves assets when disk directory has same name", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "index.html"), "disk-index");
+    const assets = new StaticAssets({
+      mode: "embedded",
+      dir,
+    });
+    const url = "http://localhost/index.html";
+    const response = await assets.handle(new Request(url), new URL(url));
+    expect(await response!.text()).toBe("disk-index");
+  });
+
+  test("disk mode with empty string dir falls back to cwd public", async () => {
+    const assets = new StaticAssets({ mode: "disk", dir: "" }, process.cwd());
+    const hello = await assets.handle(
+      new Request("http://localhost/nonexistent"),
+      new URL("http://localhost/nonexistent"),
+    );
+    expect(hello).toBeNull();
+  });
 });

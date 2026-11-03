@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Router } from "../src/http/router.ts";
+import type { HttpMethod } from "../src/http/router.ts";
 import { MuboError } from "../src/core/errors.ts";
 
 function ok(label: string) {
@@ -388,5 +389,68 @@ describe("router", () => {
 
     const match3 = router.match("GET", "/a/x/y") as { type: string; route: { path: string } };
     expect(match3.route.path).toBe("/a/*");
+  });
+
+  test("match returns type 'match' with params when path matches pattern with params", () => {
+    const router = new Router();
+    router.add("GET", "/users/:id", ok("user"));
+    const match = router.match("GET", "/users/42")!;
+    expect(match.type).toBe("match");
+    expect((match as { type: "match"; params: Record<string, string> }).params).toEqual({ id: "42" });
+  });
+
+  test("match returns type 'match' with allowed methods for 405", () => {
+    const router = new Router();
+    router.add("GET", "/resource", ok("get"));
+    router.add("POST", "/resource", ok("post"));
+    const match = router.match("PUT", "/resource")!;
+    expect(match.type).toBe("method-not-allowed");
+    expect((match as { type: "method-not-allowed"; allowed: HttpMethod[] }).allowed).toContain("GET");
+    expect((match as { type: "method-not-allowed"; allowed: HttpMethod[] }).allowed).toContain("POST");
+  });
+
+  test("match returns 'not-found' for unknown routes", () => {
+    const router = new Router();
+    router.add("GET", "/hello", ok("hello"));
+    const match = router.match("GET", "/world")!;
+    expect(match.type).toBe("not-found");
+  });
+
+  test("HEAD fallback returns 'match' when only GET registered", () => {
+    const router = new Router();
+    router.add("GET", "/api", ok("get-handler"));
+    const match = router.match("HEAD", "/api")!;
+    expect(match.type).toBe("match");
+    expect((match as { type: "match"; params: Record<string, string> }).params).toEqual({});
+  });
+
+  test("wildcard position rejection - wildcard must be at end", () => {
+    const router = new Router();
+    router.add("GET", "/a/b/*", ok("should-not-match"));
+    const match = router.match("GET", "/a/x/b")!;
+    expect(match.type).toBe("not-found");
+  });
+
+  test("dot-segment path rejection", () => {
+    const router = new Router();
+    router.add("GET", "/path/file.txt", ok("match"));
+    const match = router.match("GET", "/path/..//file.txt")!;
+    expect(match.type).toBe("not-found");
+  });
+
+  test("empty param value matching", () => {
+    const router = new Router();
+    router.add("GET", "/search/:q", ok("search"));
+    const match = router.match("GET", "/search/x")!;
+    expect(match.type).toBe("match");
+    expect((match as { type: "match"; params: Record<string, string> }).params).toEqual({ q: "x" });
+  });
+
+  test("literal and param combination matching", () => {
+    const router = new Router();
+    router.add("GET", "/files/:category/report", ok("combo"));
+    const match = router.match("GET", "/files/reports/report")!;
+    expect(match.type).toBe("match");
+    expect((match as { type: "match"; params: Record<string, string> }).params).toEqual({ category: "reports" });
   });
 });
