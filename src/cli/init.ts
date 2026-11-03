@@ -234,6 +234,10 @@ app.ws("/ws", {
       ctx.send({ type: "joined", room: event.data });
       return;
     }
+    if (event.type === "ping") {
+      ctx.send({ type: "pong", data: event.data });
+      return;
+    }
     app.wsHub.publish("lobby", { type: event.type ?? "message", data: event.data });
   },
   onClose(ctx) {
