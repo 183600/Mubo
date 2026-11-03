@@ -708,4 +708,25 @@ export default defineConfig({
       /Invalid HTTP port/,
     );
   });
+
+  test("parses MUBO_BODY_LIMIT and MUBO_WS_MAX_PAYLOAD from environment", () => {
+    const config = resolveConfig(
+      {},
+      {
+        env: { MUBO_BODY_LIMIT: "2048", MUBO_WS_MAX_PAYLOAD: "2097152" },
+        argv: [],
+      },
+    );
+    expect(config.http.bodyLimit).toBe(2048);
+    expect(config.ws.maxPayloadBytes).toBe(2097152);
+  });
+
+  test("rejects zero body limit and zero WebSocket max payload from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_BODY_LIMIT: "0" }, argv: [] }),
+    ).toThrow(/Invalid body limit/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_MAX_PAYLOAD: "0" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket max payload/);
+  });
 });
