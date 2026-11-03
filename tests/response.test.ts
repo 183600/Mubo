@@ -110,4 +110,38 @@ describe("response helpers", () => {
       requestId: "req-6",
     });
   });
+
+  test("errorPayload handles errors with null details explicitly", () => {
+    const error = new MuboError("VALIDATION_ERROR", "bad input", { details: null });
+    const payload = errorPayload("req-null", error, true);
+    expect(payload.error.code).toBe("VALIDATION_ERROR");
+    expect(payload.error.details).toBeNull();
+  });
+
+  test("errorResponse handles errors with null message", () => {
+    const error = new MuboError("FORBIDDEN", "");
+    const response = errorResponse("req-empty-msg", error, false);
+    expect(response.status).toBe(403);
+    expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+  });
+
+  test("errorPayload exposes 4xx errors in production", () => {
+    const error = new MuboError("VALIDATION_ERROR", "validation failed", { details: { field: "email" } });
+    const payload = errorPayload("req-val", error, true);
+    expect(payload.error.message).toBe("validation failed");
+    expect(payload.error.details).toEqual({ field: "email" });
+  });
+
+  test("errorPayload hides 5xx errors in production", () => {
+    const error = new MuboError("CONFIG_ERROR", "config missing: password", { details: { env: "PROD" } });
+    const payload = errorPayload("req-500", error, true);
+    expect(payload.error.message).toBe("Internal server error");
+    expect(payload.error.details).toBeUndefined();
+  });
+
+  test("errorPayload exposes custom errors in development", () => {
+    const error = new MuboError("CUSTOM_ERROR", "custom error message", { status: 400, details: { secret: true } });
+    const payload = errorPayload("req-dev", error, false);
+    expect(payload.error.message).toBe("custom error message");
+  });
 });

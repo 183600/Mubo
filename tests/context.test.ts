@@ -162,4 +162,74 @@ describe("request context bodies", () => {
 
     await expect(ctx.body()).rejects.toThrow(/exceeds 10 bytes/);
   });
+
+  test("handles text/* content type correctly", async () => {
+    const ctx = contextFor(new Request("http://localhost/test", {
+      method: "POST",
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      body: "hello world",
+    }));
+    expect(await ctx.body()).toBe("hello world");
+    expect(await ctx.text()).toBe("hello world");
+  });
+
+  test("handles text/plain without charset", async () => {
+    const ctx = contextFor(new Request("http://localhost/test", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: "plain",
+    }));
+    expect(await ctx.text()).toBe("plain");
+  });
+
+  test("handles text with additional charset info", async () => {
+    const ctx = contextFor(new Request("http://localhost/test", {
+      method: "POST",
+      headers: { "content-type": "text/custom; charset=iso-8859-1" },
+      body: "custom text",
+    }));
+    expect(await ctx.text()).toBe("custom text");
+  });
+
+  test("handles empty content type as text", async () => {
+    const ctx = contextFor(new Request("http://localhost/test", {
+      method: "POST",
+      body: "raw bytes",
+    }));
+    expect(await ctx.text()).toBe("raw bytes");
+  });
+
+  test("caches body reading - multiple body calls return same result", async () => {
+    const ctx = contextFor(new Request("http://localhost/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: '{"test":1}',
+    }));
+    const first = await ctx.body();
+    const second = await ctx.body();
+    expect(first).toBe(second);
+  });
+
+  test("json helper method creates proper JSON responses", async () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+    const response = ctx.json({ key: "value" }, { status: 201 });
+    expect(response.status).toBe(201);
+    expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(await response.json()).toEqual({ key: "value" });
+  });
+
+  test("textResponse helper creates proper text responses", async () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+    const response = ctx.textResponse("hello world", { status: 202 });
+    expect(response.status).toBe(202);
+    expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await response.text()).toBe("hello world");
+  });
+
+  test("ok helper creates JSON responses", async () => {
+    const ctx = contextFor(new Request("http://localhost/test"));
+    const response = ctx.ok({ success: true });
+    expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(await response.json()).toEqual({ success: true });
+  });
 });

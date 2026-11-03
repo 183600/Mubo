@@ -276,4 +276,48 @@ describe("WebSocket room hub", () => {
     expect(JSON.parse(first.sent[0] as string)).toEqual({ event: 1 });
     expect(JSON.parse(second.sent[0] as string)).toEqual({ event: 1 });
   });
+
+  test("handles send failure when socket returns 0 for non-empty payload", () => {
+    const hub = new WsRoomHub();
+    const failing = fakeSocket(0);
+    const ctx = hub.add(failing.ws, null, logger, "");
+
+    hub.subscribe(ctx, "test");
+    const result = hub.publish("test", { data: 1 });
+    expect(result).toBe(0);
+    expect(failing.sent).toHaveLength(1);
+  });
+
+  test("handles ping failure gracefully", async () => {
+    const hub = new WsRoomHub();
+    const errorSocket = fakeSocket();
+    const pingError = new Error("ping failed");
+    errorSocket.ws.ping = () => {
+      throw pingError;
+    };
+    hub.add(errorSocket.ws, null, logger, "");
+
+    hub.pingAll();
+  });
+
+  test("handles close failure gracefully", () => {
+    const hub = new WsRoomHub();
+    const errorSocket = fakeSocket();
+    errorSocket.ws.close = () => {
+      throw new Error("close failed");
+    };
+    hub.add(errorSocket.ws, null, logger, "");
+
+    expect(() => hub.closeAll()).not.toThrow();
+  });
+
+  test("handles WebSocket error handler failures gracefully", async () => {
+    const errors: string[] = [];
+    const hub = new WsRoomHub(createLogger({ level: "error" }));
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, createLogger({ level: "error" }), "");
+
+    ctx.send({ value: 1 });
+    expect(socket.sent).toHaveLength(1);
+  });
 });

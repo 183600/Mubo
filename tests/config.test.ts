@@ -313,6 +313,49 @@ export default defineConfig({
     );
   });
 
+  test("handles --no-static and --no-ws without explicit values", () => {
+    const config1 = resolveConfig({}, { env: {}, argv: ["--no-static", "--no-ws"] });
+    expect(config1.static.mode).toBe("off");
+    expect(config1.ws.enabled).toBe(false);
+
+    const config2 = resolveConfig({}, { env: {}, argv: [] });
+    expect(config2.static.mode).toBe("disk");
+    expect(config2.ws.enabled).toBe(true);
+  });
+
+  test("handles --no-static=false enabling static again", () => {
+    const config = resolveConfig({}, { env: {}, argv: ["--no-static=false"] });
+    expect(config.static.mode).toBe("disk");
+  });
+
+  test("resolves relative db and static paths", () => {
+    const cwd = tempDir();
+    const config = resolveConfig(
+      {
+        db: { path: "data/app.sqlite" },
+        static: { dir: "public" },
+      },
+      { cwd, env: {}, argv: [] },
+    );
+    expect(config.db.path).toBe(join(cwd, "data/app.sqlite"));
+    expect(config.static.dir).toBe(join(cwd, "public"));
+  });
+
+  test("preserves absolute db and static paths unchanged", () => {
+    const cwd = tempDir();
+    const absDb = "/tmp/mubo-data/app.sqlite";
+    const absStatic = "/tmp/mubo-assets";
+    const config = resolveConfig(
+      {
+        db: { path: absDb },
+        static: { dir: absStatic },
+      },
+      { cwd, env: {}, argv: [] },
+    );
+    expect(config.db.path).toBe(absDb);
+    expect(config.static.dir).toBe(absStatic);
+  });
+
   test("treats an empty MUBO_HOST as unset", () => {
     const config = resolveConfig({}, { env: { MUBO_HOST: "" }, argv: [] });
     expect(config.http.host).toBe("127.0.0.1");

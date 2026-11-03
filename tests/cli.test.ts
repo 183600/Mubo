@@ -362,4 +362,76 @@ export default defineConfig({
     expect(config?.ok).toBe(false);
     expect(config?.detail).toContain("Config file not found");
   });
+
+  test("parses --no-ws with empty string as missing value", async () => {
+    const parsed = parseCliArgs(["--no-ws="]);
+    expect(() => boolFlag(parsed, "no-ws")).toThrow(/Missing value for --no-ws/);
+  });
+
+  test("parses --no-static with empty string as missing value", async () => {
+    const parsed = parseCliArgs(["--no-static="]);
+    expect(() => boolFlag(parsed, "no-static")).toThrow(/Missing value for --no-static/);
+  });
+
+  test("treats flag set to true as enabling that flag", () => {
+    const parsed = parseCliArgs(["--no-ws=true"]);
+    expect(boolFlag(parsed, "no-ws")).toBe(true);
+  });
+
+  test("treats flag set to 1 as enabling that flag", () => {
+    const parsed = parseCliArgs(["--no-static=1"]);
+    expect(boolFlag(parsed, "no-static")).toBe(true);
+  });
+
+  test("treats flag set to on as enabling that flag", () => {
+    const parsed = parseCliArgs(["--no-ws=on"]);
+    expect(boolFlag(parsed, "no-ws")).toBe(true);
+  });
+
+  test("treats flag set to yes as enabling that flag", () => {
+    const parsed = parseCliArgs(["--no-static=yes"]);
+    expect(boolFlag(parsed, "no-static")).toBe(true);
+  });
+
+  test("treats flag set to TRUE as enabling that flag", () => {
+    const parsed = parseCliArgs(["--no-ws=TRUE"]);
+    expect(boolFlag(parsed, "no-ws")).toBe(true);
+  });
+
+  test("treats flag set to YES as enabling that flag", () => {
+    const parsed = parseCliArgs(["--no-static=YES"]);
+    expect(boolFlag(parsed, "no-static")).toBe(true);
+  });
+
+  test("handles whitespace in boolean flag values", () => {
+    const parsed = parseCliArgs(["--no-ws= true "]);
+    expect(boolFlag(parsed, "no-ws")).toBe(true);
+  });
+
+  test("throws for flag with whitespace-only value", () => {
+    const parsed = parseCliArgs(["--no-ws=   "]);
+    expect(() => boolFlag(parsed, "no-ws")).toThrow(/Missing value for --no-ws/);
+  });
+
+  test("treats non-boolean flag values as strings", () => {
+    const parsed = parseCliArgs(["--custom-flag=value"]);
+    expect(parsed.flags.get("custom-flag")).toBe("value");
+  });
+
+  test("handles flags without values when followed by another flag", () => {
+    const parsed = parseCliArgs(["--flag1", "--flag2=value"]);
+    expect(parsed.flags.get("flag1")).toBe(true);
+    expect(parsed.flags.get("flag2")).toBe("value");
+  });
+
+  test("handles help flag in various forms", () => {
+    const help1 = parseCliArgs(["--help"]);
+    expect(help1.flags.get("help")).toBe(true);
+
+    const help2 = parseCliArgs(["--help=1"]);
+    expect(help2.flags.get("help")).toBe("1");
+
+    const help3 = parseCliArgs(["--help=true"]);
+    expect(help3.flags.get("help")).toBe("true");
+  });
 });

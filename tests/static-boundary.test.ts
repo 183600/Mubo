@@ -196,4 +196,141 @@ describe("static asset boundary conditions", () => {
     expect(underscoreResp?.headers.get("cache-control")).toBe("public, max-age=3600");
     expect(hyphenResp?.headers.get("cache-control")).toBe("public, max-age=3600");
   });
+
+  test("handles embedded assets with base64 data", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "embedded-base64-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: {
+          mode: "embedded",
+          assets: {
+            "/data.bin": {
+              data: Buffer.from("binary-data").toString("base64"),
+              encoding: "base64",
+              type: "application/octet-stream",
+            },
+          },
+        },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    const resp = await fetch(`${root}/data.bin`);
+    expect(resp.status).toBe(200);
+    expect(await resp.text()).toBe("binary-data");
+    expect(resp.headers.get("content-type")).toBe("application/octet-stream");
+  });
+
+  test("handles embedded assets with ArrayBuffer and Uint8Array data", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "embedded-arraybuffer-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: {
+          mode: "embedded",
+          assets: {
+            "/uint8.bin": new Uint8Array([1, 2, 3, 4, 5]),
+            "/ab.bin": new ArrayBuffer(3),
+          },
+        },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    const uint8Resp = await fetch(`${root}/uint8.bin`);
+    expect(uint8Resp.status).toBe(200);
+    expect(new Uint8Array(await uint8Resp.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+  });
+
+  test("serves embedded assets with custom type metadata", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "embedded-custom-type-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: {
+          mode: "embedded",
+          assets: {
+            "/custom.wasm": {
+              data: "fake-wasm-content",
+              type: "application/wasm",
+            },
+          },
+        },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    const resp = await fetch(`${root}/custom.wasm`);
+    expect(resp.status).toBe(200);
+    expect(resp.headers.get("content-type")).toBe("application/wasm");
+  });
+
+  test("handles embedded assets with text.utf8 string data", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "embedded-utf8-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: {
+          mode: "embedded",
+          assets: {
+            "/unicode.txt": "Hello 世界 🌍",
+          },
+        },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    const resp = await fetch(`${root}/unicode.txt`);
+    expect(resp.status).toBe(200);
+    expect(await resp.text()).toBe("Hello 世界 🌍");
+  });
+
+  test("normalizes embedded asset keys for duplicate route resolution", async () => {
+    const assets = new StaticAssets(
+      {
+        mode: "embedded",
+        assets: { "/a.txt": "lowercase", "/A.TXT": "uppercase" },
+      },
+      tempDir(),
+    );
+
+    const resp1 = await assets.handle(new Request("http://localhost/a.txt"), new URL("http://localhost/a.txt"));
+    const resp2 = await assets.handle(new Request("http://localhost/A.TXT"), new URL("http://localhost/A.TXT"));
+
+    expect(assets.enabled).toBe(true);
+  });
+
+  test("returns correct ETag for embedded assets without explicit etag", async () => {
+    const dir = tempDir();
+    const assets = new StaticAssets(
+      {
+        mode: "embedded",
+        assets: { "/etag.js": "content for etag" },
+      },
+      dir,
+    );
+
+    const resp = await assets.handle(new Request("http://localhost/etag.js"), new URL("http://localhost/etag.js"));
+    expect(resp?.status).toBe(200);
+    const etag = resp?.headers.get("etag");
+    expect(etag).toBeTruthy();
+    expect(etag).toMatch(/^".+"/);
+  });
 });
