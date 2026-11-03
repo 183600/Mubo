@@ -190,14 +190,14 @@ export class WsRoomHub {
 
   subscribe(ctx: MuboWsContext | string, room?: string): void {
     const context = typeof ctx === "string" ? this.clients.get(ctx as string)?.ctx : ctx;
-    const roomName = typeof ctx === "string" ? room! : room!;
-    this.subscribeToRoom(context!, roomName);
+    if (!context) return;
+    this.subscribeToRoom(context, room!);
   }
 
   unsubscribe(ctx: MuboWsContext | string, room?: string): void {
     const context = typeof ctx === "string" ? this.clients.get(ctx as string)?.ctx : ctx;
-    const roomName = typeof ctx === "string" ? room! : room!;
-    this.unsubscribeFromRoom(context!, roomName);
+    if (!context) return;
+    this.unsubscribeFromRoom(context, room!);
   }
 
   private subscribeToRoom(ctx: MuboWsContext, room: string): void {

@@ -114,6 +114,21 @@ describe("WebSocket room hub", () => {
     expect(socket.sent).toHaveLength(1);
   });
 
+  test("ignores subscribe and unsubscribe for unknown client ids", () => {
+    const hub = new WsRoomHub();
+    expect(() => hub.subscribe("stale-id", "lobby")).not.toThrow();
+    expect(() => hub.unsubscribe("stale-id", "lobby")).not.toThrow();
+    expect(hub.roomSize("lobby")).toBe(0);
+
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, logger, "");
+    hub.subscribe(ctx, "lobby");
+    hub.remove(socket.ws);
+    expect(() => hub.subscribe(ctx.id, "lobby")).not.toThrow();
+    expect(() => hub.unsubscribe(ctx.id, "lobby")).not.toThrow();
+    expect(hub.clientCount).toBe(0);
+  });
+
   test("rejects blank room names and reports failed sends", () => {
     const hub = new WsRoomHub();
     const socket = fakeSocket();
