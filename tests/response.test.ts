@@ -144,4 +144,24 @@ describe("response helpers", () => {
     const payload = errorPayload("req-dev", error, false);
     expect(payload.error.message).toBe("custom error message");
   });
+
+  test("MuboError with status outside 400-599 is not exposed and errorResponse falls back to 500", async () => {
+    const error = new MuboError("BAD_REQUEST", "too early", { status: 300 });
+    expect(error.expose).toBe(false);
+    expect(error.status).toBe(300);
+
+    const response = errorResponse("req-300", error, false);
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: { code: string; message: string }; requestId: string };
+    expect(body.error.code).toBe("BAD_REQUEST");
+    expect(body.error.message).toBe("Internal server error");
+  });
+
+  test("non-MuboError with a status property is not treated as a known error", async () => {
+    const plain = { message: "oops", status: 418 } as unknown;
+    const response = errorResponse("req-plain", plain, false);
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("INTERNAL_ERROR");
+  });
 });
