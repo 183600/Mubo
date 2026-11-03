@@ -692,4 +692,27 @@ describe("middleware boundaries", () => {
     expect(response.status).toBe(200);
     expect(order).toEqual(["a-before", "b-before", "handler", "b-after", "a-after"]);
   });
+
+  test("app.options() registers an OPTIONS route and responds to preflight-style requests", async () => {
+    const app = await startApp({
+      app: { name: "options-route-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.options("/resource", (ctx) =>
+      ctx.json({ allowed: ["GET", "POST", "OPTIONS"] }),
+    );
+    app.get("/resource", (ctx) => ctx.json({ ok: true }));
+
+    const optionsResponse = await fetch(`${base(app)}/resource`, { method: "OPTIONS" });
+    expect(optionsResponse.status).toBe(200);
+    expect(await optionsResponse.json()).toEqual({
+      allowed: ["GET", "POST", "OPTIONS"],
+    });
+
+    const getResponse = await fetch(`${base(app)}/resource`);
+    expect(getResponse.status).toBe(200);
+    expect(await getResponse.json()).toEqual({ ok: true });
+  });
 });
