@@ -333,4 +333,151 @@ describe("static asset boundary conditions", () => {
     expect(etag).toBeTruthy();
     expect(etag).toMatch(/^".+"/);
   });
+
+  test("handles suffix byte range larger than file size", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "small.txt"), "hi");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const url = "http://localhost/small.txt";
+    // Request last 100 bytes from a 2-byte file
+    const response = await assets.handle(
+      new Request(url, { headers: { range: "bytes=-100" } }),
+      new URL(url),
+    );
+    // Should return full file (200 or 206 with full content)
+    expect(response?.status).toBe(206);
+    expect(await response?.text()).toBe("hi");
+    expect(response?.headers.get("content-range")).toBe("bytes 0-1/2");
+  });
+
+  test("handles suffix byte range of zero", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "data.txt"), "0123456789");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const url = "http://localhost/data.txt";
+    // bytes=-0 should be ignored (return full file)
+    const response = await assets.handle(
+      new Request(url, { headers: { range: "bytes=-0" } }),
+      new URL(url),
+    );
+    expect(response?.status).toBe(200);
+    expect(await response?.text()).toBe("0123456789");
+  });
+
+  test("handles empty file with range requests", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "empty.txt"), "");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const url = "http://localhost/empty.txt";
+    // Range request on empty file should return 416
+    const range = await assets.handle(
+      new Request(url, { headers: { range: "bytes=0-" } }),
+      new URL(url),
+    );
+    expect(range?.status).toBe(416);
+    expect(range?.headers.get("content-range")).toBe("bytes */0");
+  });
+
+  test("ignores multiple range specifications", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "range.txt"), "0123456789");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const url = "http://localhost/range.txt";
+    const response = await assets.handle(
+      new Request(url, { headers: { range: "bytes=0-4,5-9" } }),
+      new URL(url),
+    );
+    // Multiple ranges should be ignored, return full file
+    expect(response?.status).toBe(200);
+    expect(await response?.text()).toBe("0123456789");
+  });
+
+  test("handles suffix range at exact file size", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "data.txt"), "0123456789");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const url = "http://localhost/data.txt";
+    // Request last 10 bytes from 10-byte file
+    const response = await assets.handle(
+      new Request(url, { headers: { range: "bytes=-10" } }),
+      new URL(url),
+    );
+    expect(response?.status).toBe(206);
+    expect(await response?.text()).toBe("0123456789");
+    expect(response?.headers.get("content-range")).toBe("bytes 0-9/10");
+  });
+
+  test("handles suffix range of one byte", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "data.txt"), "0123456789");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const url = "http://localhost/data.txt";
+    const response = await assets.handle(
+      new Request(url, { headers: { range: "bytes=-1" } }),
+      new URL(url),
+    );
+    expect(response?.status).toBe(206);
+    expect(await response?.text()).toBe("9");
+    expect(response?.headers.get("content-range")).toBe("bytes 9-9/10");
+  });
+
+  test("handles large range start with empty end", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "data.txt"), "0123456789");
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const url = "http://localhost/data.txt";
+    // Start beyond file size should return 416
+    const response = await assets.handle(
+      new Request(url, { headers: { range: "bytes=100-" } }),
+      new URL(url),
+    );
+    expect(response?.status).toBe(416);
+    expect(response?.headers.get("content-range")).toBe("bytes */10");
+  });
+
+  test("clamps range end to file size for embedded assets", async () => {
+    const assets = new StaticAssets({
+      mode: "embedded",
+      assets: { "/range.txt": "0123456789" },
+    });
+
+    const response = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=8-99" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(response?.status).toBe(206);
+    expect(await response?.text()).toBe("89");
+    expect(response?.headers.get("content-range")).toBe("bytes 8-9/10");
+  });
+
+  test("handles range with negative start for suffix-byte-range on embedded assets", async () => {
+    const assets = new StaticAssets({
+      mode: "embedded",
+      assets: { "/range.txt": "0123456789" },
+    });
+
+    // bytes=-10 on 10-byte file
+    const full = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=-10" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(full?.status).toBe(206);
+    expect(await full?.text()).toBe("0123456789");
+
+    // bytes=-5
+    const suffix = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=-5" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(suffix?.status).toBe(206);
+    expect(await suffix?.text()).toBe("56789");
+    expect(suffix?.headers.get("content-range")).toBe("bytes 5-9/10");
+  });
 });
