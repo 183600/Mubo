@@ -164,6 +164,15 @@ describe("WebSocket payload serialization", () => {
     expect(serializePayload(nested)).toBe(JSON.stringify(nested));
   });
 
+  test("serializes bigint values as strings", () => {
+    expect(serializePayload(1n)).toBe("1");
+    expect(serializePayload(9007199254740991n)).toBe("9007199254740991");
+    expect(serializePayload(-1n)).toBe("-1");
+    expect(serializePayload({ count: 42n })).toBe('{"count":"42"}');
+    expect(serializePayload([1n, 2n, 3n])).toBe('["1","2","3"]');
+    expect(serializePayload({ nested: { value: 100n } })).toBe('{"nested":{"value":"100"}}');
+  });
+
   test("handles arrays correctly", () => {
     expect(serializePayload([])).toBe("[]");
     expect(serializePayload([1, 2, 3])).toBe("[1,2,3]");

@@ -144,9 +144,10 @@ describe("WebSocket room hub", () => {
     expect(() => hub.subscribe(ctx, 42 as never)).toThrow(/Room name cannot be empty/);
     expect(() => hub.publish(42 as never, {})).toThrow(/Room name cannot be empty/);
     expect(() => hub.roomSize(42 as never)).toThrow(/Room name cannot be empty/);
-    expect(hub.publish("lobby", { value: 1n })).toBe(0);
-    expect(socket.sent).toHaveLength(0);
-    expect(hub.broadcast({ value: 1n })).toBe(0);
+    expect(hub.publish("lobby", { value: 1n })).toBe(1);
+    expect(JSON.parse(socket.sent[0] as string)).toEqual({ value: "1" });
+    expect(hub.broadcast({ value: 1n })).toBe(1);
+    expect(socket.sent).toHaveLength(2);
   });
 
   test("counts only sends accepted by the socket", () => {
@@ -173,8 +174,10 @@ describe("WebSocket room hub", () => {
     const socket = fakeSocket();
     const ctx = hub.add(socket.ws, null, logger, "");
 
-    expect(() => ctx.send({ value: 1n })).toThrow(MuboError);
-    expect(() => ctx.emit("bad", { value: 1n })).toThrow(MuboError);
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(() => ctx.send(circular)).toThrow(MuboError);
+    expect(() => ctx.send(() => 1)).toThrow(MuboError);
     expect(socket.sent).toHaveLength(0);
 
     ctx.send({ ok: true });

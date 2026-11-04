@@ -59,11 +59,17 @@ function isRawPayload(data: unknown): data is string | ArrayBuffer | ArrayBuffer
   );
 }
 
+function serializeBigint(_key: string, value: unknown): unknown {
+  if (typeof value === "bigint") return value.toString();
+  return value;
+}
+
 export function serializePayload(data: unknown): string | ArrayBuffer | ArrayBufferView | Blob {
   if (isRawPayload(data)) return data;
+  if (typeof data === "bigint") return data.toString();
   let json: string | undefined;
   try {
-    json = JSON.stringify(data);
+    json = JSON.stringify(data, serializeBigint);
   } catch (error) {
     throw new MuboError("VALIDATION_ERROR", "WebSocket payload is not JSON serializable", { cause: error });
   }
