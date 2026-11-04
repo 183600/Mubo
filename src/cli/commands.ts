@@ -215,5 +215,34 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
   }
   checks.push({ name: "schema", ok: schemaOk, detail: schemaDetail, fatal: true });
 
+  if (config.http.requestTimeoutMs > 0) {
+    checks.push({
+      name: "http.requestTimeoutMs",
+      ok: true,
+      detail: `${config.http.requestTimeoutMs}ms`,
+    });
+  }
+  if (config.http.rateLimit !== false) {
+    checks.push({
+      name: "http.rateLimit",
+      ok: true,
+      detail: `maxRequests=${config.http.rateLimit.maxRequests}, windowMs=${config.http.rateLimit.windowMs}`,
+    });
+  }
+  if (config.ws.maxConnections > 0) {
+    checks.push({
+      name: "ws.maxConnections",
+      ok: true,
+      detail: `${config.ws.maxConnections}`,
+    });
+  }
+  if (config.ws.maxConnectionsPerIp > 0) {
+    checks.push({
+      name: "ws.maxConnectionsPerIp",
+      ok: true,
+      detail: `${config.ws.maxConnectionsPerIp}`,
+    });
+  }
+
   reportDoctorChecks(checks, json);
 }
