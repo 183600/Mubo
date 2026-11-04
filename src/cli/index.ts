@@ -11,7 +11,7 @@ Usage:
   mubo init <dir> [--force] [--install]
   mubo dev [--entry <file>] [--port <port>] [--host <host>] [--data-dir <dir>]
            [--db <path>] [--static-dir <dir>] [--log-level <level>] [--config <file>]
-           [--no-static] [--no-ws]
+           [--request-timeout <ms>] [--no-static] [--no-ws]
   mubo build [--entry <file>] [--outfile <file>] [--static-dir <dir>] [--target <target>]
              [--minify] [--config <file>]
   mubo migrate [--check] [--config <file>] [--data-dir <dir>]

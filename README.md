@@ -115,14 +115,14 @@ bunx mubo migrate         # Apply migrations (auto-applied on startup)
 mubo init <dir> [--force] [--install]
 mubo dev [--entry <file>] [--port <port>] [--host <host>] [--data-dir <dir>]
          [--db <path>] [--static-dir <dir>] [--log-level <level>] [--config <file>]
-         [--no-static] [--no-ws]
+         [--request-timeout <ms>] [--no-static] [--no-ws]
 mubo build [--entry <file>] [--outfile <file>] [--static-dir <dir>] [--target <target>]
            [--minify] [--config <file>]
 mubo migrate [--check] [--config <file>] [--data-dir <dir>]
 mubo doctor [--json] [--config <file>]
 ```
 
-CLI flags have highest priority. Missing flag values, invalid booleans or invalid log levels throw errors rather than silently ignoring. `--static-dir` affects the embedded static assets in the build output.
+CLI flags have highest priority. Missing flag values, invalid booleans or invalid log levels throw errors rather than silently ignoring. `--static-dir` affects the embedded static assets in the build output. `mubo dev` forwards the runtime flags (`--port`, `--host`, `--data-dir`, `--db`, `--static-dir`, `--log-level`, `--request-timeout`, `--config`, `--no-static`, `--no-ws`) to the server it starts.
 
 ## Project Structure
 

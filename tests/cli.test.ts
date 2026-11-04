@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Database } from "bun:sqlite";
 import { boolFlag, parseCliArgs, stringFlag } from "../src/cli/args.ts";
+import { devForwardedArgs } from "../src/cli/commands.ts";
 import { initProject } from "../src/cli/init.ts";
 import { loadAndResolveConfig, resolveConfig } from "../src/core/config.ts";
 
@@ -132,6 +133,44 @@ describe("CLI", () => {
     expect(result.stdout).toContain("--config <file>");
     expect(result.stdout).toContain("--no-static");
     expect(result.stdout).toContain("--no-ws");
+    expect(result.stdout).toContain("--request-timeout <ms>");
+  });
+
+  test("forwards runtime flags to the development server", () => {
+    const args = parseCliArgs([
+      "dev",
+      "--port",
+      "4000",
+      "--host",
+      "0.0.0.0",
+      "--data-dir",
+      "/tmp/mubo-data",
+      "--db",
+      "/tmp/mubo.sqlite",
+      "--static-dir",
+      "assets",
+      "--log-level",
+      "debug",
+      "--request-timeout",
+      "1500",
+      "--config",
+      "mubo.config.ts",
+      "--no-static",
+      "--no-ws",
+    ]);
+    expect(devForwardedArgs(args)).toEqual([
+      "--port=4000",
+      "--host=0.0.0.0",
+      "--data-dir=/tmp/mubo-data",
+      "--db=/tmp/mubo.sqlite",
+      "--static-dir=assets",
+      "--log-level=debug",
+      "--request-timeout=1500",
+      "--config=mubo.config.ts",
+      "--no-static",
+      "--no-ws",
+    ]);
+    expect(devForwardedArgs(parseCliArgs(["dev"]))).toEqual([]);
   });
 
   test("dev rejects entry paths that are not files", async () => {

@@ -30,16 +30,36 @@ async function projectConfig(context: CommandContext): Promise<ResolvedMuboConfi
   );
 }
 
-export async function devCommand(context: CommandContext): Promise<void> {
-  const entry = findEntry(context.cwd, stringFlag(context.args, "entry"));
+/**
+ * Builds the runtime flags forwarded to the development server process.
+ *
+ * The spawned application parses the same flags again, so every flag that
+ * changes the runtime behaviour has to be part of this list.
+ */
+export function devForwardedArgs(args: CliArgs): string[] {
   const forwarded: string[] = [];
-  for (const name of ["port", "host", "data-dir", "db", "static-dir", "log-level", "config"]) {
-    const value = stringFlag(context.args, name);
+  for (const name of [
+    "port",
+    "host",
+    "data-dir",
+    "db",
+    "static-dir",
+    "log-level",
+    "request-timeout",
+    "config",
+  ]) {
+    const value = stringFlag(args, name);
     if (value !== undefined) forwarded.push(`--${name}=${value}`);
   }
   for (const name of ["no-static", "no-ws"]) {
-    if (boolFlag(context.args, name)) forwarded.push(`--${name}`);
+    if (boolFlag(args, name)) forwarded.push(`--${name}`);
   }
+  return forwarded;
+}
+
+export async function devCommand(context: CommandContext): Promise<void> {
+  const entry = findEntry(context.cwd, stringFlag(context.args, "entry"));
+  const forwarded = devForwardedArgs(context.args);
   console.log(`[mubo] watching ${entry}`);
   const proc = Bun.spawn(["bun", "--watch", entry, ...forwarded], {
     cwd: context.cwd,
