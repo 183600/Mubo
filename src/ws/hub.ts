@@ -230,16 +230,16 @@ export class WsRoomHub {
     return client.ctx;
   }
 
-  subscribe(ctx: MuboWsContext | string, room?: string): void {
+  subscribe(ctx: MuboWsContext | string, room: string): void {
     const context = typeof ctx === "string" ? this.clients.get(ctx as string)?.ctx : ctx;
     if (!context) return;
-    this.subscribeToRoom(context, room!);
+    this.subscribeToRoom(context, room);
   }
 
-  unsubscribe(ctx: MuboWsContext | string, room?: string): void {
+  unsubscribe(ctx: MuboWsContext | string, room: string): void {
     const context = typeof ctx === "string" ? this.clients.get(ctx as string)?.ctx : ctx;
     if (!context) return;
-    this.unsubscribeFromRoom(context, room!);
+    this.unsubscribeFromRoom(context, room);
   }
 
   private subscribeToRoom(ctx: MuboWsContext, room: string): void {
