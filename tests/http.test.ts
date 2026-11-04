@@ -952,6 +952,31 @@ describe("middleware boundaries", () => {
     expect(order).toEqual(["a-before", "b-before", "handler", "b-after", "a-after"]);
   });
 
+  test("rejects invalid route handlers and middleware at registration time", async () => {
+    const app = await startApp({
+      app: { name: "registration-validation-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    expect(() => app.get("/broken", undefined as never)).toThrow(MuboError);
+    expect(() => app.get("/broken", undefined as never)).toThrow(
+      /Route handler for GET \/broken must be a function/,
+    );
+    expect(() => app.post("/broken", "nope" as never)).toThrow(
+      /Route handler for POST \/broken must be a function/,
+    );
+    expect(() => app.use(undefined as never)).toThrow(/Middleware must be a function/);
+    expect(() => app.use({} as never)).toThrow(/Middleware must be a function/);
+    expect(app.router.routes).toHaveLength(0);
+
+    app.get("/ok", (ctx) => ctx.json({ ok: true }));
+    const response = await fetch(`${base(app)}/ok`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
   test("app.options() registers an OPTIONS route and responds to preflight-style requests", async () => {
     const app = await startApp({
       app: { name: "options-route-test", env: "test" },

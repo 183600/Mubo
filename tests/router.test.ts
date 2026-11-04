@@ -453,4 +453,16 @@ describe("router", () => {
     expect(match.type).toBe("match");
     expect((match as { type: "match"; params: Record<string, string> }).params).toEqual({ category: "reports" });
   });
+
+  test("rejects route handlers that are not functions", () => {
+    const router = new Router();
+    expect(() => router.add("GET", "/broken", undefined as never)).toThrow(MuboError);
+    expect(() => router.add("GET", "/broken", undefined as never)).toThrow(
+      /Route handler for GET \/broken must be a function/,
+    );
+    expect(() => router.add("POST", "/broken", "nope" as never)).toThrow(
+      /Route handler for POST \/broken must be a function/,
+    );
+    expect(router.routes).toHaveLength(0);
+  });
 });

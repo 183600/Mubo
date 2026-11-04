@@ -205,6 +205,8 @@ app.use(async (ctx, next) => {
 
 Routes support static paths (`/healthz`), parameter paths (`:id`), and trailing wildcards (`*`). `HEAD` requests automatically fall back to matching `GET` routes.
 
+Route paths, middleware functions and WebSocket handlers are validated when they are registered. Invalid registrations throw `CONFIG_ERROR` immediately instead of failing on the first request.
+
 ### Request Context
 
 Properties: `ctx.req`, `ctx.url`, `ctx.method`, `ctx.params`, `ctx.query`, `ctx.requestId`, `ctx.ip`, `ctx.state`, `ctx.db`, `ctx.log`, `ctx.set/get`, `ctx.body()`, `ctx.text()`, `ctx.formData()` (alias `ctx.form()`), `ctx.json()`, `ctx.textResponse()`, `ctx.ok()`, `ctx.fail()`.

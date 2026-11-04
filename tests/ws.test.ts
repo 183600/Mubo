@@ -201,6 +201,41 @@ describe("WebSocket route registration", () => {
     }
   });
 
+  test("rejects invalid WebSocket handler registrations", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-handler-validation-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    try {
+      expect(() => app.ws("/ws", undefined as never)).toThrow(
+        /WebSocket handlers for \/ws must be an object/,
+      );
+      expect(() => app.ws("/ws", [] as never)).toThrow(/WebSocket handlers for \/ws must be an object/);
+      expect(() => app.ws("/ws", { onConnect: "nope" as never })).toThrow(
+        /WebSocket handler onConnect for \/ws must be a function/,
+      );
+      expect(() => app.ws("/ws", { authorize: 42 as never })).toThrow(
+        /WebSocket handler authorize for \/ws must be a function/,
+      );
+      expect(() => app.ws("/ws", { onMessage: {} as never })).toThrow(
+        /WebSocket handler onMessage for \/ws must be a function/,
+      );
+      expect(() => app.ws("/ws", { onClose: null as never })).toThrow(
+        /WebSocket handler onClose for \/ws must be a function/,
+      );
+      expect(() => app.ws("/ws", { onError: false as never })).toThrow(
+        /WebSocket handler onError for \/ws must be a function/,
+      );
+    } finally {
+      await app.stop();
+    }
+  });
+
   test("rejects WebSocket authorization returning false", async () => {
     const app = await createMuboApp(
       {

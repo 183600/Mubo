@@ -41,10 +41,22 @@ export type RouteMatch =
   | { type: "method-not-allowed"; allowed: HttpMethod[] }
   | { type: "not-found" };
 
+/** Validates that a route handler is callable so mistakes fail at registration. */
+export function assertRouteHandler(
+  handler: unknown,
+  method: string,
+  path: string,
+): asserts handler is RouteHandler {
+  if (typeof handler !== "function") {
+    throw new MuboError("CONFIG_ERROR", `Route handler for ${method} ${path} must be a function`);
+  }
+}
+
 export class Router {
   readonly routes: Route[] = [];
 
   add(method: HttpMethod, path: string, handler: RouteHandler): this {
+    assertRouteHandler(handler, method, path);
     const segments = compileRouteSegments(path);
     const key = routeKey(path);
     const existing = this.routes.findIndex((route) => route.method === method && routeKey(route.path) === key);

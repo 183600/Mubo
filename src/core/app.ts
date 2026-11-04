@@ -197,6 +197,9 @@ export class MuboApp {
 
   /** Adds a middleware to the HTTP pipeline (onion model). */
   use(middleware: RouteMiddleware): this {
+    if (typeof middleware !== "function") {
+      throw new MuboError("CONFIG_ERROR", "Middleware must be a function");
+    }
     this.middlewares.push(middleware);
     return this;
   }
@@ -237,6 +240,18 @@ export class MuboApp {
   /** Registers a WebSocket route with handlers. */
   ws(path: string, handlers: WsHandlers): this {
     const normalized = normalizeRoutePath(path);
+    if (handlers === null || typeof handlers !== "object" || Array.isArray(handlers)) {
+      throw new MuboError("CONFIG_ERROR", `WebSocket handlers for ${normalized} must be an object`);
+    }
+    for (const name of ["authorize", "onConnect", "onMessage", "onClose", "onError"] as const) {
+      const handler = handlers[name];
+      if (handler !== undefined && typeof handler !== "function") {
+        throw new MuboError(
+          "CONFIG_ERROR",
+          `WebSocket handler ${name} for ${normalized} must be a function`,
+        );
+      }
+    }
     this.wsRoutes.set(routeIdentity(normalized), { path: normalized, handlers });
     return this;
   }
