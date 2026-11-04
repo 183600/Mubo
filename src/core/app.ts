@@ -155,6 +155,7 @@ export class MuboApp {
   readonly staticAssets: StaticAssets;
   private readonly middlewares: RouteMiddleware[] = [];
   private readonly wsRoutes = new Map<string, WsRoute>();
+  private readonly cleanupTasks: Array<() => void> = [];
   private server?: Server<WsSocketData>;
   private starting?: Promise<Server<WsSocketData>>;
   private stopping?: Promise<void>;
@@ -328,6 +329,7 @@ export class MuboApp {
       }
     }, windowMs);
     cleanupInterval.unref?.();
+    this.cleanupTasks.push(() => clearInterval(cleanupInterval));
 
     const addRateLimitHeaders = (response: Response, remaining: number, resetAt: number): Response => {
       const headers = new Headers(response.headers);
@@ -854,6 +856,7 @@ export class MuboApp {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = undefined;
     }
+    for (const cleanup of this.cleanupTasks.splice(0)) cleanup();
     this.wsHub.closeAll();
     if (this.server) {
       const server = this.server;

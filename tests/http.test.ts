@@ -1286,4 +1286,42 @@ describe("rate limiting", () => {
       resolveConfig({ http: { rateLimit: { maxRequests: 10, windowMs: 1000, key: "not-a-function" as never } } }, { env: {}, argv: [] }),
     ).toThrow(/Invalid rate limit key/);
   });
+
+  test("releases the rate limit cleanup timer when the application stops", async () => {
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const scheduled = new Set<unknown>();
+    const cleared = new Set<unknown>();
+    globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+      const handle = originalSetInterval(...args);
+      scheduled.add(handle);
+      return handle;
+    }) as typeof globalThis.setInterval;
+    globalThis.clearInterval = ((handle: Parameters<typeof clearInterval>[0]) => {
+      cleared.add(handle);
+      return originalClearInterval(handle);
+    }) as typeof globalThis.clearInterval;
+
+    try {
+      const app = await createMuboApp(
+        {
+          app: { name: "ratelimit-timer-test", env: "test" },
+          db: { path: ":memory:" },
+          log: { level: "error" },
+          static: { mode: "off" },
+          ws: { enabled: false },
+          http: { rateLimit: { maxRequests: 5, windowMs: 60_000 } },
+        },
+        { argv: [] },
+      );
+      await app.start();
+      expect(scheduled.size).toBe(1);
+      await app.stop();
+      expect(cleared.size).toBe(1);
+      for (const handle of scheduled) expect(cleared.has(handle)).toBe(true);
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
+    }
+  });
 });
