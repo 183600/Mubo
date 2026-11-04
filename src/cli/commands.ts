@@ -11,7 +11,7 @@ import { MuboDatabase } from "../db/database.ts";
 import { validateSchema } from "../db/migrations.ts";
 import type { CliArgs } from "./args.ts";
 import { boolFlag, stringFlag } from "./args.ts";
-import { findEntry } from "./project.ts";
+import { findEntry, MINIMUM_BUN_VERSION, satisfiesMinimumBunVersion } from "./project.ts";
 
 export interface CommandContext {
   cwd: string;
@@ -129,7 +129,15 @@ function reportDoctorChecks(checks: DoctorCheck[], json: boolean): void {
 
 export async function doctorCommand(context: CommandContext): Promise<void> {
   const checks: DoctorCheck[] = [];
-  checks.push({ name: "bun", ok: true, detail: `${Bun.version} (${Bun.revision.slice(0, 12)})`, fatal: true });
+  const bunSupported = satisfiesMinimumBunVersion(Bun.version);
+  checks.push({
+    name: "bun",
+    ok: bunSupported,
+    detail: bunSupported
+      ? `${Bun.version} (${Bun.revision.slice(0, 12)})`
+      : `${Bun.version} is older than the required Bun ${MINIMUM_BUN_VERSION}`,
+    fatal: true,
+  });
   checks.push({
     name: "platform",
     ok: true,
