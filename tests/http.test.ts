@@ -538,6 +538,37 @@ describe("HTTP routing and middleware", () => {
     expect((error as MuboError).status).toBe(503);
   });
 
+  test("stops running applications when a shutdown signal is received", async () => {
+    const app = await startApp({
+      app: { name: "signal-shutdown-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    let stopResolved = false;
+    const originalStop = app.stop.bind(app);
+    app.stop = async () => {
+      await originalStop();
+      stopResolved = true;
+    };
+
+    const keepProcessAlive = () => {};
+    process.on("SIGINT", keepProcessAlive);
+    try {
+      process.emit("SIGINT");
+      for (let attempt = 0; attempt < 100 && !stopResolved; attempt++) await Bun.sleep(10);
+      await Bun.sleep(0);
+    } finally {
+      process.off("SIGINT", keepProcessAlive);
+    }
+
+    expect(stopResolved).toBe(true);
+    expect(app.started).toBe(false);
+    expect(app.stopped).toBe(true);
+    expect(app.port).toBeUndefined();
+  });
+
   test("does not start listening when the application is stopped during startup", async () => {
     const app = await createMuboApp(
       {

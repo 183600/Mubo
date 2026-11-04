@@ -35,6 +35,9 @@ type WsRoute = { path: string; handlers: WsHandlers };
 /** Signals that trigger graceful shutdown. */
 type ShutdownSignal = "SIGINT" | "SIGTERM";
 
+/** Rate limit settings with the "disabled" variant removed. */
+type RateLimitConfig = Exclude<ResolvedMuboConfig["http"]["rateLimit"], false>;
+
 const SHUTDOWN_SIGNALS: ShutdownSignal[] = ["SIGINT", "SIGTERM"];
 
 /** Track running apps for process-level shutdown handling. */
@@ -261,8 +264,9 @@ export class MuboApp {
     if (this.config.http.requestTimeoutMs > 0) {
       this.middlewares.unshift(this.createRequestTimeoutMiddleware());
     }
-    if (this.config.http.rateLimit !== false) {
-      this.middlewares.unshift(this.createRateLimitMiddleware());
+    const rateLimit = this.config.http.rateLimit;
+    if (rateLimit !== false) {
+      this.middlewares.unshift(this.createRateLimitMiddleware(rateLimit));
     }
     this.builtInMiddlewaresInstalled = true;
   }
@@ -299,11 +303,7 @@ export class MuboApp {
   }
 
   /** Creates middleware that enforces rate limiting per key. */
-  private createRateLimitMiddleware(): RouteMiddleware {
-    const rateLimit = this.config.http.rateLimit;
-    if (rateLimit === false) {
-      return async (ctx, next) => next();
-    }
+  private createRateLimitMiddleware(rateLimit: RateLimitConfig): RouteMiddleware {
     const { maxRequests, windowMs, key } = rateLimit;
     const store = new Map<string, { count: number; resetAt: number }>();
     const cleanupInterval = setInterval(() => {
