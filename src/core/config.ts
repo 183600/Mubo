@@ -59,6 +59,8 @@ export interface MuboConfig {
     enabled?: boolean;
     maxPayloadBytes?: number;
     heartbeat?: { intervalMs?: number; timeoutMs?: number };
+    maxConnections?: number;
+    maxConnectionsPerIp?: number;
   };
   log?: {
     level?: LogLevel;
@@ -119,6 +121,8 @@ export interface ResolvedMuboConfig {
     enabled: boolean;
     maxPayloadBytes: number;
     heartbeat: { intervalMs: number; timeoutMs: number };
+    maxConnections: number;
+    maxConnectionsPerIp: number;
   };
   log: { level: LogLevel; json: boolean };
 }
@@ -396,8 +400,10 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
 
   const wsEnabled = readBoolean(env.MUBO_WS_ENABLED);
   const wsMaxPayload = readNumber(env.MUBO_WS_MAX_PAYLOAD, "MUBO_WS_MAX_PAYLOAD");
-  if (wsEnabled !== undefined || wsMaxPayload !== undefined) {
-    result.ws = { enabled: wsEnabled, maxPayloadBytes: wsMaxPayload };
+  const wsMaxConnections = readNumber(env.MUBO_WS_MAX_CONNECTIONS, "MUBO_WS_MAX_CONNECTIONS");
+  const wsMaxConnectionsPerIp = readNumber(env.MUBO_WS_MAX_CONNECTIONS_PER_IP, "MUBO_WS_MAX_CONNECTIONS_PER_IP");
+  if (wsEnabled !== undefined || wsMaxPayload !== undefined || wsMaxConnections !== undefined || wsMaxConnectionsPerIp !== undefined) {
+    result.ws = { enabled: wsEnabled, maxPayloadBytes: wsMaxPayload, maxConnections: wsMaxConnections, maxConnectionsPerIp: wsMaxConnectionsPerIp };
   }
 
   const logLevel = env.MUBO_LOG_LEVEL?.trim() || undefined;
@@ -528,6 +534,8 @@ export function resolveConfig(
       enabled: true,
       maxPayloadBytes: 1024 * 1024,
       heartbeat: { intervalMs: 30_000, timeoutMs: 60_000 },
+      maxConnections: 0,
+      maxConnectionsPerIp: 0,
     },
     log: { level: "info", json: appEnv === "production" },
   };
@@ -675,6 +683,8 @@ export function resolveConfig(
       `WebSocket heartbeat timeout (${merged.ws.heartbeat.timeoutMs}ms) must be greater than interval (${merged.ws.heartbeat.intervalMs}ms)`,
     );
   }
+  requireInteger("WebSocket max connections", merged.ws.maxConnections, { min: 0 });
+  requireInteger("WebSocket max connections per IP", merged.ws.maxConnectionsPerIp, { min: 0 });
   return merged;
 }
 

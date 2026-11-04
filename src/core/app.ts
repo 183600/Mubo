@@ -152,7 +152,7 @@ export class MuboApp {
     this.logger = logger;
     this.db = db;
     this.staticAssets = staticAssets;
-    this.wsHub = new WsRoomHub(logger);
+    this.wsHub = new WsRoomHub(logger, config.ws.maxConnections, config.ws.maxConnectionsPerIp);
   }
 
   get serverInstance(): Server<WsSocketData> | undefined {
@@ -400,11 +400,22 @@ export class MuboApp {
       }
     }
 
+    const clientIpAddr = clientIp(request, server, this.config.http.trustProxy);
+    if (this.config.ws.maxConnections > 0 && this.wsHub.clientCount >= this.config.ws.maxConnections) {
+      return errorResponse(requestId, new MuboError("WS_CONNECTION_LIMIT", "Maximum WebSocket connections reached"), true);
+    }
+    if (this.config.ws.maxConnectionsPerIp > 0) {
+      const ipCount = this.wsHub.getConnectionCountForIp(clientIpAddr);
+      if (ipCount >= this.config.ws.maxConnectionsPerIp) {
+        return errorResponse(requestId, new MuboError("WS_CONNECTION_LIMIT_PER_IP", "Too many connections from this IP"), true);
+      }
+    }
+
     const data: WsSocketData = {
       routePath: route.path,
       requestId,
       url: url.href,
-      ip: clientIp(request, server, this.config.http.trustProxy),
+      ip: clientIpAddr,
       user,
       state: Object.create(null) as Record<string, unknown>,
     };

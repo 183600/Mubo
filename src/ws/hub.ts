@@ -167,9 +167,14 @@ export class WsRoomHub {
   private readonly clientsBySocket = new Map<ServerWebSocket<WsSocketData>, Client>();
   private readonly rooms = new Map<string, Set<Client>>();
   private readonly logger?: Logger;
+  private readonly maxConnections: number;
+  private readonly maxConnectionsPerIp: number;
+  private readonly connectionsPerIp = new Map<string, number>();
 
-  constructor(logger?: Logger) {
+  constructor(logger?: Logger, maxConnections = 0, maxConnectionsPerIp = 0) {
     this.logger = logger;
+    this.maxConnections = maxConnections;
+    this.maxConnectionsPerIp = maxConnectionsPerIp;
   }
 
   get clientCount(): number {
@@ -181,9 +186,28 @@ export class WsRoomHub {
     return this.rooms.get(room)?.size ?? 0;
   }
 
+  getConnectionCountForIp(ip: string): number {
+    return this.connectionsPerIp.get(ip) ?? 0;
+  }
+
   add(ws: ServerWebSocket<WsSocketData>, app: unknown, logger: Logger, ip: string): MuboWsContext {
     const existing = this.clientsBySocket.get(ws);
     if (existing) return existing.ctx;
+
+    if (this.maxConnections > 0 && this.clients.size >= this.maxConnections) {
+      ws.close(1013, "Server at maximum WebSocket connections");
+      throw new MuboError("WS_CONNECTION_LIMIT", "Maximum WebSocket connections reached");
+    }
+
+    if (this.maxConnectionsPerIp > 0) {
+      const ipCount = this.connectionsPerIp.get(ip) ?? 0;
+      if (ipCount >= this.maxConnectionsPerIp) {
+        ws.close(1013, "Too many connections from this IP");
+        throw new MuboError("WS_CONNECTION_LIMIT_PER_IP", "Too many connections from this IP");
+      }
+      this.connectionsPerIp.set(ip, ipCount + 1);
+    }
+
     const id = crypto.randomUUID();
     let client!: Client;
     let roomView!: ReadonlySet<string>;
@@ -227,6 +251,12 @@ export class WsRoomHub {
     for (const room of [...client.rooms]) this.unsubscribeFromRoom(client.ctx, room);
     this.clients.delete(client.ctx.id);
     this.clientsBySocket.delete(ws);
+    if (this.maxConnectionsPerIp > 0) {
+      const ip = client.ctx.ip;
+      const ipCount = this.connectionsPerIp.get(ip) ?? 0;
+      if (ipCount <= 1) this.connectionsPerIp.delete(ip);
+      else this.connectionsPerIp.set(ip, ipCount - 1);
+    }
     return client.ctx;
   }
 

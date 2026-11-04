@@ -11,7 +11,10 @@ export type ErrorCode =
   | "MIGRATION_REQUIRED"
   | "APP_STOPPED"
   | "INTERNAL_ERROR"
-  | "REQUEST_TIMEOUT";
+  | "REQUEST_TIMEOUT"
+  | "RATE_LIMITED"
+  | "WS_CONNECTION_LIMIT"
+  | "WS_CONNECTION_LIMIT_PER_IP";
 
 const DEFAULT_STATUS: Record<string, number> = {
   BAD_REQUEST: 400,
@@ -27,6 +30,9 @@ const DEFAULT_STATUS: Record<string, number> = {
   APP_STOPPED: 503,
   INTERNAL_ERROR: 500,
   REQUEST_TIMEOUT: 504,
+  RATE_LIMITED: 429,
+  WS_CONNECTION_LIMIT: 429,
+  WS_CONNECTION_LIMIT_PER_IP: 429,
 };
 
 export class MuboError extends Error {
