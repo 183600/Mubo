@@ -20,6 +20,7 @@ import {
   type WsHandlers,
   type WsSocketData,
 } from "../ws/hub.ts";
+import { join } from "node:path";
 import {
   normalizePath,
   normalizeRoutePath,
@@ -258,9 +259,33 @@ export class MuboApp {
     if (path !== "healthz" && path !== "readyz") return null;
     if (ctx.method !== "GET" && ctx.method !== "HEAD") return null;
     if (path === "readyz") {
-      const ready = this.db.ping();
+      const dbReady = this.db.ping();
+      let migrationsReady = true;
+      let migrationDetail: string | undefined;
+      if (this.config.db.migrations.mode === "apply" && this.config.schema) {
+        try {
+          const plan = this.db.plan(this.config.schema, this.config.db.migrations);
+          migrationsReady = plan.statements.length === 0;
+          if (!migrationsReady) {
+            migrationDetail = `pending: ${plan.changes.join(", ")}`;
+          }
+        } catch {
+          migrationsReady = false;
+          migrationDetail = "migration check failed";
+        }
+      }
+      const dataDirWritable = await this.checkDataDirWritable();
+      const ready = dbReady && migrationsReady && dataDirWritable;
       return ctx.json(
-        { ok: ready, app: this.config.app.name },
+        {
+          ok: ready,
+          app: this.config.app.name,
+          checks: {
+            database: dbReady ? "ok" : "failed",
+            migrations: migrationsReady ? "ok" : (migrationDetail ?? "pending"),
+            dataDirectory: dataDirWritable ? "ok" : "not writable",
+          },
+        },
         { status: ready ? 200 : 503 },
       );
     }
@@ -269,6 +294,17 @@ export class MuboApp {
       app: this.config.app.name,
       uptimeMs: this.startedAt ? Date.now() - this.startedAt : 0,
     });
+  }
+
+  private async checkDataDirWritable(): Promise<boolean> {
+    try {
+      const probePath = join(this.config.dataDir, `.mubo-readiness-${process.pid}-${Date.now()}`);
+      await Bun.write(probePath, "ok");
+      await Bun.file(probePath).delete();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async handleWebSocketUpgrade(

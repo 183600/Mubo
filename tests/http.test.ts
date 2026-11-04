@@ -319,7 +319,9 @@ describe("HTTP routing and middleware", () => {
 
     const ready = await fetch(`${base(app)}/readyz`);
     expect(ready.status).toBe(200);
-    expect(((await ready.json()) as any).ok).toBe(true);
+    const readyJson = await ready.json() as { ok: boolean; checks: { database: string; migrations: string; dataDirectory: string } };
+    expect(readyJson.ok).toBe(true);
+    expect(readyJson.checks).toEqual({ database: "ok", migrations: "ok", dataDirectory: "ok" });
 
     for (const path of ["/healthz/", "//healthz", "//readyz///", "/healthz//", "//healthz//", "/readyz//"]) {
       const response = await fetch(`${base(app)}${path}`);
