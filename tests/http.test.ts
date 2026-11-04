@@ -1026,6 +1026,24 @@ describe("middleware boundaries", () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
+  test("rejects route paths that are not usable strings", async () => {
+    const app = await startApp({
+      app: { name: "route-path-validation-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    for (const path of [123, null, undefined, "", "   "]) {
+      expect(() => app.get(path as never, () => new Response(""))).toThrow(MuboError);
+      expect(() => app.get(path as never, () => new Response(""))).toThrow(
+        /Route path must be a non-empty string/,
+      );
+      expect(() => app.ws(path as never, {})).toThrow(/Route path must be a non-empty string/);
+    }
+    expect(app.router.routes).toHaveLength(0);
+  });
+
   test("app.options() registers an OPTIONS route and responds to preflight-style requests", async () => {
     const app = await startApp({
       app: { name: "options-route-test", env: "test" },

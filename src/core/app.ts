@@ -245,6 +245,16 @@ export class MuboApp {
     if (handlers === null || typeof handlers !== "object" || Array.isArray(handlers)) {
       throw new MuboError("CONFIG_ERROR", `WebSocket handlers for ${normalized} must be an object`);
     }
+    // WebSocket routes are matched by their exact path, so parameter and
+    // wildcard segments could never be reached at runtime.
+    for (const segment of normalized.split("/")) {
+      if (segment === "*" || segment.startsWith(":")) {
+        throw new MuboError(
+          "CONFIG_ERROR",
+          `WebSocket route path must not contain parameters or wildcards: ${normalized}`,
+        );
+      }
+    }
     for (const name of ["authorize", "onConnect", "onMessage", "onClose", "onError"] as const) {
       const handler = handlers[name];
       if (handler !== undefined && typeof handler !== "function") {

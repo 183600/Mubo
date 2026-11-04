@@ -7,6 +7,9 @@ export function normalizePath(path: string): string {
 }
 
 export function normalizeRoutePath(path: string): string {
+  if (typeof path !== "string" || path.trim().length === 0) {
+    throw new MuboError("CONFIG_ERROR", `Route path must be a non-empty string: ${String(path)}`);
+  }
   if (path.includes("?") || path.includes("#")) {
     throw new MuboError("CONFIG_ERROR", `must not contain a query or fragment: ${path}`);
   }
@@ -42,6 +45,9 @@ export function routeIdentity(path: string): string {
 }
 
 export function compileRouteSegments(path: string): { kind: "literal" | "param" | "wildcard"; value: string }[] {
+  if (typeof path !== "string" || path.trim().length === 0) {
+    throw new MuboError("CONFIG_ERROR", `Route path must be a non-empty string: ${String(path)}`);
+  }
   if (!path.startsWith("/")) {
     throw new MuboError("CONFIG_ERROR", `Route path must start with "/": ${path}`);
   }

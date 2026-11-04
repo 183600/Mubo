@@ -236,6 +236,31 @@ describe("WebSocket route registration", () => {
     }
   });
 
+  test("rejects WebSocket routes that can never be matched", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-path-validation-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    try {
+      for (const path of ["/ws/:room", "/ws/*", "/:room"]) {
+        expect(() => app.ws(path, {})).toThrow(
+          /WebSocket route path must not contain parameters or wildcards/,
+        );
+      }
+      for (const path of [123, null, undefined, "", "   "]) {
+        expect(() => app.ws(path as never, {})).toThrow(/Route path must be a non-empty string/);
+      }
+      expect(() => app.ws("/ws", {})).not.toThrow();
+    } finally {
+      await app.stop();
+    }
+  });
+
   test("rejects WebSocket authorization returning false", async () => {
     const app = await createMuboApp(
       {
