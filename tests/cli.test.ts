@@ -298,11 +298,43 @@ describe("CLI", () => {
       "sqlite",
       "port",
       "schema",
+      "static",
     ]);
     expect(checks.find((check) => check.name === "bun")?.ok).toBe(true);
     expect(checks.find((check) => check.name === "sqlite")?.ok).toBe(true);
     expect(checks.find((check) => check.name === "data-dir")?.ok).toBe(true);
     expect(checks.find((check) => check.name === "port")?.ok).toBe(true);
+    // The temporary project has no public directory, so disk assets are missing.
+    expect(checks.find((check) => check.name === "static")?.ok).toBe(false);
+  });
+
+  test("doctor reports the configured static asset source", async () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, "public"), { recursive: true });
+    const withDir = await runCli(cwd, ["doctor", "--json", "--data-dir", join(cwd, "data"), "--port", "0"]);
+    const dirChecks = JSON.parse(withDir.stdout) as Array<{ name: string; ok: boolean; detail: string }>;
+    const staticDir = dirChecks.find((check) => check.name === "static");
+    expect(staticDir?.ok).toBe(true);
+    expect(staticDir?.detail).toContain(join(cwd, "public"));
+
+    const importPath = framework.split("\\").join("/");
+    writeFileSync(
+      join(cwd, "mubo.config.ts"),
+      `import { defineConfig } from ${JSON.stringify(importPath)};
+export default defineConfig({
+  app: { name: "cli-static-doctor", env: "test" },
+  db: { path: ":memory:" },
+  http: { port: 0 },
+  static: { mode: "off" },
+  log: { level: "error" },
+});
+`,
+    );
+    const disabled = await runCli(cwd, ["doctor", "--json", "--data-dir", join(cwd, "data"), "--port", "0"]);
+    const disabledChecks = JSON.parse(disabled.stdout) as Array<{ name: string; ok: boolean; detail: string }>;
+    const disabledStatic = disabledChecks.find((check) => check.name === "static");
+    expect(disabledStatic?.ok).toBe(true);
+    expect(disabledStatic?.detail).toBe("disabled");
   });
 
   test("doctor flags invalid schema definitions", async () => {

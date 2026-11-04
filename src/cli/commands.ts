@@ -137,6 +137,26 @@ async function checkWritableDirectory(path: string): Promise<boolean> {
 
 type DoctorCheck = { name: string; ok: boolean; detail: string; fatal?: boolean };
 
+/** Summarizes the configured static asset source for the doctor report. */
+function describeStaticAssets(staticConfig: ResolvedMuboConfig["static"]): {
+  ok: boolean;
+  detail: string;
+} {
+  if (staticConfig.mode === "off") return { ok: true, detail: "disabled" };
+  if (staticConfig.mode === "embedded") {
+    const embedded = Object.keys(staticConfig.assets ?? {}).length;
+    return {
+      ok: true,
+      detail: embedded > 0 ? `embedded (${embedded} asset(s) configured)` : "embedded (bundled at build time)",
+    };
+  }
+  const exists = existsSync(staticConfig.dir);
+  return {
+    ok: exists,
+    detail: exists ? staticConfig.dir : `${staticConfig.dir} (directory not found)`,
+  };
+}
+
 function reportDoctorChecks(checks: DoctorCheck[], json: boolean): void {
   if (json) {
     console.log(JSON.stringify(checks, null, 2));
@@ -234,6 +254,9 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
     }
   }
   checks.push({ name: "schema", ok: schemaOk, detail: schemaDetail, fatal: true });
+
+  const staticDetail = describeStaticAssets(config.static);
+  checks.push({ name: "static", ok: staticDetail.ok, detail: staticDetail.detail });
 
   if (config.http.requestTimeoutMs > 0) {
     checks.push({
