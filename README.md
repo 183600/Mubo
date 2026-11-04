@@ -179,6 +179,8 @@ await app.start();
 
 When `createMuboApp` receives no explicit config, it loads the local `mubo.config.*`; any explicit config disables file loading (use `{ loadFile: true }` to force it). Explicit `--config <file>` always loads that file, overriding inline config. Environment variables and other CLI flags still take precedence over everything. CLI-generated entry files import config directly, so single-file binaries don't depend on runtime config files.
 
+`mubo build` additionally bakes the project configuration into the binary. A compiled application therefore starts with the settings it was built with and never reads `mubo.config.*` from its working directory; environment variables and CLI flags still override the baked values at runtime.
+
 ### Routes and Middleware
 
 ```ts

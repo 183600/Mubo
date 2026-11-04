@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
-import { createMuboApp, loadAndResolveConfig, resolveConfig } from "../src/index.ts";
+import { createMuboApp, loadAndResolveConfig, registerBuildConfig, resolveConfig } from "../src/index.ts";
 import { defaultDataDir, mergeConfig, sanitizeAppName } from "../src/core/config.ts";
 
 const tempDirs: string[] = [];
@@ -122,6 +122,89 @@ export default defineConfig({
       },
     );
     expect(config.app.name).toBe("last-file");
+  });
+
+  test("uses the configuration baked into a compiled application", async () => {
+    const cwd = tempDir();
+    writeFileSync(
+      join(cwd, "mubo.config.ts"),
+      `throw new Error("compiled apps must not read config files at runtime");\n`,
+    );
+    registerBuildConfig({
+      app: { name: "baked-app" },
+      dataDir: join(cwd, "baked-data"),
+      db: { path: ":memory:" },
+      http: { port: 4666 },
+      static: { mode: "off" },
+    });
+    try {
+      const config = await loadAndResolveConfig({}, { cwd, loadFile: true, env: {}, argv: [] });
+      expect(config.app.name).toBe("baked-app");
+      expect(config.http.port).toBe(4666);
+      expect(config.dataDir).toBe(join(cwd, "baked-data"));
+    } finally {
+      registerBuildConfig(undefined);
+    }
+  });
+
+  test("keeps environment and CLI overrides on top of a baked configuration", async () => {
+    const cwd = tempDir();
+    registerBuildConfig({
+      app: { name: "baked-app" },
+      dataDir: join(cwd, "baked-data"),
+      db: { path: ":memory:" },
+      http: { port: 4666 },
+      static: { mode: "off" },
+    });
+    try {
+      const config = await loadAndResolveConfig(
+        {},
+        { cwd, loadFile: true, env: { MUBO_APP_NAME: "env-app" }, argv: ["--port", "4777"] },
+      );
+      expect(config.app.name).toBe("env-app");
+      expect(config.http.port).toBe(4777);
+    } finally {
+      registerBuildConfig(undefined);
+    }
+  });
+
+  test("lets an explicit --config override a baked configuration", async () => {
+    const cwd = tempDir();
+    writeFileSync(
+      join(cwd, "custom.config.ts"),
+      `export default { app: { name: "custom-file" }, dataDir: ${JSON.stringify(
+        join(cwd, "custom-data"),
+      )}, db: { path: ":memory:" }, static: { mode: "off" } };\n`,
+    );
+    registerBuildConfig({
+      app: { name: "baked-app" },
+      dataDir: join(cwd, "baked-data"),
+      db: { path: ":memory:" },
+      static: { mode: "off" },
+    });
+    try {
+      const config = await loadAndResolveConfig(
+        {},
+        { cwd, loadFile: true, env: {}, argv: ["--config", "custom.config.ts"] },
+      );
+      expect(config.app.name).toBe("custom-file");
+    } finally {
+      registerBuildConfig(undefined);
+    }
+  });
+
+  test("ignores a baked configuration when file loading is disabled", async () => {
+    const cwd = tempDir();
+    registerBuildConfig({ app: { name: "baked-app" } });
+    try {
+      const config = await loadAndResolveConfig(
+        {},
+        { cwd, loadFile: false, env: {}, argv: [] },
+      );
+      expect(config.app.name).toBe("mubo-app");
+    } finally {
+      registerBuildConfig(undefined);
+    }
   });
 
   test("reloads a config file after it changes", async () => {

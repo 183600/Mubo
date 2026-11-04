@@ -137,6 +137,35 @@ export interface ResolveConfigOptions {
   configFile?: string;
 }
 
+/**
+ * Global key that holds the project configuration baked into a compiled
+ * single-file application.
+ */
+export const BUILD_CONFIG_KEY = "__MUBO_BUILD_CONFIG__";
+
+/**
+ * Registers the project configuration that `mubo build` bakes into a compiled
+ * application.
+ *
+ * Passing `undefined` removes the registered configuration again.
+ */
+export function registerBuildConfig(config: MuboConfig | undefined): void {
+  const store = globalThis as Record<string, unknown>;
+  if (config === undefined) delete store[BUILD_CONFIG_KEY];
+  else store[BUILD_CONFIG_KEY] = config;
+}
+
+/**
+ * Returns the project configuration baked into a compiled application.
+ *
+ * The value is `undefined` when the application was not compiled by `mubo
+ * build`, which keeps regular development runs file based.
+ */
+export function getBuildConfig(): MuboConfig | undefined {
+  const value = (globalThis as Record<string, unknown>)[BUILD_CONFIG_KEY];
+  return isPlainObject(value) ? (value as MuboConfig) : undefined;
+}
+
 export const DEFAULT_IMMUTABLE_EXTENSIONS = [
   "js",
   "mjs",
@@ -772,6 +801,13 @@ export async function loadAndResolveConfig(
   }
   if (!options.loadFile && explicitFile === undefined) {
     return resolveConfig(overrides, { ...options, cwd, argv });
+  }
+  // A compiled single-file application carries its project configuration in the
+  // binary. It must not depend on config files in the working directory, which
+  // a compiled binary cannot even load when they are written in TypeScript.
+  const buildConfig = getBuildConfig();
+  if (buildConfig !== undefined && explicitFile === undefined) {
+    return resolveConfig(overrides, { ...options, cwd, argv, fileConfig: buildConfig });
   }
   const { config: fileConfig } = await loadConfigFile(cwd, explicitFile);
   if (explicitFile !== undefined) {

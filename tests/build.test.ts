@@ -157,6 +157,77 @@ describe("single-file build", () => {
   }, 60_000);
 
   test(
+    "bakes the project configuration into the compiled binary",
+    async () => {
+      const cwd = tempDir();
+      const runtime = tempDir();
+      mkdirSync(join(cwd, "src", "server"), { recursive: true });
+      const port = await freePort();
+      const dbPath = join(cwd, "baked.sqlite");
+      writeFileSync(
+        join(cwd, "mubo.config.ts"),
+        `export default {
+  app: { name: "baked-app", env: "test" },
+  http: { host: "127.0.0.1", port: ${port} },
+  db: { path: ${JSON.stringify(dbPath)} },
+  static: { mode: "off" },
+  log: { level: "error" },
+};
+`,
+      );
+      writeFileSync(
+        join(cwd, "src", "server", "index.ts"),
+        `import { createMuboApp } from ${JSON.stringify(framework)};
+
+const app = await createMuboApp();
+app.get("/where", () =>
+  Response.json({ name: app.config.app.name, port: app.port, db: app.config.db.path }),
+);
+
+const shutdown = async () => {
+  await app.stop();
+  process.exit(0);
+};
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+await app.start();
+`,
+      );
+
+      const result = await buildProject({ cwd, outfile: "dist/baked-app" });
+      expect(existsSync(result.outfile)).toBe(true);
+
+      // A compiled binary must not depend on config files in its working
+      // directory: it keeps the configuration it was built with.
+      writeFileSync(
+        join(runtime, "mubo.config.ts"),
+        `throw new Error("compiled apps must not load config from their working directory");\n`,
+      );
+
+      const proc = Bun.spawn([result.outfile], {
+        cwd: runtime,
+        env: { ...process.env, MUBO_LOG_LEVEL: "error" },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      try {
+        const where = await waitFor(`http://127.0.0.1:${port}/where`);
+        expect(where.status).toBe(200);
+        expect(await where.json()).toEqual({
+          name: "baked-app",
+          port,
+          db: dbPath,
+        });
+        expect(existsSync(dbPath)).toBe(true);
+      } finally {
+        proc.kill("SIGTERM");
+        await proc.exited;
+      }
+    },
+    60_000,
+  );
+
+  test(
     "compiles an app with embedded assets and runs it with a data directory",
     async () => {
       const cwd = tempDir();

@@ -1,9 +1,11 @@
 export { createMuboApp, MuboApp, type CreateMuboAppOptions } from "./core/app.ts";
 export {
   defineConfig,
+  getBuildConfig,
   loadConfigFile,
   loadAndResolveConfig,
   mergeConfig,
+  registerBuildConfig,
   resolveConfig,
   type CorsConfig,
   type EmbeddedAsset,

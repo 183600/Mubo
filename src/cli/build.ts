@@ -1,6 +1,12 @@
 import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { loadConfigFile, resolveConfig, sanitizeAppName, type MuboConfig } from "../core/config.ts";
+import {
+  BUILD_CONFIG_KEY,
+  loadConfigFile,
+  resolveConfig,
+  sanitizeAppName,
+  type MuboConfig,
+} from "../core/config.ts";
 import { MuboError } from "../core/errors.ts";
 import { mimeTypeForExtension } from "../static/assets.ts";
 import { findEntry } from "./project.ts";
@@ -102,13 +108,12 @@ function importPath(fromDir: string, toFile: string): string {
 export async function buildProject(options: BuildOptions = {}): Promise<BuildResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const entry = findEntry(cwd, options.entry);
-  const config: MuboConfig = await loadConfigFile(cwd, options.configFile)
-    .then((loaded) => loaded.config)
-    .catch((error: unknown) => {
-      throw error instanceof MuboError
-        ? error
-        : new MuboError("CONFIG_ERROR", "Failed to load project config", { cause: error });
-    });
+  const loaded = await loadConfigFile(cwd, options.configFile).catch((error: unknown) => {
+    throw error instanceof MuboError
+      ? error
+      : new MuboError("CONFIG_ERROR", "Failed to load project config", { cause: error });
+  });
+  const config: MuboConfig = loaded.config;
 
   const env = options.env ?? process.env;
   const resolved = resolveConfig(
@@ -143,12 +148,24 @@ export async function buildProject(options: BuildOptions = {}): Promise<BuildRes
   mkdirSync(outputDir, { recursive: true });
 
   const manifestPath = join(generatedDir, "embedded-assets.ts");
+  const buildConfigPath = join(generatedDir, "build-config.ts");
   const wrapperPath = join(generatedDir, "build-entry.ts");
   await Bun.write(
     manifestPath,
     `(globalThis as Record<string, unknown>).__MUBO_EMBEDDED_ASSETS__ = ${JSON.stringify(assets)};\n`,
   );
+  // The project configuration is baked into the binary so compiled apps keep
+  // the settings they were built with instead of depending on a config file
+  // in the working directory.
+  await Bun.write(
+    buildConfigPath,
+    loaded.path
+      ? `import config from ${JSON.stringify(importPath(generatedDir, loaded.path))};\n` +
+        `(globalThis as Record<string, unknown>)[${JSON.stringify(BUILD_CONFIG_KEY)}] = config;\n`
+      : `(globalThis as Record<string, unknown>)[${JSON.stringify(BUILD_CONFIG_KEY)}] = {};\n`,
+  );
   const imports = [`import ${JSON.stringify(importPath(generatedDir, manifestPath))};`];
+  imports.push(`import ${JSON.stringify(importPath(generatedDir, buildConfigPath))};`);
   imports.push(`import ${JSON.stringify(importPath(generatedDir, entry))};`);
   await Bun.write(wrapperPath, `${imports.join("\n")}\n`);
 
