@@ -278,6 +278,7 @@ app.static({
 - `/docs` and `/docs/` attempt `docs/index.html`
 - HTML defaults to `no-cache`; content-hashed assets default to 1-year `immutable`
 - Supports `ETag` / `If-None-Match` / `304` and `HEAD`
+- Supports single byte ranges (`Range: bytes=0-1023`) with `206` / `Content-Range`
 - Hash detection based on filename tokens like `app.3f9a1c2d.js`
 
 ## Configuration

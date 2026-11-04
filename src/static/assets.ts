@@ -45,7 +45,7 @@ function parseRangeHeader(header: string | null, size: number): { start: number;
       if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < 0) return null;
     }
 
-    if (start > end || start >= size || end >= size) return null;
+    if (start > end || start >= size) return null;
     result.push({ start, end: Math.min(end, size - 1) });
     if (result.length > RANGE_MAX_PARTS) return null;
   }
@@ -275,6 +275,10 @@ export class StaticAssets {
     headers.set("content-length", String(size));
     headers.set("accept-ranges", "bytes");
 
+    if (etagMatches(request.headers.get("if-none-match"), etag)) {
+      return new Response(null, { status: 304, headers });
+    }
+
     const range = parseRangeHeader(request.headers.get("range"), size);
     if (range !== null && range.length === 1) {
       const first = range[0];
@@ -284,16 +288,10 @@ export class StaticAssets {
       const chunk = sliceBody(body, start, end);
       headers.set("content-range", `bytes ${start}-${end}/${size}`);
       headers.set("content-length", String(end - start + 1));
-      if (etagMatches(request.headers.get("if-none-match"), etag)) {
-        return new Response(null, { status: 304, headers });
-      }
       if (isHead(request)) return new Response(null, { status: 206, headers });
       return new Response(chunk, { status: 206, headers });
     }
 
-    if (etagMatches(request.headers.get("if-none-match"), etag)) {
-      return new Response(null, { status: 304, headers });
-    }
     if (isHead(request)) return new Response(null, { status: 200, headers });
     return new Response(body, { status: 200, headers });
   }

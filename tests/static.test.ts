@@ -1113,4 +1113,66 @@ describe("static assets", () => {
     expect(range?.headers.get("content-range")).toBe(`bytes 0-4/${content.length}`);
     expect(range?.headers.get("content-length")).toBe("5");
   });
+
+  test("clamps range ends beyond the representation size", async () => {
+    const dir = tempDir();
+    const content = "0123456789";
+    writeFileSync(join(dir, "range.txt"), content);
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const clamped = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=5-100" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(clamped?.status).toBe(206);
+    expect(await clamped?.text()).toBe("56789");
+    expect(clamped?.headers.get("content-range")).toBe(`bytes 5-9/${content.length}`);
+    expect(clamped?.headers.get("content-length")).toBe("5");
+
+    const clampedHead = await assets.handle(
+      new Request("http://localhost/range.txt", { method: "HEAD", headers: { range: "bytes=5-100" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(clampedHead?.status).toBe(206);
+    expect(await clampedHead?.text()).toBe("");
+    expect(clampedHead?.headers.get("content-range")).toBe(`bytes 5-9/${content.length}`);
+    expect(clampedHead?.headers.get("content-length")).toBe("5");
+  });
+
+  test("clamps range ends beyond the size of embedded assets", async () => {
+    const assets = new StaticAssets({
+      mode: "embedded",
+      assets: { "/range.txt": "0123456789" },
+    });
+
+    const clamped = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=8-99" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(clamped?.status).toBe(206);
+    expect(await clamped?.text()).toBe("89");
+    expect(clamped?.headers.get("content-range")).toBe("bytes 8-9/10");
+    expect(clamped?.headers.get("content-length")).toBe("2");
+  });
+
+  test("returns a clean 304 for conditional range requests", async () => {
+    const dir = tempDir();
+    const content = "0123456789abcdef";
+    writeFileSync(join(dir, "range.txt"), content);
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const full = await assets.handle(new Request("http://localhost/range.txt"), new URL("http://localhost/range.txt"));
+    const etag = full?.headers.get("etag")!;
+    expect(etag).toBeTruthy();
+
+    const conditional = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=0-4", "if-none-match": etag } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(conditional?.status).toBe(304);
+    expect(conditional?.headers.get("etag")).toBe(etag);
+    expect(conditional?.headers.get("content-range")).toBeNull();
+    expect(conditional?.headers.get("content-length")).toBe(String(content.length));
+    expect(await conditional?.text()).toBe("");
+  });
 });
