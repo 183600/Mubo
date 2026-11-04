@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
@@ -84,8 +84,8 @@ describe("migration locking", () => {
     expect(history?.count).toBe(1);
     db.close();
 
-    const lockDir = join(dir, "..", ".mubo-locks");
-    const lockFile = join(lockDir, "._mubo_migrations.lock");
+    // Lock file is in the same directory as the database file
+    const lockFile = join(dir, "._mubo_migrations.lock");
     expect(existsSync(lockFile)).toBe(false);
   });
 
@@ -117,8 +117,8 @@ describe("migration locking", () => {
     expect(plan.statements.length).toBeGreaterThan(0);
     db.close();
 
-    const lockDir = join(dir, "..", ".mubo-locks");
-    const lockFile = join(lockDir, "._mubo_migrations.lock");
+    // planMigrations does not create lock files
+    const lockFile = join(dir, "._mubo_migrations.lock");
     expect(existsSync(lockFile)).toBe(false);
   });
 
@@ -163,4 +163,99 @@ describe("migration locking", () => {
     ).toEqual({ count: 1 });
     db.close();
   }, 20_000);
+
+  test("releases file lock after migration completes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mubo-lock-release-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "lockrelease.sqlite");
+    const db = new MuboDatabase({ path: dbPath });
+
+    const result = await applyMigrations(db, testSchema, { lock: "file" });
+    expect(result.status).toBe("applied");
+
+    // Lock file should be cleaned up
+    const lockFile = join(dir, "._mubo_migrations.lock");
+    expect(existsSync(lockFile)).toBe(false);
+
+    db.close();
+  });
+
+  test("multiple concurrent file lock migrations serialize correctly", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mubo-serial-migrate-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "serial.sqlite");
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => {
+        const db = new MuboDatabase({ path: dbPath });
+        return applyMigrations(db, testSchema, { lock: "file" }).finally(() => db.close());
+      }),
+    );
+
+    const applied = results.filter((r) => r.status === "applied");
+    const none = results.filter((r) => r.status === "none");
+    expect(applied).toHaveLength(1);
+    expect(none).toHaveLength(4);
+
+    const db = new Database(dbPath);
+    const history = db.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM _mubo_migrations").get();
+    expect(history?.count).toBe(1);
+    db.close();
+  });
+
+  test("file lock handles process crash simulation", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mubo-crash-lock-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "crash.sqlite");
+    const lockFile = join(dir, "._mubo_migrations.lock");
+
+    // Simulate a crashed process leaving a lock (use a non-existent PID)
+    writeFileSync(lockFile, `${process.pid + 100000}\n${Date.now() - 1000}`); // Dead PID
+
+    const db = new MuboDatabase({ path: dbPath });
+    const result = await applyMigrations(db, testSchema, { lock: "file" });
+    expect(result.status).toBe("applied");
+    expect(existsSync(lockFile)).toBe(false);
+    db.close();
+  });
+
+  test("concurrent migrations with different schemas apply sequentially", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mubo-diff-schema-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "diff.sqlite");
+
+    const schemaV1 = defineSchema({
+      tables: {
+        items: { columns: { id: { type: "integer", primaryKey: true }, name: { type: "text" } } },
+      },
+    });
+    const schemaV2 = defineSchema({
+      tables: {
+        items: { columns: { id: { type: "integer", primaryKey: true }, name: { type: "text" } } },
+        users: { columns: { id: { type: "integer", primaryKey: true }, email: { type: "text" } } },
+      },
+    });
+
+    // Start both migrations concurrently
+    const db1 = new MuboDatabase({ path: dbPath });
+    const db2 = new MuboDatabase({ path: dbPath });
+
+    const [r1, r2] = await Promise.all([
+      applyMigrations(db1, schemaV1, { lock: "file" }).finally(() => db1.close()),
+      applyMigrations(db2, schemaV2, { lock: "file" }).finally(() => db2.close()),
+    ]);
+
+    // Both should succeed but one will be "none" (already applied)
+    const statuses = [r1.status, r2.status].sort();
+    expect(statuses).toEqual(["applied", "applied"]); // Both schemas add tables so both apply
+
+    const db = new Database(dbPath);
+    const tables = db.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table'").all();
+    const tableNames = tables.map((t) => t.name);
+    expect(tableNames).toContain("items");
+    expect(tableNames).toContain("users");
+    const history = db.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM _mubo_migrations").get();
+    expect(history?.count).toBe(2);
+    db.close();
+  });
 });
