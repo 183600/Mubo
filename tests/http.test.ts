@@ -454,6 +454,28 @@ describe("HTTP routing and middleware", () => {
     },
   );
 
+  test("readiness reports a database that is no longer available", async () => {
+    const app = await startApp({
+      app: { name: "readiness-database-failure-test", env: "test" },
+      db: { path: ":memory:" },
+      schema,
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    app.db.close();
+
+    const response = await fetch(`${base(app)}/readyz`);
+    expect(response.status).toBe(503);
+    const payload = (await response.json()) as {
+      ok: boolean;
+      checks: { database: string; migrations: string; dataDirectory: string };
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.checks.database).toBe("failed");
+    expect(payload.checks.migrations).toBe("migration check failed");
+  });
+
   test("handlers that return no value respond with 204", async () => {
     const app = await startApp({
       app: { name: "empty-response-test", env: "test" },
@@ -470,6 +492,31 @@ describe("HTTP routing and middleware", () => {
 
     const nul = await fetch(`${base(app)}/null`);
     expect(nul.status).toBe(204);
+  });
+
+  test("handlers that return plain values respond with JSON", async () => {
+    const app = await startApp({
+      app: { name: "plain-response-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/object", () => ({ ok: true, items: [1, 2] }));
+    app.get("/number", () => 42);
+    app.get("/array", () => [1, "two"]);
+
+    const object = await fetch(`${base(app)}/object`);
+    expect(object.status).toBe(200);
+    expect(object.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(await object.json()).toEqual({ ok: true, items: [1, 2] });
+
+    const number = await fetch(`${base(app)}/number`);
+    expect(number.status).toBe(200);
+    expect(await number.json()).toBe(42);
+
+    const array = await fetch(`${base(app)}/array`);
+    expect(array.status).toBe(200);
+    expect(await array.json()).toEqual([1, "two"]);
   });
 
   test("rejects requests with an invalid URL", async () => {
