@@ -759,4 +759,100 @@ describe("middleware boundaries", () => {
     expect(getResponse.status).toBe(200);
     expect(await getResponse.json()).toEqual({ ok: true });
   });
+
+  test("app.patch() registers a PATCH route and handles partial updates", async () => {
+    const app = await startApp({
+      app: { name: "patch-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.patch("/users/:id", async (ctx) => {
+      const body = await ctx.body<{ name?: string }>();
+      return ctx.json({ id: ctx.params.id, updated: body?.name });
+    });
+
+    const response = await fetch(`${base(app)}/users/42`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "patched" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ id: "42", updated: "patched" });
+  });
+
+  test("app.put() registers a PUT route and handles full updates", async () => {
+    const app = await startApp({
+      app: { name: "put-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.put("/users/:id", async (ctx) => {
+      const body = await ctx.body<{ name: string; email: string }>();
+      return ctx.json({ id: ctx.params.id, name: body?.name, email: body?.email });
+    });
+
+    const response = await fetch(`${base(app)}/users/42`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "updated", email: "new@example.com" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ id: "42", name: "updated", email: "new@example.com" });
+  });
+
+  test("app.delete() registers a DELETE route", async () => {
+    const app = await startApp({
+      app: { name: "delete-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.delete("/users/:id", async (ctx) => {
+      return ctx.json({ deleted: ctx.params.id });
+    });
+
+    const response = await fetch(`${base(app)}/users/42`, { method: "DELETE" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deleted: "42" });
+  });
+
+  test("HEAD request falls back to explicit HEAD handler when both GET and HEAD registered", async () => {
+    const app = await startApp({
+      app: { name: "head-explicit-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/dual", () => new Response(JSON.stringify({ source: "get" }), { headers: { "content-type": "application/json" } }));
+    app.head("/dual", () => new Response(JSON.stringify({ source: "head" }), { headers: { "content-type": "application/json" } }));
+
+    const head = await fetch(`${base(app)}/dual`, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+
+    const get = await fetch(`${base(app)}/dual`, { method: "GET" });
+    expect(get.status).toBe(200);
+    expect(await get.json()).toEqual({ source: "get" });
+  });
+
+  test("HEAD request with only GET registered falls back to GET handler", async () => {
+    const app = await startApp({
+      app: { name: "head-fallback-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/fallback", (ctx) => ctx.json({ source: "get-fallback" }));
+
+    const head = await fetch(`${base(app)}/fallback`, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("content-type")).toContain("application/json");
+
+    const get = await fetch(`${base(app)}/fallback`, { method: "GET" });
+    expect(get.status).toBe(200);
+    expect(await get.json()).toEqual({ source: "get-fallback" });
+  });
 });
