@@ -199,6 +199,35 @@ describe("WebSocket route registration", () => {
     }
   });
 
+  test("rejects WebSocket authorization returning false", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-false-reject-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      authorize() {
+        return false;
+      },
+    });
+    await app.start();
+    apps.push(app);
+    const base = `http://127.0.0.1:${app.port}`;
+
+    const rejected = await fetch(`${base}/ws`, {
+      headers: { upgrade: "websocket", "x-request-id": "ws-false-rejected" },
+    });
+    expect(rejected.status).toBe(401);
+    const payload = (await rejected.json()) as { requestId: string };
+    expect(payload.requestId).toBe("ws-false-rejected");
+    await app.stop();
+  });
+
   test("normalizes surrounding slashes in websocket routes and requests", async () => {
     const app = await createMuboApp(
       {
