@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { MuboError } from "../core/errors.ts";
-import { frameworkPackage } from "./project.ts";
+import { frameworkPackage, FRAMEWORK_ROOT } from "./project.ts";
 
 const MUBO_VERSION = "0.1.0";
 
@@ -29,8 +29,7 @@ async function resolveMuboDependency(cwd: string): Promise<string> {
   } catch {}
   const framework = await frameworkPackage();
   if (framework.name === "mubo") {
-    const frameworkRoot = resolve(import.meta.dir, "..", "..");
-    return `file:${relative(cwd, frameworkRoot)}`;
+    return `file:${relative(cwd, FRAMEWORK_ROOT)}`;
   }
   return `^${framework.version ?? MUBO_VERSION}`;
 }
