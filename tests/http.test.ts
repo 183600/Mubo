@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createMuboApp, type MuboApp, resolveConfig } from "../src/index.ts";
 import { MuboError } from "../src/core/errors.ts";
 import { defineSchema } from "../src/db/schema.ts";
 
 const apps: MuboApp[] = [];
+const tempDirs: string[] = [];
 async function startApp(...args: Parameters<typeof createMuboApp>): Promise<MuboApp> {
   const app = await createMuboApp(args[0], { ...(args[1] ?? {}), argv: [] });
   await app.start();
@@ -13,9 +17,15 @@ async function startApp(...args: Parameters<typeof createMuboApp>): Promise<Mubo
 function base(app: MuboApp): string {
   return `http://127.0.0.1:${app.port}`;
 }
+function tempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "mubo-http-"));
+  tempDirs.push(dir);
+  return dir;
+}
 
 afterEach(async () => {
   while (apps.length) await apps.pop()!.stop();
+  while (tempDirs.length) rmSync(tempDirs.pop()!, { recursive: true, force: true });
 });
 
 const schema = defineSchema({
@@ -364,6 +374,58 @@ describe("HTTP routing and middleware", () => {
     expect(payload.checks.migrations).toContain("create table users");
     expect(payload.checks.dataDirectory).toBe("ok");
   });
+
+  test("readiness reports a schema that cannot be planned", async () => {
+    const app = await startApp({
+      app: { name: "readiness-plan-failure-test", env: "test" },
+      db: { path: ":memory:" },
+      schema,
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    app.db.exec("DROP TABLE users");
+    app.db.exec("CREATE TABLE users (id TEXT PRIMARY KEY)");
+
+    const response = await fetch(`${base(app)}/readyz`);
+    expect(response.status).toBe(503);
+    const payload = (await response.json()) as {
+      ok: boolean;
+      checks: { database: string; migrations: string; dataDirectory: string };
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.checks.database).toBe("ok");
+    expect(payload.checks.migrations).toBe("migration check failed");
+  });
+
+  test.skipIf(typeof process.getuid === "function" && process.getuid() === 0)(
+    "readiness reports a data directory that cannot be written",
+    async () => {
+      const dir = tempDir();
+      const app = await startApp({
+        app: { name: "readiness-data-dir-test", env: "test" },
+        dataDir: dir,
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      });
+
+      chmodSync(dir, 0o500);
+      try {
+        const response = await fetch(`${base(app)}/readyz`);
+        expect(response.status).toBe(503);
+        const payload = (await response.json()) as {
+          ok: boolean;
+          checks: { database: string; migrations: string; dataDirectory: string };
+        };
+        expect(payload.ok).toBe(false);
+        expect(payload.checks.database).toBe("ok");
+        expect(payload.checks.dataDirectory).toBe("not writable");
+      } finally {
+        chmodSync(dir, 0o700);
+      }
+    },
+  );
 
   test("handlers that return no value respond with 204", async () => {
     const app = await startApp({
