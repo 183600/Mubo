@@ -855,4 +855,27 @@ describe("middleware boundaries", () => {
     expect(get.status).toBe(200);
     expect(await get.json()).toEqual({ source: "get-fallback" });
   });
+
+  test("HEAD request on POST-only route returns 405", async () => {
+    const app = await startApp({
+      app: { name: "head-post-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.post("/only-post", (ctx) => ctx.json({ source: "post" }));
+
+    const head = await fetch(`${base(app)}/only-post`, { method: "HEAD" });
+    expect(head.status).toBe(405);
+    // When only POST is registered, allowed methods are OPTIONS and POST
+    expect(head.headers.get("allow")).toContain("OPTIONS");
+    expect(head.headers.get("allow")).toContain("POST");
+    expect(head.headers.get("x-request-id")).toBeString();
+
+    // GET on POST-only also returns 405 (HEAD falls back to GET, not vice versa)
+    const get = await fetch(`${base(app)}/only-post`, { method: "GET" });
+    expect(get.status).toBe(405);
+    expect(get.headers.get("allow")).toContain("OPTIONS");
+    expect(get.headers.get("allow")).toContain("POST");
+  });
 });
