@@ -11,6 +11,7 @@ import {
   compareVersions,
   ENTRY_CANDIDATES,
   findEntry,
+  frameworkPackage,
   MINIMUM_BUN_VERSION,
   satisfiesMinimumBunVersion,
 } from "../src/cli/project.ts";
@@ -141,6 +142,20 @@ describe("CLI", () => {
     expect(result.stdout).toContain("--no-static");
     expect(result.stdout).toContain("--no-ws");
     expect(result.stdout).toContain("--request-timeout <ms>");
+    expect(result.stdout).toContain("mubo --version");
+  });
+
+  test("reports the installed framework version", async () => {
+    const frameworkPackageJson = JSON.parse(
+      readFileSync(resolve(import.meta.dir, "../package.json"), "utf8"),
+    ) as { name: string; version: string };
+    const metadata = await frameworkPackage();
+    expect(metadata.name).toBe(frameworkPackageJson.name);
+    expect(metadata.version).toBe(frameworkPackageJson.version);
+
+    const result = await runCli(tempDir(), ["--version"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout.trim()).toBe(frameworkPackageJson.version);
   });
 
   test("forwards runtime flags to the development server", () => {

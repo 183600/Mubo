@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { MuboError } from "../core/errors.ts";
 
 export const ENTRY_CANDIDATES = [
@@ -15,6 +15,31 @@ export const ENTRY_CANDIDATES = [
 
 /** Minimum Bun runtime supported by the framework (mirrors package.json engines). */
 export const MINIMUM_BUN_VERSION = "1.2.0";
+
+/** Absolute path of the framework package root. */
+export const FRAMEWORK_ROOT = resolve(import.meta.dir, "..", "..");
+
+/**
+ * Reads the metadata of the framework package.
+ *
+ * The version is taken from `package.json` so generated projects and the CLI
+ * always report the version that is actually installed.
+ */
+export async function frameworkPackage(): Promise<{ name?: string; version?: string }> {
+  try {
+    const file = Bun.file(join(FRAMEWORK_ROOT, "package.json"));
+    if (!(await file.exists())) return {};
+    const pkg = (await file.json()) as { name?: unknown; version?: unknown };
+    return {
+      name: typeof pkg.name === "string" ? pkg.name : undefined,
+      version: typeof pkg.version === "string" && pkg.version.trim().length > 0
+        ? pkg.version.trim()
+        : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
 
 function versionParts(value: string): number[] {
   const parts: number[] = [];

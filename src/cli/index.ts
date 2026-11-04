@@ -4,6 +4,7 @@ import { boolFlag, parseCliArgs, stringFlag } from "./args.ts";
 import { buildProject } from "./build.ts";
 import { devCommand, doctorCommand, migrateCommand } from "./commands.ts";
 import { initProject } from "./init.ts";
+import { frameworkPackage } from "./project.ts";
 
 const HELP = `mubo - Bun-first hyper-monolith framework
 
@@ -16,6 +17,7 @@ Usage:
              [--minify] [--config <file>]
   mubo migrate [--check] [--config <file>] [--data-dir <dir>]
   mubo doctor [--json] [--config <file>]
+  mubo --version
 
 Environment:
   MUBO_HOST, MUBO_PORT, MUBO_DATA_DIR, MUBO_DB_PATH, MUBO_ENV, MUBO_APP_NAME
@@ -25,6 +27,11 @@ Environment:
 
 async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
+  if (boolFlag(args, "version")) {
+    const framework = await frameworkPackage();
+    console.log(framework.version ?? "unknown");
+    return;
+  }
   if (!args.command || args.command === "help" || boolFlag(args, "help") || args.command === "--help") {
     console.log(HELP);
     return;

@@ -121,6 +121,7 @@ mubo build [--entry <file>] [--outfile <file>] [--static-dir <dir>] [--target <t
            [--minify] [--config <file>]
 mubo migrate [--check] [--config <file>] [--data-dir <dir>]
 mubo doctor [--json] [--config <file>]
+mubo --version
 ```
 
 CLI flags have highest priority. Missing flag values, invalid booleans or invalid log levels throw errors rather than silently ignoring. `--static-dir` affects the embedded static assets in the build output. `mubo dev` forwards the runtime flags (`--port`, `--host`, `--data-dir`, `--db`, `--static-dir`, `--log-level`, `--request-timeout`, `--config`, `--no-static`, `--no-ws`) to the server it starts.

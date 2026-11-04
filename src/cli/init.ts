@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { MuboError } from "../core/errors.ts";
+import { frameworkPackage } from "./project.ts";
 
 const MUBO_VERSION = "0.1.0";
 
@@ -26,12 +27,12 @@ async function resolveMuboDependency(cwd: string): Promise<string> {
     const pkg = JSON.parse(await Bun.file(muboPkg).text());
     if (pkg.name === "mubo") return "file:.";
   } catch {}
-  const frameworkRoot = resolve(import.meta.dir, "..", "..");
-  try {
-    const pkg = JSON.parse(await Bun.file(join(frameworkRoot, "package.json")).text());
-    if (pkg.name === "mubo") return `file:${relative(cwd, frameworkRoot)}`;
-  } catch {}
-  return `^${MUBO_VERSION}`;
+  const framework = await frameworkPackage();
+  if (framework.name === "mubo") {
+    const frameworkRoot = resolve(import.meta.dir, "..", "..");
+    return `file:${relative(cwd, frameworkRoot)}`;
+  }
+  return `^${framework.version ?? MUBO_VERSION}`;
 }
 
 async function write(path: string, content: string): Promise<void> {

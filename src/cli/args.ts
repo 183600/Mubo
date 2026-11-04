@@ -6,7 +6,17 @@ export interface CliArgs {
   flags: Map<string, string | boolean>;
 }
 
-const BOOLEAN_FLAGS = new Set(["force", "install", "check", "json", "minify", "no-static", "no-ws", "help"]);
+const BOOLEAN_FLAGS = new Set([
+  "force",
+  "install",
+  "check",
+  "json",
+  "minify",
+  "no-static",
+  "no-ws",
+  "help",
+  "version",
+]);
 
 export function parseCliArgs(argv: string[]): CliArgs {
   const positionals: string[] = [];
