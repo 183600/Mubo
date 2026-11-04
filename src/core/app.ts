@@ -90,7 +90,12 @@ function clientIp(request: Request, server: Server<WsSocketData>, trustProxy: bo
     const real = request.headers.get("x-real-ip")?.trim();
     if (real && real.length <= 100) return real;
   }
-  return server.requestIP(request)?.address ?? "";
+  try {
+    return server.requestIP(request)?.address ?? "";
+  } catch {
+    // The server cannot resolve an address for requests it did not create.
+    return "";
+  }
 }
 
 /** Normalizes a handler return value into a Response object. */

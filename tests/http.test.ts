@@ -339,6 +339,66 @@ describe("HTTP routing and middleware", () => {
     expect(wrongMethod.headers.get("allow")).toContain("OPTIONS");
   });
 
+  test("readiness reports pending migrations as not ready", async () => {
+    const app = await startApp({
+      app: { name: "readiness-pending-test", env: "test" },
+      db: { path: ":memory:" },
+      schema,
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    const ready = await fetch(`${base(app)}/readyz`);
+    expect(ready.status).toBe(200);
+
+    app.db.exec("DROP TABLE users");
+
+    const pending = await fetch(`${base(app)}/readyz`);
+    expect(pending.status).toBe(503);
+    const payload = (await pending.json()) as {
+      ok: boolean;
+      checks: { database: string; migrations: string; dataDirectory: string };
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.checks.database).toBe("ok");
+    expect(payload.checks.migrations).toContain("create table users");
+    expect(payload.checks.dataDirectory).toBe("ok");
+  });
+
+  test("handlers that return no value respond with 204", async () => {
+    const app = await startApp({
+      app: { name: "empty-response-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/empty", () => undefined);
+    app.get("/null", () => null);
+
+    const empty = await fetch(`${base(app)}/empty`);
+    expect(empty.status).toBe(204);
+    expect(await empty.text()).toBe("");
+
+    const nul = await fetch(`${base(app)}/null`);
+    expect(nul.status).toBe(204);
+  });
+
+  test("rejects requests with an invalid URL", async () => {
+    const app = await startApp({
+      app: { name: "invalid-url-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    const malformed = { url: "not-a-url", method: "GET", headers: new Headers() } as unknown as Request;
+    const response = await app.handleRequest(malformed, app.serverInstance!);
+    expect(response?.status).toBe(400);
+    expect(response?.headers.get("x-request-id")).toBeString();
+    const payload = (await response?.json()) as { error: { code: string } };
+    expect(payload.error.code).toBe("BAD_REQUEST");
+  });
+
   test("OPTIONS to a GET-only route returns 405 with Allow and request id", async () => {
     const app = await startApp({
       app: { name: "options-test", env: "test" },
