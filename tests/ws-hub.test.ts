@@ -368,4 +368,51 @@ describe("WebSocket room hub", () => {
     ctx.send({ value: 1 });
     expect(socket.sent).toHaveLength(1);
   });
+
+  test("does not count payloads that cannot be serialized", () => {
+    const hub = new WsRoomHub(logger);
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, logger, "127.0.0.1");
+    hub.subscribe(ctx, "lobby");
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(hub.publish("lobby", circular)).toBe(0);
+    expect(hub.broadcast(circular)).toBe(0);
+    expect(socket.sent).toHaveLength(0);
+  });
+
+  test("enforces the per-IP connection limit and releases the slot on removal", () => {
+    const hub = new WsRoomHub(logger, 0, 2);
+    const first = fakeSocket();
+    const second = fakeSocket();
+    const third = fakeSocket();
+
+    hub.add(first.ws, null, logger, "10.0.0.1");
+    hub.add(second.ws, null, logger, "10.0.0.1");
+    expect(hub.getConnectionCountForIp("10.0.0.1")).toBe(2);
+
+    expect(() => hub.add(third.ws, null, logger, "10.0.0.1")).toThrow(
+      /Too many connections from this IP/,
+    );
+    expect(third.closes).toEqual([[1013, "Too many connections from this IP"]]);
+    expect(hub.clientCount).toBe(2);
+
+    hub.remove(second.ws);
+    expect(hub.getConnectionCountForIp("10.0.0.1")).toBe(1);
+    hub.remove(first.ws);
+    expect(hub.getConnectionCountForIp("10.0.0.1")).toBe(0);
+  });
+
+  test("treats empty binary payloads as successful sends", () => {
+    const hub = new WsRoomHub(logger);
+    const socket = fakeSocket(0);
+    const ctx = hub.add(socket.ws, null, logger, "127.0.0.1");
+    hub.subscribe(ctx, "lobby");
+
+    expect(hub.publish("lobby", new ArrayBuffer(0))).toBe(1);
+    expect(hub.publish("lobby", new Uint8Array(0))).toBe(1);
+    expect(hub.publish("lobby", new Blob([]))).toBe(1);
+    expect(socket.sent).toHaveLength(3);
+  });
 });

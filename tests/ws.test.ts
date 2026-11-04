@@ -587,6 +587,65 @@ describe("WebSocket rooms and broadcasting", () => {
     expect(payload.requestId).toBe("ws-authorize-false");
   });
 
+  test("rejects WebSocket upgrades when authorization throws", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-authorize-throws-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      authorize() {
+        throw new Error("token lookup failed");
+      },
+    });
+    await app.start();
+    apps.push(app);
+    const base = `http://127.0.0.1:${app.port}`;
+
+    const rejected = await fetch(`${base}/ws`, {
+      headers: { upgrade: "websocket", "x-request-id": "ws-authorize-throws" },
+    });
+    expect(rejected.status).toBe(401);
+    expect(rejected.headers.get("x-request-id")).toBe("ws-authorize-throws");
+    const payload = (await rejected.json()) as { error: { code: string }; requestId: string };
+    expect(payload.error.code).toBe("UNAUTHORIZED");
+    expect(payload.requestId).toBe("ws-authorize-throws");
+  });
+
+  test("rejects WebSocket upgrades when authorization rejects asynchronously", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-authorize-async-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      async authorize() {
+        await Bun.sleep(1);
+        return null;
+      },
+    });
+    await app.start();
+    apps.push(app);
+    const base = `http://127.0.0.1:${app.port}`;
+
+    const rejected = await fetch(`${base}/ws`, {
+      headers: { upgrade: "websocket" },
+    });
+    expect(rejected.status).toBe(401);
+    const payload = (await rejected.json()) as { error: { code: string } };
+    expect(payload.error.code).toBe("UNAUTHORIZED");
+  });
+
   test("logs successful WebSocket upgrades as HTTP 101", async () => {
     const app = await createMuboApp(
       {
