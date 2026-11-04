@@ -674,6 +674,7 @@ export async function createMuboApp(
     slowQueryMs: resolved.db.slowQueryMs,
     logger,
     schema: resolved.schema,
+    migrations: resolved.db.migrations,
   });
   const cwd = options.cwd ?? process.cwd();
   const staticAssets = new StaticAssets(resolved.static, cwd);

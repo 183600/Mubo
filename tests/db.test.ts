@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createMuboApp } from "../src/core/app.ts";
 import { MuboDatabase } from "../src/db/database.ts";
 import { defineSchema } from "../src/db/schema.ts";
 import { MuboError } from "../src/core/errors.ts";
@@ -1968,5 +1969,124 @@ describe("database and automatic migrations", () => {
     expect(result.status).toBe("applied");
     expect(existsSync(lockPath)).toBe(false);
     db.close();
+  });
+
+  test("uses database-level migration defaults for plan and migrate", async () => {
+    const db = new MuboDatabase({
+      path: ":memory:",
+      migrations: { table: "custom_history", mode: "apply", safeOnly: true },
+    });
+
+    const result = await db.migrate(baseSchema);
+    expect(result.status).toBe("applied");
+
+    const tables = db
+      .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((row) => row.name);
+    expect(tables).toContain("custom_history");
+    expect(tables).not.toContain("_mubo_migrations");
+    expect(db.query<{ total: number }>("SELECT COUNT(*) AS total FROM custom_history").get()?.total).toBe(1);
+
+    const second = await db.migrate(baseSchema);
+    expect(second.status).toBe("none");
+    expect(db.query<{ total: number }>("SELECT COUNT(*) AS total FROM custom_history").get()?.total).toBe(1);
+    db.close();
+  });
+
+  test("keeps database-level migration defaults overridable per call", async () => {
+    const db = new MuboDatabase({
+      path: ":memory:",
+      migrations: { table: "custom_history", mode: "apply", safeOnly: true },
+    });
+
+    const result = await db.migrate(baseSchema, { table: "other_history" });
+    expect(result.status).toBe("applied");
+
+    const tables = db
+      .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((row) => row.name);
+    expect(tables).toContain("other_history");
+    expect(tables).not.toContain("custom_history");
+    db.close();
+  });
+
+  test("honors a check-only migration mode stored on the database", async () => {
+    const db = new MuboDatabase({
+      path: ":memory:",
+      migrations: { mode: "check", table: "custom_history" },
+    });
+
+    const result = await db.migrate(baseSchema);
+    expect(result.status).toBe("pending");
+    expect(result.changes.length).toBeGreaterThan(0);
+
+    const tables = db
+      .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((row) => row.name);
+    expect(tables).not.toContain("custom_history");
+    db.close();
+  });
+});
+
+describe("application database wiring", () => {
+  test("app.db.migrate() records history in the configured migrations table", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "migration-table-test", env: "test" },
+        db: {
+          path: ":memory:",
+          migrations: { mode: "apply", safeOnly: true, table: "custom_history" },
+        },
+        log: { level: "error" },
+        static: { mode: "off" },
+        schema: baseSchema,
+      },
+      { argv: [] },
+    );
+    await app.start();
+
+    const tables = app.db
+      .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((row) => row.name);
+    expect(tables).toContain("custom_history");
+    expect(tables).not.toContain("_mubo_migrations");
+
+    const result = await app.db.migrate({
+      tables: { tags: { columns: { id: { type: "integer", primaryKey: true, autoIncrement: true } } } },
+    });
+    expect(result.status).toBe("applied");
+
+    const after = app.db
+      .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((row) => row.name);
+    expect(after).toContain("tags");
+    expect(after).not.toContain("_mubo_migrations");
+    expect(app.db.query<{ total: number }>("SELECT COUNT(*) AS total FROM custom_history").get()?.total).toBe(2);
+
+    await app.stop();
+  });
+
+  test("app.db.migrate() honors the configured check-only migration mode", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "migration-mode-test", env: "test" },
+        db: { path: ":memory:", migrations: { mode: "check", table: "custom_history" } },
+        log: { level: "error" },
+        static: { mode: "off" },
+        schema: baseSchema,
+      },
+      { argv: [] },
+    );
+
+    await expect(app.start()).rejects.toThrow(/MIGRATION_REQUIRED|Database migrations are pending/);
+    const result = await app.db.migrate(baseSchema);
+    expect(result.status).toBe("pending");
+
+    await app.stop();
   });
 });

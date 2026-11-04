@@ -23,6 +23,8 @@ export interface MuboDatabaseOptions {
   slowQueryMs?: number;
   logger?: Logger;
   schema?: MuboSchema;
+  /** Default migration options used by `plan()` and `migrate()`. */
+  migrations?: MigrationOptions;
 }
 
 export interface QueryResult<Row> {
@@ -57,6 +59,7 @@ export class MuboDatabase {
   readonly slowQueryMs: number;
   private readonly logger?: Logger;
   private readonly schema?: MuboSchema;
+  private readonly migrations: MigrationOptions;
   private closed = false;
   private readonly statementCache = new Map<string, Statement<unknown, QueryArgument[]>>();
   private readonly transactionContext = new AsyncLocalStorage<TransactionContext>();
@@ -86,6 +89,7 @@ export class MuboDatabase {
     this.slowQueryMs = slowQueryMs;
     this.logger = options.logger;
     this.schema = options.schema;
+    this.migrations = { ...(options.migrations ?? {}) };
     if (path !== ":memory:") {
       ensureDataDir(path, options.dataDir ?? process.cwd());
     }
@@ -439,9 +443,26 @@ export class MuboDatabase {
     }
   }
 
+  /**
+   * Merge the database-level migration defaults with caller supplied options.
+   * Undefined entries are dropped so they never override the built-in defaults.
+   */
+  private migrationOptions(options: MigrationOptions): MigrationOptions {
+    const merged: MigrationOptions = {
+      table: "_mubo_migrations",
+      safeOnly: true,
+      ...this.migrations,
+      ...options,
+    };
+    for (const key of Object.keys(merged) as (keyof MigrationOptions)[]) {
+      if (merged[key] === undefined) delete merged[key];
+    }
+    return merged;
+  }
+
   plan(schema: MuboSchema = this.schema ?? { tables: {} }, options: MigrationOptions = {}): MigrationPlan {
     this.assertOpen();
-    return planMigrations(this, schema, { table: "_mubo_migrations", ...options });
+    return planMigrations(this, schema, this.migrationOptions(options));
   }
 
   async migrate(
@@ -449,7 +470,7 @@ export class MuboDatabase {
     options: MigrationOptions = {},
   ): Promise<MigrationResult> {
     this.assertOpen();
-    return applyMigrations(this, schema, { table: "_mubo_migrations", safeOnly: true, ...options });
+    return applyMigrations(this, schema, this.migrationOptions(options));
   }
 
   close(force = false): void {

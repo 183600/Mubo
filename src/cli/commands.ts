@@ -62,6 +62,7 @@ export async function migrateCommand(context: CommandContext): Promise<void> {
     foreignKeys: config.db.foreignKeys,
     slowQueryMs: config.db.slowQueryMs,
     schema: config.schema,
+    migrations: config.db.migrations,
   });
   try {
     const result = await db.migrate(config.schema ?? { tables: {} }, config.db.migrations);
