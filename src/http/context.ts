@@ -10,6 +10,7 @@ export interface MuboRequestContext {
   readonly params: Record<string, string>;
   readonly query: URLSearchParams;
   readonly requestId: string;
+  readonly ip: string;
   readonly state: Record<string, unknown>;
   readonly db: MuboDatabase;
   readonly log: Logger;
@@ -35,6 +36,8 @@ export interface ContextDependencies {
   log: Logger;
   app: unknown;
   bodyLimit: number;
+  /** Client IP resolved by the server; honours `http.trustProxy`. */
+  ip?: string;
 }
 
 function payloadTooLarge(limit: number): MuboError {
@@ -118,6 +121,7 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
     params,
     query: deps.url.searchParams,
     requestId: deps.requestId,
+    ip: deps.ip ?? "",
     state,
     db: deps.db,
     log: deps.log,

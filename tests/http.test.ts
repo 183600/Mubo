@@ -994,6 +994,32 @@ describe("rate limiting", () => {
     expect(r4.status).toBe(200);
   });
 
+  test("uses the resolved client IP as the default rate limit bucket", async () => {
+    const app = await startApp({
+      app: { name: "ratelimit-default-key-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: {
+        rateLimit: {
+          maxRequests: 2,
+          windowMs: 1000,
+        },
+      },
+    });
+    app.get("/limited", (ctx) => ctx.json({ ok: true, ip: ctx.ip }));
+
+    const first = await fetch(`${base(app)}/limited`);
+    expect(first.status).toBe(200);
+    const payload = (await first.json()) as { ip: string };
+    expect(payload.ip).toBe("127.0.0.1");
+
+    expect((await fetch(`${base(app)}/limited`)).status).toBe(200);
+    const limited = await fetch(`${base(app)}/limited`);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("x-ratelimit-remaining")).toBe("0");
+  });
+
   test("does not apply rate limiting when disabled", async () => {
     const app = await startApp({
       app: { name: "no-ratelimit-test", env: "test" },

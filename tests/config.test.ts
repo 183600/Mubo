@@ -714,6 +714,25 @@ export default defineConfig({
     expect(config.static.dir).toBe(resolve(cwd, "public"));
   });
 
+  test("installs a default rate limit key when the configuration omits one", () => {
+    const config = resolveConfig(
+      { http: { rateLimit: { maxRequests: 10, windowMs: 1000 } } },
+      { env: {}, argv: [] },
+    );
+    if (config.http.rateLimit === false) throw new Error("expected rate limiting to stay enabled");
+    expect(typeof config.http.rateLimit.key).toBe("function");
+    expect(config.http.rateLimit.key(new Request("http://localhost/"))).toBe("unknown");
+  });
+
+  test("rejects a rate limit key that is not a function", () => {
+    expect(() =>
+      resolveConfig(
+        { http: { rateLimit: { maxRequests: 10, windowMs: 1000, key: "nope" as never } } },
+        { env: {}, argv: [] },
+      ),
+    ).toThrow(/Invalid rate limit key function/);
+  });
+
   test("rejects out-of-range numeric settings", () => {
     expect(() => resolveConfig({ http: { bodyLimit: 0 } }, { env: {}, argv: [] })).toThrow(
       /Invalid body limit/,

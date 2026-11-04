@@ -207,7 +207,7 @@ Routes support static paths (`/healthz`), parameter paths (`:id`), and trailing 
 
 ### Request Context
 
-Properties: `ctx.req`, `ctx.url`, `ctx.method`, `ctx.params`, `ctx.query`, `ctx.requestId`, `ctx.state`, `ctx.db`, `ctx.log`, `ctx.set/get`, `ctx.body()`, `ctx.text()`, `ctx.formData()` (alias `ctx.form()`), `ctx.json()`, `ctx.textResponse()`, `ctx.ok()`, `ctx.fail()`.
+Properties: `ctx.req`, `ctx.url`, `ctx.method`, `ctx.params`, `ctx.query`, `ctx.requestId`, `ctx.ip`, `ctx.state`, `ctx.db`, `ctx.log`, `ctx.set/get`, `ctx.body()`, `ctx.text()`, `ctx.formData()` (alias `ctx.form()`), `ctx.json()`, `ctx.textResponse()`, `ctx.ok()`, `ctx.fail()`.
 
 Request body is read only once and cached. If business code consumes the stream directly before calling `ctx.body()` / `ctx.text()`, those methods return a clear `BAD_REQUEST` error. Unhandled `MuboError` exceptions produce JSON:
 
@@ -219,6 +219,25 @@ Request body is read only once and cached. If business code consumes the stream 
 ```
 
 Response includes `x-request-id` header.
+
+### HTTP Options
+
+```ts
+const app = await createMuboApp({
+  http: {
+    trustProxy: true,                 // honour x-forwarded-for / x-real-ip
+    bodyLimit: 1024 * 1024,           // max request body bytes
+    requestTimeoutMs: 5_000,          // 0 disables the timeout
+    cors: { origin: ["https://app.test"], credentials: true, maxAgeSeconds: 600 },
+    rateLimit: { maxRequests: 120, windowMs: 60_000 },
+  },
+});
+```
+
+- `requestTimeoutMs` aborts slow handlers with `504` and `REQUEST_TIMEOUT`.
+- `rateLimit` buckets requests per client IP; pass `key: (request) => string` to use another bucket key. Responses carry `x-ratelimit-limit`, `x-ratelimit-remaining` and `x-ratelimit-reset`; exceeding the limit returns `429` and `RATE_LIMITED`.
+- `cors` accepts `"*"` or a list of origins. `credentials` cannot be combined with `"*"`; pre-flight requests are answered with `204`.
+- `ctx.ip` exposes the resolved client address and honours `trustProxy`.
 
 ### Database
 

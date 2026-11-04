@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { MuboSchema } from "../db/schema.ts";
+import { readClientIp } from "../utils/client-ip.ts";
 import { MuboError } from "./errors.ts";
 import { isLogLevel, type LogLevel } from "./logger.ts";
 
@@ -465,6 +466,11 @@ function requireInteger(
   }
 }
 
+/** Default rate-limit bucket key: the client IP resolved for the request. */
+function defaultRateLimitKey(request: Request): string {
+  return readClientIp(request) ?? "unknown";
+}
+
 /** Returns the platform-specific default data directory for the given app name. */
 export function defaultDataDir(appName: string, env: Record<string, string | undefined> = process.env): string {
   const name = sanitizeAppName(appName);
@@ -681,7 +687,9 @@ export function resolveConfig(
     if (!Number.isInteger(merged.http.rateLimit.windowMs) || merged.http.rateLimit.windowMs <= 0) {
       throw new MuboError("CONFIG_ERROR", "Invalid rate limit windowMs");
     }
-    if (typeof merged.http.rateLimit.key !== "function") {
+    if (merged.http.rateLimit.key === undefined) {
+      merged.http.rateLimit.key = defaultRateLimitKey;
+    } else if (typeof merged.http.rateLimit.key !== "function") {
       throw new MuboError("CONFIG_ERROR", "Invalid rate limit key function");
     }
   }

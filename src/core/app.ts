@@ -27,6 +27,7 @@ import {
   decodeLookupPath,
   routeIdentity,
 } from "../utils/path.ts";
+import { attachClientIp, readClientIp } from "../utils/client-ip.ts";
 
 /** Internal WebSocket route entry. */
 type WsRoute = { path: string; handlers: WsHandlers };
@@ -541,27 +542,27 @@ export class MuboApp {
   private logHttp(
     request: Request,
     url: URL,
-    server: Server<WsSocketData>,
     requestId: string,
     status: number,
     started: number,
+    ip: string,
   ): void {
     this.logger.child({ requestId }).info("http", {
       method: request.method,
       path: url.pathname,
       status,
       durationMs: Math.round((performance.now() - started) * 100) / 100,
-      ip: clientIp(request, server, this.config.http.trustProxy),
+      ip,
     });
   }
 
   private async dispatchHttp(
     request: Request,
     url: URL,
-    server: Server<WsSocketData>,
     requestId: string,
     match: RouteMatch,
     started: number,
+    ip: string,
   ): Promise<Response> {
     const log = this.logger.child({ requestId });
     const ctx = createRequestContext({
@@ -573,6 +574,7 @@ export class MuboApp {
       log,
       app: this,
       bodyLimit: this.config.http.bodyLimit,
+      ip,
     });
     if (match.type === "match") Object.assign(ctx.params, match.params);
 
@@ -599,7 +601,7 @@ export class MuboApp {
     });
 
     if (!response.headers.has("x-request-id")) response.headers.set("x-request-id", requestId);
-    this.logHttp(request, url, server, requestId, response.status, started);
+    this.logHttp(request, url, requestId, response.status, started, ip);
     return response;
   }
 
@@ -607,6 +609,8 @@ export class MuboApp {
     const started = performance.now();
     const requestIdHeader = request.headers.get("x-request-id");
     const requestId = validRequestId(requestIdHeader) ? requestIdHeader : crypto.randomUUID();
+    const ip = clientIp(request, server, this.config.http.trustProxy);
+    attachClientIp(request, ip);
 
     let url: URL;
     try {
@@ -614,7 +618,7 @@ export class MuboApp {
     } catch {
       const response = errorResponse(requestId, new MuboError("BAD_REQUEST", "Invalid request URL"), true);
       response.headers.set("x-request-id", requestId);
-      this.logHttp(request, new URL("http://invalid.local/"), server, requestId, response.status, started);
+      this.logHttp(request, new URL("http://invalid.local/"), requestId, response.status, started, ip);
       return response;
     }
 
@@ -632,7 +636,7 @@ export class MuboApp {
           });
           if (this.config.http.cors.credentials) headers.set("access-control-allow-credentials", "true");
           headers.set("x-request-id", requestId);
-          this.logHttp(request, url, server, requestId, 204, started);
+          this.logHttp(request, url, requestId, 204, started, ip);
           return new Response(null, { status: 204, headers });
         }
       }
@@ -640,16 +644,16 @@ export class MuboApp {
       const wsResponse = await this.handleWebSocketUpgrade(request, url, server, requestId);
       if (wsResponse) {
         if (wsResponse.status === 101) {
-          this.logHttp(request, url, server, requestId, 101, started);
+          this.logHttp(request, url, requestId, 101, started, ip);
           return undefined;
         }
         if (!wsResponse.headers.has("x-request-id")) wsResponse.headers.set("x-request-id", requestId);
-        this.logHttp(request, url, server, requestId, wsResponse.status, started);
+        this.logHttp(request, url, requestId, wsResponse.status, started, ip);
         return applyCors(request, wsResponse, this.config);
       }
 
       const match = this.router.match(request.method, url.pathname);
-      const response = await this.dispatchHttp(request, url, server, requestId, match, started);
+      const response = await this.dispatchHttp(request, url, requestId, match, started, ip);
       return applyCors(request, response, this.config);
     } catch (error) {
       const expected =
@@ -671,7 +675,7 @@ export class MuboApp {
       else this.logger.error("Unhandled request error", fields);
       const response = errorResponse(requestId, error, this.config.app.env === "production");
       response.headers.set("x-request-id", requestId);
-      this.logHttp(request, url, server, requestId, response.status, started);
+      this.logHttp(request, url, requestId, response.status, started, ip);
       return applyCors(request, response, this.config);
     }
   }
