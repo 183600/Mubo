@@ -20,6 +20,7 @@ import {
   type WsHandlers,
   type WsSocketData,
 } from "../ws/hub.ts";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import {
   normalizePath,
@@ -410,14 +411,25 @@ export class MuboApp {
 
   /** Checks if the data directory is writable by writing a probe file. */
   private async checkDataDirWritable(): Promise<boolean> {
+    // The probe name has to be unique: concurrent readiness checks must not
+    // delete each other's probe file while it is still being written.
+    const probePath = join(
+      this.config.dataDir,
+      `.mubo-readiness-${process.pid}-${crypto.randomUUID()}`,
+    );
+    let writable = false;
     try {
-      const probePath = join(this.config.dataDir, `.mubo-readiness-${process.pid}-${Date.now()}`);
       await Bun.write(probePath, "ok");
-      await Bun.file(probePath).delete();
-      return true;
+      writable = true;
     } catch {
-      return false;
+      writable = false;
     }
+    try {
+      rmSync(probePath, { force: true });
+    } catch {
+      // The probe file may already be gone; writability was determined above.
+    }
+    return writable;
   }
 
   /** Handles WebSocket upgrade request: validates route, auth, and connection limits. */

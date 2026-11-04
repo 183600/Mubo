@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMuboApp, type MuboApp, resolveConfig } from "../src/index.ts";
@@ -347,6 +347,33 @@ describe("HTTP routing and middleware", () => {
     expect(wrongMethod.status).toBe(405);
     expect(wrongMethod.headers.get("allow")).toContain("POST");
     expect(wrongMethod.headers.get("allow")).toContain("OPTIONS");
+  });
+
+  test("readiness stays consistent under concurrent checks and leaves no probe files", async () => {
+    const dir = tempDir();
+    const app = await startApp({
+      app: { name: "readiness-concurrent-test", env: "test" },
+      dataDir: dir,
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    const responses = await Promise.all(
+      Array.from({ length: 25 }, () => fetch(`${base(app)}/readyz`)),
+    );
+    for (const response of responses) {
+      expect(response.status).toBe(200);
+      const payload = (await response.json()) as {
+        ok: boolean;
+        checks: { database: string; migrations: string; dataDirectory: string };
+      };
+      expect(payload.ok).toBe(true);
+      expect(payload.checks.dataDirectory).toBe("ok");
+    }
+
+    const leftovers = readdirSync(dir).filter((entry) => entry.startsWith(".mubo-readiness"));
+    expect(leftovers).toEqual([]);
   });
 
   test("readiness reports pending migrations as not ready", async () => {
