@@ -98,6 +98,87 @@ export interface StaticAssetsOptions {
   };
 }
 
+const STATIC_MODES = ["embedded", "disk", "off"] as const;
+
+const MAX_CACHE_AGE_SECONDS = 31536000;
+
+function isValidAssetValue(value: unknown): boolean {
+  if (typeof value === "string" || value instanceof Uint8Array || value instanceof ArrayBuffer) {
+    return true;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const data = record.data;
+  if (typeof data !== "string" && !(data instanceof Uint8Array) && !(data instanceof ArrayBuffer)) {
+    return false;
+  }
+  if (record.encoding !== undefined && record.encoding !== "base64" && record.encoding !== "utf8") {
+    return false;
+  }
+  if (record.type !== undefined && typeof record.type !== "string") return false;
+  if (record.etag !== undefined && typeof record.etag !== "string") return false;
+  return true;
+}
+
+/** Validate static asset options so invalid values never silently disable serving. */
+export function validateStaticAssetsOptions(options: StaticAssetsOptions = {}): void {
+  if (options === null || typeof options !== "object" || Array.isArray(options)) {
+    throw new MuboError("CONFIG_ERROR", "Invalid static assets configuration");
+  }
+  if (options.mode !== undefined && !(STATIC_MODES as readonly string[]).includes(options.mode)) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      `Invalid static mode: ${String(options.mode)} (expected ${STATIC_MODES.join(", ")})`,
+    );
+  }
+  if (options.spaFallback !== undefined && typeof options.spaFallback !== "boolean") {
+    throw new MuboError("CONFIG_ERROR", "Invalid static SPA fallback setting");
+  }
+  if (options.dir !== undefined && typeof options.dir !== "string") {
+    throw new MuboError("CONFIG_ERROR", "Invalid static directory setting");
+  }
+  if (options.assets !== undefined) {
+    if (typeof options.assets !== "object" || options.assets === null || Array.isArray(options.assets)) {
+      throw new MuboError("CONFIG_ERROR", "Invalid static assets mapping");
+    }
+    for (const [key, value] of Object.entries(options.assets)) {
+      if (typeof key !== "string" || key.length === 0) {
+        throw new MuboError("CONFIG_ERROR", "Invalid static asset key");
+      }
+      if (!isValidAssetValue(value)) {
+        throw new MuboError("CONFIG_ERROR", `Invalid static asset payload for ${key}`);
+      }
+    }
+  }
+  const cache = options.cache;
+  if (cache === undefined) return;
+  if (typeof cache !== "object" || cache === null || Array.isArray(cache)) {
+    throw new MuboError("CONFIG_ERROR", "Invalid static cache configuration");
+  }
+  if (cache.immutableExtensions !== undefined) {
+    if (
+      !Array.isArray(cache.immutableExtensions) ||
+      cache.immutableExtensions.some(
+        (extension) =>
+          typeof extension !== "string" || extension.trim().replace(/^\.+/, "").length === 0,
+      )
+    ) {
+      throw new MuboError("CONFIG_ERROR", "Invalid immutable extensions setting");
+    }
+  }
+  if (cache.defaultMaxAgeSeconds !== undefined) {
+    const maxAge = cache.defaultMaxAgeSeconds;
+    if (
+      typeof maxAge !== "number" ||
+      !Number.isInteger(maxAge) ||
+      maxAge < 0 ||
+      maxAge > MAX_CACHE_AGE_SECONDS
+    ) {
+      throw new MuboError("CONFIG_ERROR", `Invalid static max age: ${String(maxAge)}`);
+    }
+  }
+}
+
 function normalizeKey(path: string): string {
   let key = path.startsWith("/") ? path : `/${path}`;
   key = key.replace(/\/+/g, "/");
