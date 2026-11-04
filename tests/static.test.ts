@@ -1175,4 +1175,76 @@ describe("static assets", () => {
     expect(conditional?.headers.get("content-length")).toBe(String(content.length));
     expect(await conditional?.text()).toBe("");
   });
+
+  test("rejects invalid static options instead of silently accepting them", () => {
+    expect(() => new StaticAssets({ mode: "bogus" as never })).toThrow(/Invalid static mode/);
+    expect(() => new StaticAssets({ spaFallback: "yes" as never })).toThrow(/Invalid static SPA fallback/);
+    expect(() => new StaticAssets({ dir: 42 as never })).toThrow(/Invalid static directory/);
+    expect(() => new StaticAssets({ assets: [] as never })).toThrow(/Invalid static assets mapping/);
+    expect(() => new StaticAssets({ assets: { "/a.txt": null as never } })).toThrow(
+      /Invalid static asset payload for \/a\.txt/,
+    );
+    expect(() => new StaticAssets({ assets: { "/a.txt": { data: 1 } as never } })).toThrow(
+      /Invalid static asset payload for \/a\.txt/,
+    );
+    expect(() => new StaticAssets({ assets: { "/a.txt": { data: "x", encoding: "gzip" as never } } })).toThrow(
+      /Invalid static asset payload for \/a\.txt/,
+    );
+    expect(() => new StaticAssets({ assets: { "/a.txt": { data: "x", type: 5 as never } } })).toThrow(
+      /Invalid static asset payload for \/a\.txt/,
+    );
+    expect(() => new StaticAssets({ assets: { "/a.txt": { data: "x", etag: 5 as never } } })).toThrow(
+      /Invalid static asset payload for \/a\.txt/,
+    );
+    expect(() => new StaticAssets({ cache: "none" as never })).toThrow(/Invalid static cache/);
+    expect(() => new StaticAssets({ cache: { immutableExtensions: [""] } })).toThrow(
+      /Invalid immutable extensions/,
+    );
+    expect(() => new StaticAssets({ cache: { immutableExtensions: "js" as never } })).toThrow(
+      /Invalid immutable extensions/,
+    );
+    expect(() => new StaticAssets({ cache: { defaultMaxAgeSeconds: -1 } })).toThrow(
+      /Invalid static max age/,
+    );
+    expect(() => new StaticAssets({ cache: { defaultMaxAgeSeconds: 1.5 } })).toThrow(
+      /Invalid static max age/,
+    );
+    expect(() => new StaticAssets({ cache: { defaultMaxAgeSeconds: 31536001 } })).toThrow(
+      /Invalid static max age/,
+    );
+    expect(() => new StaticAssets(null as never)).toThrow(/Invalid static assets configuration/);
+  });
+
+  test("accepts valid static options", () => {
+    expect(() => new StaticAssets({ mode: "off" })).not.toThrow();
+    expect(() => new StaticAssets({ mode: "disk", dir: "public", spaFallback: true })).not.toThrow();
+    expect(() =>
+      new StaticAssets({
+        mode: "embedded",
+        assets: {
+          "/a.txt": "text",
+          "/b.bin": new Uint8Array([1, 2, 3]),
+          "/c.bin": new ArrayBuffer(4),
+          "/d.txt": { data: "text", encoding: "utf8", type: "text/plain", etag: '"abc"' },
+          "/e.bin": { data: "AAEC", encoding: "base64" },
+        },
+        cache: { immutableExtensions: [".JS", " css "], defaultMaxAgeSeconds: 0 },
+      }),
+    ).not.toThrow();
+  });
+
+  test("app.static rejects invalid options", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "static-invalid-options-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    expect(() => app.static({ mode: "bogus" as never })).toThrow(/Invalid static mode/);
+    expect(() => app.static({ cache: { defaultMaxAgeSeconds: -5 } })).toThrow(/Invalid static max age/);
+    expect(app.static({ mode: "off" })).toBe(app);
+  });
 });

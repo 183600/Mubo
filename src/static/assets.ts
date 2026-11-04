@@ -300,6 +300,7 @@ export class StaticAssets {
   private defaultMaxAgeSeconds: number;
 
   constructor(options: StaticAssetsOptions = {}, cwd = process.cwd()) {
+    validateStaticAssetsOptions(options);
     this.mode = options.mode ?? "disk";
     this.root = resolve(cwd, options.dir || "public");
     this.spaFallback = options.spaFallback ?? true;
@@ -312,6 +313,7 @@ export class StaticAssets {
   }
 
   configure(options: StaticAssetsOptions = {}, cwd = process.cwd()): this {
+    validateStaticAssetsOptions(options);
     if (options.mode !== undefined) this.mode = options.mode;
     if (options.dir !== undefined) this.root = resolve(cwd, options.dir || "public");
     if (options.spaFallback !== undefined) this.spaFallback = options.spaFallback;
