@@ -1064,6 +1064,165 @@ describe("WebSocket rooms and broadcasting", () => {
       console.error = originalConsoleError;
     }
   });
+
+  test("onError can return a Response to close the connection", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-onerror-response-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+        throw new Error("connect exploded");
+      },
+      onError(ctx) {
+        return new Response(JSON.stringify({ type: "error", handled: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+      expect(await socket.next()).toEqual({ type: "ready" });
+      // The onError Response is not sent to the client - it's ignored
+      // The connection stays open
+      socket.socket.send(JSON.stringify({ type: "ping" }));
+      await socket.expectNone(200);
+      socket.socket.close();
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("onError throwing does not break the connection", async () => {
+    const errors: string[] = [];
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-onerror-throw-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+        throw new Error("connect exploded");
+      },
+      onError(ctx, error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        throw new Error("onError handler also failed");
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+      expect(await socket.next()).toEqual({ type: "ready" });
+      // The onError threw but the connection should still be open
+      socket.socket.send(JSON.stringify({ type: "ping" }));
+      await socket.expectNone(200);
+      socket.socket.close();
+    } finally {
+      console.error = originalConsoleError;
+    }
+    expect(errors).toContain("connect exploded");
+  });
+
+  test("onError returning void does not send anything", async () => {
+    const errors: string[] = [];
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-onerror-void-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+        throw new Error("connect exploded");
+      },
+      onError(ctx, error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        // Return void explicitly
+        return;
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+      expect(await socket.next()).toEqual({ type: "ready" });
+      // No error message sent back because onError returned void
+      await socket.expectNone(200);
+      socket.socket.close();
+    } finally {
+      console.error = originalConsoleError;
+    }
+    expect(errors).toContain("connect exploded");
+  });
+
+  test("onError returning Promise that resolves to Response ignores the Response", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-onerror-promise-response-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+        throw new Error("connect exploded");
+      },
+      async onError() {
+        return Promise.resolve(
+          new Response(JSON.stringify({ handled: true }), { status: 200 }),
+        );
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+      expect(await socket.next()).toEqual({ type: "ready" });
+      // The onError Response is ignored - connection stays open
+      await socket.expectNone(200);
+      socket.socket.close();
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
 });
 
 describe("WebSocket connection limits", () => {
