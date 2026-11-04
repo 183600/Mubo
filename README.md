@@ -103,7 +103,7 @@ bun run build
 ### Diagnostics and Migrations
 
 ```bash
-bunx mubo doctor          # Check Bun/SQLite/data-dir/port
+bunx mubo doctor          # Check Bun/platform/config/data-dir/SQLite/port/schema/static
 bunx mubo doctor --json   # Machine-readable diagnostics
 bunx mubo migrate --check # Check for pending migrations
 bunx mubo migrate         # Apply migrations (auto-applied on startup)
@@ -260,6 +260,8 @@ Transaction callbacks are sync when given sync functions, return `Promise` for a
 
 With `db.migrations.lock: "file"`, migrations are serialized through a lock file next to the database. Locks left behind by crashed processes are detected and reclaimed automatically; locks held by a live process are respected.
 
+Database tuning options: `db.wal` (WAL mode, default `true`), `db.foreignKeys` (default `true`), `db.busyTimeoutMs` (default `5000`) and `db.slowQueryMs` (default `200`, logs a warning for slower queries).
+
 ### WebSocket
 
 ```ts
@@ -305,6 +307,7 @@ app.static({
 - Supports `ETag` / `If-None-Match` / `304` and `HEAD`
 - Supports single byte ranges (`Range: bytes=0-1023`) with `206` / `Content-Range`
 - Hash detection based on filename tokens like `app.3f9a1c2d.js`
+- Invalid options (unknown mode, negative cache time, malformed asset payload) fail fast with `CONFIG_ERROR`
 
 ## Configuration
 
@@ -324,17 +327,24 @@ Specify config file with `--config <file>`. Common environment variables:
 | `MUBO_HOST` | HTTP listen address | `127.0.0.1` |
 | `MUBO_PORT` | HTTP listen port | `3000` |
 | `MUBO_BODY_LIMIT` | Max request body bytes | `1048576` |
+| `MUBO_REQUEST_TIMEOUT_MS` | Request timeout in milliseconds (`0` disables) | `0` |
 | `MUBO_DATA_DIR` | Data directory for DB, logs | `$HOME/.mubo/<appName>` |
 | `MUBO_DB_PATH` | SQLite file path | `<dataDir>/mubo.sqlite` |
 | `MUBO_BUSY_TIMEOUT_MS` | SQLite busy timeout | `5000` |
+| `MUBO_WAL` | Enable SQLite WAL mode | `true` |
+| `MUBO_FOREIGN_KEYS` | Enforce foreign keys | `true` |
+| `MUBO_SLOW_QUERY_MS` | Slow query warning threshold | `200` |
 | `MUBO_MIGRATIONS_MODE` | `apply` / `check` / `off` | `apply` |
 | `MUBO_MIGRATIONS_SAFE_ONLY` | Only append-only migrations | `true` |
 | `MUBO_MIGRATIONS_TABLE` | Migration history table | `_mubo_migrations` |
+| `MUBO_MIGRATIONS_LOCK` | `file` / `sqlite` migration locking | `sqlite` |
 | `MUBO_STATIC_MODE` | `embedded` / `disk` / `off` | `disk` |
 | `MUBO_STATIC_DIR` | Static assets directory | `public` |
 | `MUBO_STATIC_SPA_FALLBACK` | Return `index.html` on 404 | `true` |
 | `MUBO_WS_ENABLED` | Enable WebSocket | `true` |
 | `MUBO_WS_MAX_PAYLOAD` | Max WebSocket message bytes | `1048576` |
+| `MUBO_WS_MAX_CONNECTIONS` | Max concurrent WebSocket connections | `0` (unlimited) |
+| `MUBO_WS_MAX_CONNECTIONS_PER_IP` | Max WebSocket connections per IP | `0` (unlimited) |
 | `MUBO_LOG_LEVEL` | `debug` / `info` / `warn` / `error` | `info` |
 | `MUBO_LOG_JSON` | JSON structured logging | `true` in production |
 
