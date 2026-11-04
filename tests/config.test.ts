@@ -638,6 +638,12 @@ export default defineConfig({
     expect(() =>
       resolveConfig({ http: { cors: { origin: "*", credentials: "yes" as never } } }, { env: {}, argv: [] }),
     ).toThrow(/Invalid CORS credentials/);
+    expect(() =>
+      resolveConfig({ http: { cors: { origin: "*", credentials: true } } }, { env: {}, argv: [] }),
+    ).toThrow(/credentials cannot be combined/);
+    expect(() =>
+      resolveConfig({ http: { cors: { origin: ["https://one.test"], credentials: true } } }, { env: {}, argv: [] }),
+    ).not.toThrow();
   });
 
   test("rejects non-boolean config switches and invalid cache extensions", () => {

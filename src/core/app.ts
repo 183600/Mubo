@@ -106,7 +106,7 @@ function originAllowed(request: Request, config: ResolvedMuboConfig): string | u
   if (!cors) return undefined;
   const origin = request.headers.get("origin");
   if (!origin) return undefined;
-  if (cors.origin === "*") return cors.credentials ? origin : "*";
+  if (cors.origin === "*") return "*";
   return cors.origin.includes(origin) ? origin : undefined;
 }
 
@@ -127,7 +127,7 @@ function applyCors(request: Request, response: Response, config: ResolvedMuboCon
   const cors = config.http.cors;
   if (!cors) return response;
   const allowOrigin = originAllowed(request, config);
-  const varyOrigin = cors.origin !== "*" || cors.credentials === true;
+  const varyOrigin = cors.origin !== "*";
   if (!allowOrigin && !varyOrigin) return response;
   const headers = new Headers(response.headers);
   if (allowOrigin) {

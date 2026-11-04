@@ -616,16 +616,34 @@ describe("HTTP routing and middleware", () => {
     }
 
     const wildcard = await startApp({
-      app: { name: "cors-credentials-origin-test", env: "test" },
+      app: { name: "cors-wildcard-origin-test", env: "test" },
       db: { path: ":memory:" },
-      http: { port: 0, cors: { origin: "*", credentials: true } },
+      http: { port: 0, cors: { origin: "*" } },
       log: { level: "error" },
       static: { mode: "off" },
     });
     wildcard.get("/plain", () => new Response("ok"));
     const noOrigin = await fetch(`${base(wildcard)}/plain`);
     expect(noOrigin.headers.get("access-control-allow-origin")).toBeNull();
-    expect(noOrigin.headers.get("vary")).toBe("Origin");
+    expect(noOrigin.headers.get("vary")).toBeNull();
+
+    const anyOrigin = await fetch(`${base(wildcard)}/plain`, {
+      headers: { origin: "http://any.test" },
+    });
+    expect(anyOrigin.headers.get("access-control-allow-origin")).toBe("*");
+    expect(anyOrigin.headers.get("vary")).toBeNull();
+  });
+
+  test("rejects wildcard CORS origins combined with credentials", async () => {
+    await expect(
+      startApp({
+        app: { name: "cors-credentials-wildcard-test", env: "test" },
+        db: { path: ":memory:" },
+        http: { port: 0, cors: { origin: "*", credentials: true } },
+        log: { level: "error" },
+        static: { mode: "off" },
+      }),
+    ).rejects.toThrow(/credentials cannot be combined/);
   });
 
   test("enforces body limits and optionally handles CORS preflight", async () => {
@@ -684,7 +702,7 @@ describe("HTTP routing and middleware", () => {
     const wildcard = await startApp({
       app: { name: "cors-wildcard-test", env: "test" },
       db: { path: ":memory:" },
-      http: { port: 0, cors: { origin: "*", credentials: true } },
+      http: { port: 0, cors: { origin: "*" } },
       log: { level: "error" },
       static: { mode: "off" },
     });
@@ -692,8 +710,8 @@ describe("HTTP routing and middleware", () => {
     const wildcardResponse = await fetch(`${base(wildcard)}/cors`, {
       headers: { origin: "http://any.test" },
     });
-    expect(wildcardResponse.headers.get("access-control-allow-origin")).toBe("http://any.test");
-    expect(wildcardResponse.headers.get("vary")).toContain("Origin");
+    expect(wildcardResponse.headers.get("access-control-allow-origin")).toBe("*");
+    expect(wildcardResponse.headers.get("vary")).toBeNull();
   });
 });
 

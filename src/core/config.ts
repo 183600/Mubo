@@ -649,6 +649,12 @@ export function resolveConfig(
     ) {
       throw new MuboError("CONFIG_ERROR", "Invalid CORS credentials setting");
     }
+    if (origin === "*" && (cors as { credentials?: unknown }).credentials === true) {
+      throw new MuboError(
+        "CONFIG_ERROR",
+        'Invalid CORS configuration: credentials cannot be combined with the "*" origin',
+      );
+    }
     if (Array.isArray(origin)) {
       merged.http.cors = {
         ...(merged.http.cors as CorsConfig),
