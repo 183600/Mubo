@@ -1374,3 +1374,157 @@ describe("rate limiting", () => {
     }
   });
 });
+
+describe("HTTP trustProxy", () => {
+  test("honors x-forwarded-for when trustProxy is enabled", async () => {
+    const app = await startApp({
+      app: { name: "trustproxy-forwarded-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: { trustProxy: true },
+    });
+    app.get("/ip", (ctx) => ctx.json({ ip: ctx.ip }));
+    await app.start();
+
+    const response = await fetch(`${base(app)}/ip`, {
+      headers: { "x-forwarded-for": "203.0.113.9, 10.0.0.1" },
+    });
+    expect(response.status).toBe(200);
+    const body1 = (await response.json()) as { ip: string };
+    expect(body1.ip).toBe("203.0.113.9");
+  });
+
+  test("honors x-real-ip when trustProxy is enabled and x-forwarded-for absent", async () => {
+    const app = await startApp({
+      app: { name: "trustproxy-realip-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: { trustProxy: true },
+    });
+    app.get("/ip", (ctx) => ctx.json({ ip: ctx.ip }));
+    await app.start();
+
+    const response = await fetch(`${base(app)}/ip`, {
+      headers: { "x-real-ip": "198.51.100.7" },
+    });
+    expect(response.status).toBe(200);
+    const body2 = (await response.json()) as { ip: string };
+    expect(body2.ip).toBe("198.51.100.7");
+  });
+
+  test("prefers x-forwarded-for over x-real-ip when both present", async () => {
+    const app = await startApp({
+      app: { name: "trustproxy-both-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: { trustProxy: true },
+    });
+    app.get("/ip", (ctx) => ctx.json({ ip: ctx.ip }));
+    await app.start();
+
+    const response = await fetch(`${base(app)}/ip`, {
+      headers: {
+        "x-forwarded-for": "203.0.113.9",
+        "x-real-ip": "198.51.100.7",
+      },
+    });
+    expect(response.status).toBe(200);
+    const body3 = (await response.json()) as { ip: string };
+    expect(body3.ip).toBe("203.0.113.9");
+  });
+
+  test("ignores x-forwarded-for when trustProxy is disabled", async () => {
+    const app = await startApp({
+      app: { name: "trustproxy-disabled-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: { trustProxy: false },
+    });
+    app.get("/ip", (ctx) => ctx.json({ ip: ctx.ip }));
+    await app.start();
+
+    const response = await fetch(`${base(app)}/ip`, {
+      headers: { "x-forwarded-for": "203.0.113.9" },
+    });
+    expect(response.status).toBe(200);
+    const body4 = (await response.json()) as { ip: string };
+    expect(body4.ip).toBe("127.0.0.1");
+  });
+
+  test("handles IPv6 addresses in x-forwarded-for", async () => {
+    const app = await startApp({
+      app: { name: "trustproxy-ipv6-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: { trustProxy: true },
+    });
+    app.get("/ip", (ctx) => ctx.json({ ip: ctx.ip }));
+    await app.start();
+
+    const response = await fetch(`${base(app)}/ip`, {
+      headers: { "x-forwarded-for": "2001:db8::1, 10.0.0.1" },
+    });
+    expect(response.status).toBe(200);
+    const body5 = (await response.json()) as { ip: string };
+    expect(body5.ip).toBe("2001:db8::1");
+  });
+
+  test("limits forwarded IP length to prevent abuse", async () => {
+    const app = await startApp({
+      app: { name: "trustproxy-length-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: { trustProxy: true },
+    });
+    app.get("/ip", (ctx) => ctx.json({ ip: ctx.ip }));
+    await app.start();
+
+    const longIp = "192.168.1." + "1".repeat(200); // Over 100 chars
+    const response = await fetch(`${base(app)}/ip`, {
+      headers: { "x-forwarded-for": longIp },
+    });
+    expect(response.status).toBe(200);
+    // Should fall back to direct connection IP when forwarded IP is too long
+    const body6 = (await response.json()) as { ip: string };
+    expect(body6.ip).toBe("127.0.0.1");
+  });
+
+  test("uses x-forwarded-for for rate limiting when trustProxy enabled", async () => {
+    const app = await startApp({
+      app: { name: "trustproxy-ratelimit-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: {
+        trustProxy: true,
+        rateLimit: { maxRequests: 2, windowMs: 60_000 },
+      },
+    });
+    app.get("/limited", (ctx) => ctx.json({ ip: ctx.ip }));
+    await app.start();
+
+    // First request from forwarded IP
+    const r1 = await fetch(`${base(app)}/limited`, {
+      headers: { "x-forwarded-for": "203.0.113.1" },
+    });
+    expect(r1.status).toBe(200);
+
+    // Second request from same forwarded IP
+    const r2 = await fetch(`${base(app)}/limited`, {
+      headers: { "x-forwarded-for": "203.0.113.1" },
+    });
+    expect(r2.status).toBe(200);
+
+    // Third request should be rate limited
+    const r3 = await fetch(`${base(app)}/limited`, {
+      headers: { "x-forwarded-for": "203.0.113.1" },
+    });
+    expect(r3.status).toBe(429);
+  });
+});
