@@ -362,8 +362,7 @@ export class StaticAssets {
 
     const range = parseRangeHeader(request.headers.get("range"), size);
     if (range !== null && range.length === 1) {
-      const first = range[0];
-      if (!first) return new Response(null, { status: 200, headers });
+      const first = range[0]!;
       const start = first.start;
       const end = first.end;
       const chunk = sliceBody(body, start, end);
