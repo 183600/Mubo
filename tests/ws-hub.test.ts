@@ -197,6 +197,36 @@ describe("WebSocket room hub", () => {
     expect(() => failingCtx.send({ ok: true })).not.toThrow();
   });
 
+  test("exposes room subscriptions as a read-only live view", () => {
+    const hub = new WsRoomHub();
+    const socket = fakeSocket();
+    const ctx = hub.add(socket.ws, null, logger, "");
+    hub.subscribe(ctx, "lobby");
+
+    expect(ctx.rooms.has("lobby")).toBe(true);
+    expect(ctx.rooms.size).toBe(1);
+    expect([...ctx.rooms]).toEqual(["lobby"]);
+
+    const rooms = ctx.rooms as Set<string>;
+    expect(() => rooms.add("ghost")).toThrow(/read-only/);
+    expect(() => rooms.delete("lobby")).toThrow(/read-only/);
+    expect(() => rooms.clear()).toThrow(/read-only/);
+    expect(() => {
+      (rooms as unknown as Record<string, unknown>).tampered = true;
+    }).toThrow(/read-only/);
+    expect(() => {
+      delete (rooms as unknown as Record<string, unknown>).tampered;
+    }).toThrow(/read-only/);
+
+    expect(hub.roomSize("lobby")).toBe(1);
+    expect(hub.roomSize("ghost")).toBe(0);
+    expect([...ctx.rooms]).toEqual(["lobby"]);
+
+    hub.unsubscribe(ctx, "lobby");
+    expect(ctx.rooms.size).toBe(0);
+    expect(ctx.rooms.has("lobby")).toBe(false);
+  });
+
   test("releases rooms and clients on removal", () => {
     const hub = new WsRoomHub();
     const first = fakeSocket();

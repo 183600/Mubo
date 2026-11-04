@@ -97,6 +97,40 @@ function isEmptyPayload(payload: string | ArrayBuffer | ArrayBufferView | Blob):
   return payload.byteLength === 0;
 }
 
+const READONLY_SET_MUTATORS = new Set(["add", "delete", "clear"]);
+
+function readonlySetError(): never {
+  throw new MuboError(
+    "VALIDATION_ERROR",
+    "Room subscriptions are read-only; use subscribe() or unsubscribe() instead",
+  );
+}
+
+export function createReadonlySetView<T>(source: Set<T>): ReadonlySet<T> {
+  const bound = new Map<PropertyKey, (...args: unknown[]) => unknown>();
+  return new Proxy(source, {
+    get(target, property) {
+      if (typeof property === "string" && READONLY_SET_MUTATORS.has(property)) {
+        return readonlySetError;
+      }
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      let method = bound.get(property);
+      if (!method) {
+        method = value.bind(target) as (...args: unknown[]) => unknown;
+        bound.set(property, method);
+      }
+      return method;
+    },
+    set() {
+      return readonlySetError();
+    },
+    deleteProperty() {
+      return readonlySetError();
+    },
+  });
+}
+
 function sendStatus(
   ws: ServerWebSocket<WsSocketData>,
   payload: string | ArrayBuffer | ArrayBufferView | Blob,
@@ -152,6 +186,7 @@ export class WsRoomHub {
     if (existing) return existing.ctx;
     const id = crypto.randomUUID();
     let client!: Client;
+    let roomView!: ReadonlySet<string>;
     const state = Object.assign(Object.create(null) as Record<string, unknown>, ws.data.state);
     const context: MuboWsContext = {
       id,
@@ -162,7 +197,7 @@ export class WsRoomHub {
       user: ws.data.user,
       state,
       get rooms() {
-        return client.rooms as ReadonlySet<string>;
+        return roomView;
       },
       log: logger,
       app,
@@ -176,6 +211,7 @@ export class WsRoomHub {
       close: (code, reason) => ws.close(code, reason),
     };
     client = { ctx: context, ws, rooms: new Set() };
+    roomView = createReadonlySetView(client.rooms);
     this.clients.set(id, client);
     this.clientsBySocket.set(ws, client);
     return context;

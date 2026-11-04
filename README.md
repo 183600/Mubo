@@ -258,7 +258,7 @@ app.ws("/ws", {
 
 WebSocket context: `ctx.id`, `ctx.ip`, `ctx.url`, `ctx.user`, `ctx.state`, `ctx.rooms`, `ctx.send()`, `ctx.emit()`, `ctx.publish()`, `ctx.broadcast()`, `ctx.subscribe()`, `ctx.unsubscribe()`, `ctx.close()`. The `emit()` protocol uses `{ t: "event", e, d, id? }`.
 
-Room names must contain non-whitespace. Duplicate subscriptions are idempotent. `publish()` / `broadcast()` return successful connection count. Failed sends are logged but not counted.
+Room names must contain non-whitespace. Duplicate subscriptions are idempotent. `ctx.rooms` is a read-only live view of the current subscriptions; use `ctx.subscribe()` / `ctx.unsubscribe()` to change them. `publish()` / `broadcast()` return successful connection count. Failed sends are logged but not counted.
 
 With `http.trustProxy`, HTTP logs and WebSocket `ctx.ip` prefer `x-forwarded-for` (first address) or `x-real-ip`.
 
