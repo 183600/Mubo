@@ -110,4 +110,42 @@ describe("logger", () => {
     expect(lines[0]).toContain("first\\rsecond");
     expect(lines[0]).not.toContain("\r");
   });
+
+  test("keeps envelope keys intact when fields use the same names", () => {
+    const logger = createLogger({ level: "debug", json: true });
+    const lines = captureLogs(() => {
+      logger.info("envelope", {
+        level: "spoofed",
+        message: "spoofed message",
+        time: "spoofed time",
+        path: "/ok",
+      });
+    });
+
+    expect(lines).toHaveLength(1);
+    const entry = JSON.parse(lines[0]!);
+    expect(entry.level).toBe("info");
+    expect(entry.message).toBe("envelope");
+    expect(entry.time).not.toBe("spoofed time");
+    expect(entry.field_level).toBe("spoofed");
+    expect(entry.field_message).toBe("spoofed message");
+    expect(entry.field_time).toBe("spoofed time");
+    expect(entry.path).toBe("/ok");
+  });
+
+  test("keeps conflicting field names distinct", () => {
+    const logger = createLogger({ level: "debug", json: true });
+    const lines = captureLogs(() => {
+      logger.info("envelope", {
+        message: "first",
+        field_message: "second",
+      });
+    });
+
+    expect(lines).toHaveLength(1);
+    const entry = JSON.parse(lines[0]!);
+    expect(entry.message).toBe("envelope");
+    expect(entry.field_message).toBe("second");
+    expect(entry.field_message_).toBe("first");
+  });
 });

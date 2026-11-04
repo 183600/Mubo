@@ -13,6 +13,7 @@ Mubo depends only on Bun's built-in features: HTTP/WebSocket (`Bun.serve`), SQLi
 - [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
 - [Basic Usage](#basic-usage)
+- [Observability](#observability)
 - [Configuration](#configuration)
 - [Deployment](#deployment)
 - [Security & Limitations](#security--limitations)
@@ -311,6 +312,14 @@ app.static({
 - Unsatisfiable ranges answer `416` with `Content-Range: bytes */<size>`; malformed ranges are ignored and serve the full body
 - Hash detection based on filename tokens like `app.3f9a1c2d.js`
 - Invalid options (unknown mode, negative cache time, malformed asset payload) fail fast with `CONFIG_ERROR`
+
+### Observability
+
+Every log entry carries the application name, the environment and, for request scoped logs, the request ID. `log.level` selects the minimum severity (`debug`, `info`, `warn`, `error`) and `log.json` switches between human-readable and JSON output; JSON output is enabled by default in production.
+
+JSON entries always describe the entry itself with `time`, `level` and `message`. A user field that uses one of those names is preserved under a prefixed key (`field_level`, `field_message`, `field_time`) instead of overwriting the envelope. Newlines in messages and field values are escaped, and circular references and bigint values are serialized safely.
+
+Requests are logged with method, path, status, duration and client IP. Queries slower than `db.slowQueryMs` produce a warning that includes the statement text. `GET /healthz` reports the application name and uptime, `GET /readyz` verifies the database, the migration state and the data directory and answers `503` when any of them is unavailable.
 
 ## Configuration
 

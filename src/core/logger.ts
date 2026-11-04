@@ -46,11 +46,34 @@ function humanLine(level: LogLevel, message: string, fields: Record<string, unkn
   return parts.join(" ");
 }
 
+/** Envelope keys that always describe the log entry itself. */
+const RESERVED_JSON_KEYS = new Set(["time", "level", "message"]);
+
+/**
+ * Copies log fields into the JSON envelope.
+ *
+ * The envelope keys always describe the log entry, so a user field that uses
+ * the same name is preserved under a prefixed key instead of overwriting it.
+ */
+function envelopeFields(fields: Record<string, unknown>): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (!RESERVED_JSON_KEYS.has(key)) payload[key] = value;
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    if (!RESERVED_JSON_KEYS.has(key)) continue;
+    let name = `field_${key}`;
+    while (Object.hasOwn(payload, name)) name = `${name}_`;
+    payload[name] = value;
+  }
+  return payload;
+}
+
 function jsonLine(level: LogLevel, message: string, fields: Record<string, unknown>): string {
   const time = new Date().toISOString();
   const ancestors: object[] = [];
   try {
-    return JSON.stringify({ time, level, message, ...fields }, function (_key, value: unknown) {
+    return JSON.stringify({ time, level, message, ...envelopeFields(fields) }, function (_key, value: unknown) {
       if (typeof value === "bigint") return value.toString();
       if (typeof value !== "object" || value === null) return value;
       while (ancestors.length > 0 && ancestors[ancestors.length - 1] !== this) ancestors.pop();
