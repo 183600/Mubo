@@ -10,7 +10,8 @@ export type ErrorCode =
   | "MIGRATION_ERROR"
   | "MIGRATION_REQUIRED"
   | "APP_STOPPED"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "REQUEST_TIMEOUT";
 
 const DEFAULT_STATUS: Record<string, number> = {
   BAD_REQUEST: 400,
@@ -25,6 +26,7 @@ const DEFAULT_STATUS: Record<string, number> = {
   MIGRATION_REQUIRED: 503,
   APP_STOPPED: 503,
   INTERNAL_ERROR: 500,
+  REQUEST_TIMEOUT: 504,
 };
 
 export class MuboError extends Error {

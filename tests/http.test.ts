@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createMuboApp, type MuboApp } from "../src/index.ts";
+import { createMuboApp, type MuboApp, resolveConfig } from "../src/index.ts";
 import { MuboError } from "../src/core/errors.ts";
 import { defineSchema } from "../src/db/schema.ts";
 
@@ -877,5 +877,57 @@ describe("middleware boundaries", () => {
     expect(get.status).toBe(405);
     expect(get.headers.get("allow")).toContain("OPTIONS");
     expect(get.headers.get("allow")).toContain("POST");
+  });
+});
+
+describe("request timeout", () => {
+  test("times out slow requests and returns 504", async () => {
+    const app = await startApp({
+      app: { name: "timeout-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: { requestTimeoutMs: 50 },
+    });
+    app.get("/slow", async (ctx) => {
+      await Bun.sleep(100);
+      return ctx.json({ ok: true });
+    });
+    app.get("/fast", (ctx) => ctx.json({ ok: true }));
+
+    const slowResponse = await fetch(`${base(app)}/slow`);
+    expect(slowResponse.status).toBe(504);
+    const slowPayload = (await slowResponse.json()) as { error: { code: string } };
+    expect(slowPayload.error.code).toBe("REQUEST_TIMEOUT");
+
+    const fastResponse = await fetch(`${base(app)}/fast`);
+    expect(fastResponse.status).toBe(200);
+    expect(await fastResponse.json()).toEqual({ ok: true });
+  });
+
+  test("does not timeout when requestTimeoutMs is 0 (default)", async () => {
+    const app = await startApp({
+      app: { name: "no-timeout-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/slow", async (ctx) => {
+      await Bun.sleep(100);
+      return ctx.json({ ok: true });
+    });
+
+    const response = await fetch(`${base(app)}/slow`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  test("rejects invalid requestTimeoutMs values", () => {
+    expect(() =>
+      resolveConfig({ http: { requestTimeoutMs: -1 } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid request timeout/);
+    expect(() =>
+      resolveConfig({ http: { requestTimeoutMs: 1.5 } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid request timeout/);
   });
 });

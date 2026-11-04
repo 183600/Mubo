@@ -25,6 +25,7 @@ export interface MuboConfig {
     trustProxy?: boolean;
     cors?: false | CorsConfig;
     bodyLimit?: number;
+    requestTimeoutMs?: number;
   };
   db?: {
     path?: string;
@@ -79,6 +80,7 @@ export interface ResolvedMuboConfig {
     trustProxy: boolean;
     cors: false | CorsConfig;
     bodyLimit: number;
+    requestTimeoutMs: number;
   };
   db: {
     path: string;
@@ -284,6 +286,10 @@ function argvOverrides(argv: string[]): MuboConfig {
         result.log = { ...result.log, level };
         break;
       }
+      case "request-timeout": {
+        result.http = { ...result.http, requestTimeoutMs: readNumber(next(name), "--request-timeout") };
+        break;
+      }
       case "no-static": {
         if (inline === undefined) {
           result.static = { ...result.static, mode: "off" };
@@ -333,8 +339,9 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
   const port = readNumber(env.MUBO_PORT, "MUBO_PORT");
   const host = env.MUBO_HOST?.trim() || undefined;
   const bodyLimit = readNumber(env.MUBO_BODY_LIMIT, "MUBO_BODY_LIMIT");
-  if (port !== undefined || host !== undefined || bodyLimit !== undefined) {
-    result.http = { port, host, bodyLimit };
+  const requestTimeoutMs = readNumber(env.MUBO_REQUEST_TIMEOUT_MS, "MUBO_REQUEST_TIMEOUT_MS");
+  if (port !== undefined || host !== undefined || bodyLimit !== undefined || requestTimeoutMs !== undefined) {
+    result.http = { port, host, bodyLimit, requestTimeoutMs };
   }
 
   const dbPath = env.MUBO_DB_PATH?.trim() || undefined;
@@ -490,6 +497,7 @@ export function resolveConfig(
       trustProxy: false,
       cors: false,
       bodyLimit: 1024 * 1024,
+      requestTimeoutMs: 0,
     },
     db: {
       path: "",
@@ -620,6 +628,9 @@ export function resolveConfig(
   }
   if (!Number.isInteger(merged.http.bodyLimit) || merged.http.bodyLimit <= 0) {
     throw new MuboError("CONFIG_ERROR", `Invalid body limit: ${merged.http.bodyLimit}`);
+  }
+  if (!Number.isInteger(merged.http.requestTimeoutMs) || merged.http.requestTimeoutMs < 0) {
+    throw new MuboError("CONFIG_ERROR", `Invalid request timeout: ${merged.http.requestTimeoutMs}`);
   }
   if (merged.http.cors && merged.http.cors.maxAgeSeconds !== undefined) {
     requireInteger("CORS max age", merged.http.cors.maxAgeSeconds, { min: 0 });

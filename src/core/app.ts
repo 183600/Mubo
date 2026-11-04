@@ -235,6 +235,23 @@ export class MuboApp {
     return dispatch(0);
   }
 
+  private createRequestTimeoutMiddleware(): RouteMiddleware {
+    const timeoutMs = this.config.http.requestTimeoutMs;
+    return async (ctx, next) => {
+      let timeoutId: ReturnType<typeof setTimeout>;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new MuboError("REQUEST_TIMEOUT", `Request exceeded ${timeoutMs}ms timeout`));
+        }, timeoutMs);
+      });
+      try {
+        return await Promise.race([next(), timeoutPromise]);
+      } finally {
+        clearTimeout(timeoutId!);
+      }
+    };
+  }
+
   private async healthResponse(ctx: MuboRequestContext, pathname: string): Promise<Response | null> {
     const normalized = normalizePath(pathname);
     const path = normalized.replace(/^\/+|\/+$/g, "");
@@ -562,6 +579,10 @@ export class MuboApp {
         id: migration.id,
         changes: migration.changes.length,
       });
+    }
+
+    if (this.config.http.requestTimeoutMs > 0) {
+      this.middlewares.unshift(this.createRequestTimeoutMiddleware());
     }
 
     const serveOptions = {
