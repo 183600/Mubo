@@ -180,6 +180,12 @@ export interface MuboConfig {
       maxAgeSeconds?: number;
     };
     bodyLimit?: number;
+    requestTimeoutMs?: number;
+    rateLimit?: false | {
+      maxRequests: number;
+      windowMs: number;
+      key?: (request: Request) => string;
+    };
   };
 
   db?: {
@@ -211,6 +217,8 @@ export interface MuboConfig {
     enabled?: boolean;
     maxPayloadBytes?: number;
     heartbeat?: { intervalMs?: number; timeoutMs?: number };
+    maxConnections?: number;
+    maxConnectionsPerIp?: number;
   };
 
   log?: {
@@ -236,6 +244,22 @@ export interface MuboConfig {
   - macOS/Linux: `$HOME/.mubo/<appName>/`
   - Windows: `%APPDATA%\Mubo\<appName>\\`
 - Data directory typically contains `mubo.sqlite`; logs may extend to other files
+
+### 5.5 Configuration File Example
+
+```ts
+// mubo.config.ts
+import { defineConfig } from "mubo";
+
+export default defineConfig({
+  app: { name: "my-app", env: "production" },
+  http: { host: "0.0.0.0", port: 3000, trustProxy: true },
+  db: { path: "./data/app.sqlite", busyTimeoutMs: 10000 },
+  static: { mode: "embedded", dir: "dist/client", spaFallback: true },
+  ws: { enabled: true, maxPayloadBytes: 2 * 1024 * 1024 },
+  log: { level: "info", json: true },
+});
+```
 
 ## 6. HTTP Layer
 
@@ -724,7 +748,7 @@ app.options(path, handler);
 app.db.exec(sql);
 app.db.query(sql).get(...params);
 app.db.query(sql).all(...params);
-app.db.query(sql).run(...params);
+db.query(sql).run(...params);
 app.db.transaction((tx) => { ... });
 app.db.migrate(schema, options);
 ```
@@ -754,3 +778,16 @@ const schema = defineSchema({ tables: { ... } });
 - WebSocket: connect, send/receive messages, disconnect releases room resources
 - Static assets: cache headers, ETag, SPA fallback
 - Compiled single-file runs; database auto-materializes; only one binary to distribute
+
+### 20.1 Verification Checklist
+
+- [ ] `mubo init` creates a runnable project with `bun run dev`
+- [ ] `/healthz` returns 200 with app name and uptime
+- [ ] `/readyz` returns 200 when database is available, 503 otherwise
+- [ ] Schema changes on restart apply append-only migrations automatically
+- [ ] WebSocket connections can send/receive messages and join/leave rooms
+- [ ] Static assets serve with correct cache headers and ETag support
+- [ ] Single-file build (`mubo build`) produces working executable
+- [ ] Executable auto-creates database on first run
+- [ ] Multiple app instances can run concurrently with file-based migration locking
+- [ ] `mubo doctor` reports Bun version, SQLite integrity, and port availability

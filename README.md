@@ -326,6 +326,22 @@ Default data directory:
 
 Numeric configs (port, body limits, timeouts, caches) are validated at startup. Invalid values fail with `CONFIG_ERROR`. Timeouts must be non-negative integers, and WebSocket heartbeat timeout must be greater than interval. App names are sanitized and truncated to 64 characters. Empty `MUBO_ENV` triggers validation error; invalid `NODE_ENV` is ignored and falls back to `development`.
 
+### Configuration File Example
+
+```ts
+// mubo.config.ts
+import { defineConfig } from "mubo";
+
+export default defineConfig({
+  app: { name: "my-app", env: "production" },
+  http: { host: "0.0.0.0", port: 3000, trustProxy: true },
+  db: { path: "./data/app.sqlite", busyTimeoutMs: 10000 },
+  static: { mode: "embedded", dir: "dist/client", spaFallback: true },
+  ws: { enabled: true, maxPayloadBytes: 2 * 1024 * 1024 },
+  log: { level: "info", json: true },
+});
+```
+
 ## Deployment
 
 ### Private Single-Node
@@ -339,6 +355,27 @@ Numeric configs (port, body limits, timeouts, caches) are validated at startup. 
 
 - Suitable for file-system equipped edge nodes
 - Runs independently on weak networks; can sync to larger systems when available
+
+### Systemd Service Example
+
+```ini
+# /etc/systemd/system/my-app.service
+[Unit]
+Description=My Mubo Application
+After=network.target
+
+[Service]
+Type=simple
+User=appuser
+WorkingDirectory=/opt/my-app
+ExecStart=/opt/my-app/my-app --data-dir /var/lib/my-app
+Restart=on-failure
+RestartSec=5
+Environment=MUBO_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ## Security & Limitations
 

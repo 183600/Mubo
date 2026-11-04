@@ -162,6 +162,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+/** Validates that a configuration section exists and is a plain object. */
 function requireSection(value: unknown, name: string): Record<string, unknown> {
   if (!isPlainObject(value)) {
     throw new MuboError("CONFIG_ERROR", `Invalid ${name} configuration`);
@@ -169,18 +170,21 @@ function requireSection(value: unknown, name: string): Record<string, unknown> {
   return value;
 }
 
+/** Validates a boolean configuration value. */
 function requireBoolean(name: string, value: unknown): void {
   if (typeof value !== "boolean") {
     throw new MuboError("CONFIG_ERROR", `Invalid ${name} setting`);
   }
 }
 
+/** Validates a string configuration value. */
 function requireString(name: string, value: unknown): void {
   if (typeof value !== "string") {
     throw new MuboError("CONFIG_ERROR", `Invalid ${name} setting`);
   }
 }
 
+/** Deep-merges two plain objects, treating undefined as "no override". */
 export function mergeConfig<T>(base: T, override: unknown): T {
   if (!isPlainObject(base) || !isPlainObject(override)) {
     return (override === undefined ? base : override) as T;
@@ -200,6 +204,7 @@ export function mergeConfig<T>(base: T, override: unknown): T {
   return result as T;
 }
 
+/** Parses a numeric string, throwing on invalid input. */
 function readNumber(value: string | undefined, name: string): number | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
@@ -209,6 +214,7 @@ function readNumber(value: string | undefined, name: string): number | undefined
   return parsed;
 }
 
+/** Parses a boolean string (1/true/yes/on or 0/false/no/off), throwing on invalid input. */
 function readBoolean(value: string | undefined): boolean | undefined {
   if (value === undefined) return undefined;
   const normalized = value.trim().toLowerCase();
@@ -222,6 +228,7 @@ const APP_ENVIRONMENTS = ["development", "production", "test"] as const;
 const MIGRATION_MODES = ["apply", "check", "off"] as const;
 const STATIC_MODES = ["embedded", "disk", "off"] as const;
 
+/** Validates that a string value is one of the allowed choices. */
 function readChoice<T extends string>(
   value: string | undefined,
   label: string,
@@ -238,12 +245,14 @@ function readChoice<T extends string>(
   return trimmed as T;
 }
 
+/** Validates that a value is one of the allowed string choices. */
 function requireChoice(name: string, value: unknown, allowed: readonly string[]): void {
   if (typeof value !== "string" || !allowed.includes(value)) {
     throw new MuboError("CONFIG_ERROR", `Invalid ${name}: ${String(value)}`);
   }
 }
 
+/** Resolves the app environment from MUBO_ENV (required if set) or NODE_ENV (optional). */
 function resolveEnvironment(env: Record<string, string | undefined>): string | undefined {
   const raw = env.MUBO_ENV;
   if (raw !== undefined) {
@@ -259,6 +268,7 @@ function resolveEnvironment(env: Record<string, string | undefined>): string | u
   return undefined;
 }
 
+/** Parses CLI argv into a partial MuboConfig, throwing on missing or invalid values. */
 function argvOverrides(argv: string[]): MuboConfig {
   const result: MuboConfig = {};
   for (let i = 0; i < argv.length; i++) {
@@ -335,6 +345,7 @@ function argvOverrides(argv: string[]): MuboConfig {
   return result;
 }
 
+/** Parses environment variables into a partial MuboConfig. */
 function envOverrides(env: Record<string, string | undefined>): MuboConfig {
   const result: MuboConfig = {};
   const set = <K extends keyof MuboConfig>(key: K, value: MuboConfig[K]) => {
@@ -431,6 +442,7 @@ export function sanitizeAppName(name: string): string {
   return cleaned || "mubo-app";
 }
 
+/** Validates that a value is an integer within optional bounds. */
 function requireInteger(
   name: string,
   value: number,
@@ -453,6 +465,7 @@ function requireInteger(
   }
 }
 
+/** Returns the platform-specific default data directory for the given app name. */
 export function defaultDataDir(appName: string, env: Record<string, string | undefined> = process.env): string {
   const name = sanitizeAppName(appName);
   const home = env.HOME || env.USERPROFILE || homedir();
@@ -465,6 +478,7 @@ export function defaultDataDir(appName: string, env: Record<string, string | und
 
 const configRequire = createRequire(import.meta.url);
 
+/** Loads a config file from the given candidates, clearing the require cache for hot reload. */
 export async function loadConfigFile(
   cwd: string,
   explicitFile?: string,
@@ -494,6 +508,7 @@ export async function loadConfigFile(
   return { config: {} };
 }
 
+/** Merges defaults, file config, env vars, and CLI args into a fully validated ResolvedMuboConfig. */
 export function resolveConfig(
   overrides: MuboConfig = {},
   options: ResolveConfigOptions & { fileConfig?: MuboConfig } = {},
@@ -550,6 +565,7 @@ export function resolveConfig(
     mergeConfig(envOverrides(env) as unknown, argvOverrides(options.argv ?? process.argv.slice(2)) as unknown),
   ) as ResolvedMuboConfig;
 
+  // Validate required sections exist and are plain objects
   requireSection(merged.app, "app");
   requireSection(merged.http, "HTTP");
   requireSection(merged.db, "database");
@@ -560,6 +576,7 @@ export function resolveConfig(
   requireSection(merged.ws.heartbeat, "WebSocket heartbeat");
   requireSection(merged.log, "log");
 
+  // Validate boolean fields
   requireBoolean("trust proxy", merged.http.trustProxy);
   requireBoolean("database WAL", merged.db.wal);
   requireBoolean("database foreign keys", merged.db.foreignKeys);
@@ -568,6 +585,7 @@ export function resolveConfig(
   requireBoolean("WebSocket enabled", merged.ws.enabled);
   requireBoolean("JSON logging", merged.log.json);
 
+  // Validate required string fields
   requireString("app name", merged.app.name);
   requireString("data directory", merged.dataDir);
   requireString("database path", merged.db.path);
@@ -579,6 +597,7 @@ export function resolveConfig(
   merged.db.migrations.table = merged.db.migrations.table.trim();
   merged.static.dir = merged.static.dir.trim();
 
+  // Normalize immutable extensions: trim, remove leading dots, lowercase
   const immutableExtensions = merged.static.cache.immutableExtensions;
   if (
     !Array.isArray(immutableExtensions) ||
@@ -595,6 +614,7 @@ export function resolveConfig(
   );
 
   if (!logJsonConfigured) merged.log.json = merged.app.env === "production";
+  // Validate enum fields
   requireChoice("app environment", merged.app.env, APP_ENVIRONMENTS);
   requireChoice("log level", merged.log.level, ["debug", "info", "warn", "error"]);
   requireChoice("migrations mode", merged.db.migrations.mode, MIGRATION_MODES);

@@ -28,17 +28,21 @@ import {
   routeIdentity,
 } from "../utils/path.ts";
 
-export interface CreateMuboAppOptions extends ResolveConfigOptions {}
-
+/** Internal WebSocket route entry. */
 type WsRoute = { path: string; handlers: WsHandlers };
 
+/** Signals that trigger graceful shutdown. */
 type ShutdownSignal = "SIGINT" | "SIGTERM";
 
 const SHUTDOWN_SIGNALS: ShutdownSignal[] = ["SIGINT", "SIGTERM"];
 
+/** Track running apps for process-level shutdown handling. */
 const runningApps = new Set<MuboApp>();
 let shutdownHandlers: Array<[ShutdownSignal, () => void]> | undefined;
 
+export interface CreateMuboAppOptions extends ResolveConfigOptions {}
+
+/** Installs global signal handlers for graceful shutdown of all running apps. */
 function installShutdownHandlers(): void {
   if (shutdownHandlers) return;
   const handlers: Array<[ShutdownSignal, () => void]> = [];
@@ -52,12 +56,14 @@ function installShutdownHandlers(): void {
   shutdownHandlers = handlers;
 }
 
+/** Removes global signal handlers when no apps are running. */
 function removeShutdownHandlers(): void {
   if (!shutdownHandlers) return;
   for (const [signal, handler] of shutdownHandlers) process.removeListener(signal, handler);
   shutdownHandlers = undefined;
 }
 
+/** Gracefully stops all running apps and re-raises the signal if no other handlers exist. */
 async function shutdownRunningApps(signal: ShutdownSignal): Promise<void> {
   const apps = [...runningApps];
   for (const app of apps) {
@@ -70,10 +76,12 @@ async function shutdownRunningApps(signal: ShutdownSignal): Promise<void> {
   if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
 }
 
+/** Validates a request ID header value (alphanumeric + ._:- up to 128 chars). */
 function validRequestId(value: string | null): value is string {
   return value !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
 }
 
+/** Extracts client IP from request, respecting trustProxy settings. */
 function clientIp(request: Request, server: Server<WsSocketData>, trustProxy: boolean): string {
   if (trustProxy) {
     const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim().split(/\s+/)[0];
@@ -84,12 +92,14 @@ function clientIp(request: Request, server: Server<WsSocketData>, trustProxy: bo
   return server.requestIP(request)?.address ?? "";
 }
 
+/** Normalizes a handler return value into a Response object. */
 function normalizeResponse(value: unknown): Response {
   if (value instanceof Response) return value;
   if (value === undefined || value === null) return new Response(null, { status: 204 });
   return jsonResponse(value);
 }
 
+/** Checks if the request origin is allowed by CORS config; returns the allowed origin or undefined. */
 function originAllowed(request: Request, config: ResolvedMuboConfig): string | undefined {
   const cors = config.http.cors;
   if (!cors) return undefined;
@@ -99,6 +109,7 @@ function originAllowed(request: Request, config: ResolvedMuboConfig): string | u
   return cors.origin.includes(origin) ? origin : undefined;
 }
 
+/** Adds a value to the Vary header, avoiding duplicates. */
 function addVaryHeader(headers: Headers, value: string): void {
   const current = headers.get("vary");
   if (!current) {
@@ -110,6 +121,7 @@ function addVaryHeader(headers: Headers, value: string): void {
   if (!values.includes(value.toLowerCase())) headers.append("vary", value);
 }
 
+/** Applies CORS headers to a response based on config and request origin. */
 function applyCors(request: Request, response: Response, config: ResolvedMuboConfig): Response {
   const cors = config.http.cors;
   if (!cors) return response;
@@ -163,14 +175,17 @@ export class MuboApp {
     return this.server?.port;
   }
 
+  /** Whether the server is currently running. */
   get started(): boolean {
     return this.server !== undefined;
   }
 
+  /** Whether the app has been stopped and cannot be restarted. */
   get stopped(): boolean {
     return this.hasStopped;
   }
 
+  /** Adds a middleware to the HTTP pipeline (onion model). */
   use(middleware: RouteMiddleware): this {
     this.middlewares.push(middleware);
     return this;
@@ -209,21 +224,25 @@ export class MuboApp {
     return this.route("OPTIONS", path, handler);
   }
 
+  /** Registers a WebSocket route with handlers. */
   ws(path: string, handlers: WsHandlers): this {
     const normalized = normalizeRoutePath(path);
     this.wsRoutes.set(routeIdentity(normalized), { path: normalized, handlers });
     return this;
   }
 
+  /** Applies pending migrations for the given schema. */
   async migrate(schema: MuboSchema | undefined = this.config.schema): Promise<MigrationResult> {
     return this.db.migrate(schema ?? { tables: {} }, this.config.db.migrations);
   }
 
+  /** Configures static asset serving. */
   static(options: StaticAssetsOptions = {}): this {
     this.staticAssets.configure(options, this.cwd);
     return this;
   }
 
+  /** Executes middleware chain in onion model, throwing if next() is called multiple times. */
   private async runMiddlewares(ctx: MuboRequestContext, terminal: () => Promise<Response>): Promise<Response> {
     let lastIndex = -1;
     const dispatch = async (index: number): Promise<Response> => {
@@ -236,6 +255,7 @@ export class MuboApp {
     return dispatch(0);
   }
 
+  /** Creates middleware that enforces request timeout. */
   private createRequestTimeoutMiddleware(): RouteMiddleware {
     const timeoutMs = this.config.http.requestTimeoutMs;
     return async (ctx, next) => {
@@ -253,6 +273,7 @@ export class MuboApp {
     };
   }
 
+  /** Creates middleware that enforces rate limiting per key. */
   private createRateLimitMiddleware(): RouteMiddleware {
     const rateLimit = this.config.http.rateLimit;
     if (rateLimit === false) {
@@ -301,6 +322,7 @@ export class MuboApp {
     };
   }
 
+  /** Handles /healthz and /readyz endpoints, returning health check responses. */
   private async healthResponse(ctx: MuboRequestContext, pathname: string): Promise<Response | null> {
     const normalized = normalizePath(pathname);
     const path = normalized.replace(/^\/+|\/+$/g, "");
@@ -344,6 +366,7 @@ export class MuboApp {
     });
   }
 
+  /** Checks if the data directory is writable by writing a probe file. */
   private async checkDataDirWritable(): Promise<boolean> {
     try {
       const probePath = join(this.config.dataDir, `.mubo-readiness-${process.pid}-${Date.now()}`);
@@ -355,6 +378,7 @@ export class MuboApp {
     }
   }
 
+  /** Handles WebSocket upgrade request: validates route, auth, and connection limits. */
   private async handleWebSocketUpgrade(
     request: Request,
     url: URL,
@@ -426,10 +450,21 @@ export class MuboApp {
     return new Response(null, { status: 101 });
   }
 
+  /** Looks up the WebSocket route for the given socket. */
   private wsRoute(ws: ServerWebSocket<WsSocketData>): WsRoute | undefined {
     return this.wsRoutes.get(routeIdentity(ws.data.routePath));
   }
 
+  private getWsContext(ws: ServerWebSocket<WsSocketData>): MuboWsContext | undefined {
+    return this.wsHub.getContext(ws);
+  }
+
+  private logWsDisconnect(ws: ServerWebSocket<WsSocketData>, code: number, reason: string): void {
+    const log = this.wsHub.getContext(ws)?.log ?? this.logger.child({ requestId: ws.data.requestId });
+    log.debug("WebSocket disconnected", { code, reason, path: ws.data.routePath });
+  }
+
+  /** Handles new WebSocket connection: creates context, runs onConnect. */
   private handleWsOpen(ws: ServerWebSocket<WsSocketData>): void {
     const route = this.wsRoute(ws);
     if (!route) {
@@ -443,36 +478,36 @@ export class MuboApp {
     }
   }
 
+  /** Handles incoming WebSocket message: runs onMessage handler. */
   private handleWsMessage(ws: ServerWebSocket<WsSocketData>, message: string | Buffer): void {
     const route = this.wsRoute(ws);
-    const ctx = this.wsHub.getContext(ws);
+    const ctx = this.getWsContext(ws);
     if (!route?.handlers.onMessage || !ctx) return;
     this.runWsHandler(ctx, route.handlers, () => route.handlers.onMessage!(ctx, message));
   }
 
+  /** Handles WebSocket close: cleans up rooms, runs onClose. */
   private handleWsClose(ws: ServerWebSocket<WsSocketData>, code: number, reason: string): void {
     const route = this.wsRoute(ws);
     const ctx = this.wsHub.remove(ws);
     if (ctx && route?.handlers.onClose) {
       this.runWsHandler(ctx, route.handlers, () => route.handlers.onClose!(ctx, code, reason));
     }
-    const log = ctx?.log ?? this.logger.child({ requestId: ws.data.requestId });
-    log.debug("WebSocket disconnected", { code, reason, path: ws.data.routePath });
+    this.logWsDisconnect(ws, code, reason);
   }
 
+  /** Handles WebSocket error: logs and runs onError handler. */
   private handleWsError(ws: ServerWebSocket<WsSocketData>, error: Error): void {
     const route = this.wsRoute(ws);
-    const ctx = this.wsHub.getContext(ws);
+    const ctx = this.getWsContext(ws);
     const log = ctx?.log ?? this.logger.child({ requestId: ws.data.requestId });
-    log.error("WebSocket error", {
-      path: ws.data.routePath,
-      error: error.message,
-    });
+    log.error("WebSocket error", { path: ws.data.routePath, error: error.message });
     if (ctx && route?.handlers.onError) {
       this.runWsHandler(ctx, route.handlers, () => route.handlers.onError!(ctx, error));
     }
   }
 
+  /** Safely runs a WebSocket handler, catching errors and invoking onError. */
   private runWsHandler(
     ctx: MuboWsContext,
     handlers: WsHandlers,
