@@ -338,6 +338,7 @@ Specify config file with `--config <file>`. Common environment variables:
 | `MUBO_ENV` | Environment (`development` / `production` / `test`) | `development` |
 | `MUBO_HOST` | HTTP listen address | `127.0.0.1` |
 | `MUBO_PORT` | HTTP listen port | `3000` |
+| `MUBO_TRUST_PROXY` | Honour `x-forwarded-for` / `x-real-ip` | `false` |
 | `MUBO_BODY_LIMIT` | Max request body bytes | `1048576` |
 | `MUBO_REQUEST_TIMEOUT_MS` | Request timeout in milliseconds (`0` disables) | `0` |
 | `MUBO_DATA_DIR` | Data directory for DB, logs | `$HOME/.mubo/<appName>` |
@@ -357,6 +358,8 @@ Specify config file with `--config <file>`. Common environment variables:
 | `MUBO_WS_MAX_PAYLOAD` | Max WebSocket message bytes | `1048576` |
 | `MUBO_WS_MAX_CONNECTIONS` | Max concurrent WebSocket connections | `0` (unlimited) |
 | `MUBO_WS_MAX_CONNECTIONS_PER_IP` | Max WebSocket connections per IP | `0` (unlimited) |
+| `MUBO_WS_HEARTBEAT_INTERVAL_MS` | WebSocket ping interval (`0` disables pings) | `30000` |
+| `MUBO_WS_HEARTBEAT_TIMEOUT_MS` | WebSocket idle timeout, must be greater than the interval | `60000` |
 | `MUBO_LOG_LEVEL` | `debug` / `info` / `warn` / `error` | `info` |
 | `MUBO_LOG_JSON` | JSON structured logging | `true` in production |
 

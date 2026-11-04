@@ -366,8 +366,12 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
   const host = env.MUBO_HOST?.trim() || undefined;
   const bodyLimit = readNumber(env.MUBO_BODY_LIMIT, "MUBO_BODY_LIMIT");
   const requestTimeoutMs = readNumber(env.MUBO_REQUEST_TIMEOUT_MS, "MUBO_REQUEST_TIMEOUT_MS");
-  if (port !== undefined || host !== undefined || bodyLimit !== undefined || requestTimeoutMs !== undefined) {
-    result.http = { port, host, bodyLimit, requestTimeoutMs };
+  const trustProxy = readBoolean(env.MUBO_TRUST_PROXY);
+  if (
+    port !== undefined || host !== undefined || bodyLimit !== undefined ||
+    requestTimeoutMs !== undefined || trustProxy !== undefined
+  ) {
+    result.http = { port, host, bodyLimit, requestTimeoutMs, trustProxy };
   }
 
   const dbPath = env.MUBO_DB_PATH?.trim() || undefined;
@@ -414,8 +418,20 @@ function envOverrides(env: Record<string, string | undefined>): MuboConfig {
   const wsMaxPayload = readNumber(env.MUBO_WS_MAX_PAYLOAD, "MUBO_WS_MAX_PAYLOAD");
   const wsMaxConnections = readNumber(env.MUBO_WS_MAX_CONNECTIONS, "MUBO_WS_MAX_CONNECTIONS");
   const wsMaxConnectionsPerIp = readNumber(env.MUBO_WS_MAX_CONNECTIONS_PER_IP, "MUBO_WS_MAX_CONNECTIONS_PER_IP");
-  if (wsEnabled !== undefined || wsMaxPayload !== undefined || wsMaxConnections !== undefined || wsMaxConnectionsPerIp !== undefined) {
-    result.ws = { enabled: wsEnabled, maxPayloadBytes: wsMaxPayload, maxConnections: wsMaxConnections, maxConnectionsPerIp: wsMaxConnectionsPerIp };
+  const wsHeartbeatIntervalMs = readNumber(env.MUBO_WS_HEARTBEAT_INTERVAL_MS, "MUBO_WS_HEARTBEAT_INTERVAL_MS");
+  const wsHeartbeatTimeoutMs = readNumber(env.MUBO_WS_HEARTBEAT_TIMEOUT_MS, "MUBO_WS_HEARTBEAT_TIMEOUT_MS");
+  if (
+    wsEnabled !== undefined || wsMaxPayload !== undefined || wsMaxConnections !== undefined ||
+    wsMaxConnectionsPerIp !== undefined || wsHeartbeatIntervalMs !== undefined ||
+    wsHeartbeatTimeoutMs !== undefined
+  ) {
+    result.ws = {
+      enabled: wsEnabled,
+      maxPayloadBytes: wsMaxPayload,
+      maxConnections: wsMaxConnections,
+      maxConnectionsPerIp: wsMaxConnectionsPerIp,
+      heartbeat: { intervalMs: wsHeartbeatIntervalMs, timeoutMs: wsHeartbeatTimeoutMs },
+    };
   }
 
   const logLevel = env.MUBO_LOG_LEVEL?.trim() || undefined;

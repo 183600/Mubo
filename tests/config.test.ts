@@ -821,6 +821,60 @@ export default defineConfig({
     ).toThrow(/Invalid WebSocket max payload/);
   });
 
+  test("parses MUBO_TRUST_PROXY from environment", () => {
+    expect(resolveConfig({}, { env: { MUBO_TRUST_PROXY: "true" }, argv: [] }).http.trustProxy).toBe(true);
+    expect(resolveConfig({}, { env: { MUBO_TRUST_PROXY: "0" }, argv: [] }).http.trustProxy).toBe(false);
+    expect(resolveConfig({}, { env: {}, argv: [] }).http.trustProxy).toBe(false);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_TRUST_PROXY: "maybe" }, argv: [] }),
+    ).toThrow(/Invalid boolean value/);
+  });
+
+  test("parses MUBO_WS_HEARTBEAT_INTERVAL_MS and MUBO_WS_HEARTBEAT_TIMEOUT_MS from environment", () => {
+    const config = resolveConfig(
+      {},
+      {
+        env: {
+          MUBO_WS_HEARTBEAT_INTERVAL_MS: " 5000 ",
+          MUBO_WS_HEARTBEAT_TIMEOUT_MS: " 15000 ",
+        },
+        argv: [],
+      },
+    );
+    expect(config.ws.heartbeat).toEqual({ intervalMs: 5000, timeoutMs: 15000 });
+  });
+
+  test("keeps the default heartbeat when no heartbeat environment variable is set", () => {
+    const config = resolveConfig({}, { env: { MUBO_WS_ENABLED: "true" }, argv: [] });
+    expect(config.ws.heartbeat).toEqual({ intervalMs: 30_000, timeoutMs: 60_000 });
+  });
+
+  test("merges a single heartbeat environment variable with the default", () => {
+    const config = resolveConfig({}, { env: { MUBO_WS_HEARTBEAT_INTERVAL_MS: "1000" }, argv: [] });
+    expect(config.ws.heartbeat).toEqual({ intervalMs: 1000, timeoutMs: 60_000 });
+  });
+
+  test("rejects invalid heartbeat environment variables", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_HEARTBEAT_INTERVAL_MS: "abc" }, argv: [] }),
+    ).toThrow(/MUBO_WS_HEARTBEAT_INTERVAL_MS must be a number/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_HEARTBEAT_INTERVAL_MS: "-1" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket heartbeat interval/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_HEARTBEAT_TIMEOUT_MS: "0" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket heartbeat timeout/);
+    expect(() =>
+      resolveConfig(
+        {},
+        {
+          env: { MUBO_WS_HEARTBEAT_INTERVAL_MS: "5000", MUBO_WS_HEARTBEAT_TIMEOUT_MS: "5000" },
+          argv: [],
+        },
+      ),
+    ).toThrow(/must be greater than interval/);
+  });
+
   test("parses MUBO_SLOW_QUERY_MS from environment", () => {
     const config = resolveConfig({}, { env: { MUBO_SLOW_QUERY_MS: "500" }, argv: [] });
     expect(config.db.slowQueryMs).toBe(500);
