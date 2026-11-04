@@ -7,6 +7,56 @@ import {
 import { MuboError } from "../core/errors.ts";
 import { textResponse } from "../http/response.ts";
 
+const RANGE_MAX_PARTS = 10;
+
+function parseRangeHeader(header: string | null, size: number): { start: number; end: number }[] | null {
+  if (!header || !header.startsWith("bytes=")) return null;
+  const ranges = header.slice(6).split(",");
+  const result: { start: number; end: number }[] = [];
+  for (const range of ranges) {
+    const trimmed = range.trim();
+    const match = trimmed.match(/^(\d*)-(\d*)$/);
+    if (!match) return null;
+    const startStr = match[1] ?? "";
+    const endStr = match[2] ?? "";
+    let start: number;
+    let end: number;
+
+    if (startStr === "" && endStr === "") {
+      return null;
+    }
+
+    if (startStr === "") {
+      // suffix-byte-range: last N bytes
+      const suffixLength = parseInt(endStr, 10);
+      if (!Number.isFinite(suffixLength) || suffixLength < 0) return null;
+      start = size - suffixLength;
+      end = size - 1;
+      if (start < 0) start = 0;
+    } else if (endStr === "") {
+      // byte-range from start to end
+      start = parseInt(startStr, 10);
+      if (!Number.isFinite(start) || start < 0 || start >= size) return null;
+      end = size - 1;
+    } else {
+      // byte-range: start-end
+      start = parseInt(startStr, 10);
+      end = parseInt(endStr, 10);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < 0) return null;
+    }
+
+    if (start > end || start >= size || end >= size) return null;
+    result.push({ start, end: Math.min(end, size - 1) });
+    if (result.length > RANGE_MAX_PARTS) return null;
+  }
+  return result;
+}
+
+function sliceBody(body: Uint8Array | Bun.BunFile, start: number, end: number): Uint8Array | Blob {
+  if (body instanceof Uint8Array) return body.slice(start, end + 1);
+  return body.slice(start, end + 1);
+}
+
 const GLOBAL_ASSETS_KEY = "__MUBO_EMBEDDED_ASSETS__";
 
 const MIME_TYPES: Record<string, string> = {
@@ -223,6 +273,24 @@ export class StaticAssets {
     headers.set("cache-control", this.cacheControl(path));
     headers.set("content-type", contentType);
     headers.set("content-length", String(size));
+    headers.set("accept-ranges", "bytes");
+
+    const range = parseRangeHeader(request.headers.get("range"), size);
+    if (range !== null && range.length === 1) {
+      const first = range[0];
+      if (!first) return new Response(null, { status: 200, headers });
+      const start = first.start;
+      const end = first.end;
+      const chunk = sliceBody(body, start, end);
+      headers.set("content-range", `bytes ${start}-${end}/${size}`);
+      headers.set("content-length", String(end - start + 1));
+      if (etagMatches(request.headers.get("if-none-match"), etag)) {
+        return new Response(null, { status: 304, headers });
+      }
+      if (isHead(request)) return new Response(null, { status: 206, headers });
+      return new Response(chunk, { status: 206, headers });
+    }
+
     if (etagMatches(request.headers.get("if-none-match"), etag)) {
       return new Response(null, { status: 304, headers });
     }

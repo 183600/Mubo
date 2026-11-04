@@ -1015,4 +1015,102 @@ describe("static assets", () => {
     );
     expect(hello).toBeNull();
   });
+
+  test("serves partial content with Range header", async () => {
+    const dir = tempDir();
+    const content = "0123456789abcdef";
+    writeFileSync(join(dir, "range.txt"), content);
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    const full = await assets.handle(new Request("http://localhost/range.txt"), new URL("http://localhost/range.txt"));
+    expect(full?.status).toBe(200);
+    expect(await full?.text()).toBe(content);
+    expect(full?.headers.get("accept-ranges")).toBe("bytes");
+    expect(full?.headers.get("content-length")).toBe(String(content.length));
+
+    const range = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=0-4" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(range?.status).toBe(206);
+    expect(await range?.text()).toBe("01234");
+    expect(range?.headers.get("content-range")).toBe(`bytes 0-4/${content.length}`);
+    expect(range?.headers.get("content-length")).toBe("5");
+
+    const suffix = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=-5" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(suffix?.status).toBe(206);
+    expect(await suffix?.text()).toBe("bcdef");
+    expect(suffix?.headers.get("content-range")).toBe(`bytes ${content.length - 5}-${content.length - 1}/${content.length}`);
+    expect(suffix?.headers.get("content-length")).toBe("5");
+
+    const middle = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=3-8" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(middle?.status).toBe(206);
+    expect(await middle?.text()).toBe("345678");
+    expect(middle?.headers.get("content-range")).toBe(`bytes 3-8/${content.length}`);
+    expect(middle?.headers.get("content-length")).toBe("6");
+
+    const headRange = await assets.handle(
+      new Request("http://localhost/range.txt", { method: "HEAD", headers: { range: "bytes=0-4" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(headRange?.status).toBe(206);
+    expect(await headRange?.text()).toBe("");
+    expect(headRange?.headers.get("content-range")).toBe(`bytes 0-4/${content.length}`);
+    expect(headRange?.headers.get("content-length")).toBe("5");
+
+    const ifNoneMatch = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { "if-none-match": full?.headers.get("etag")! } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(ifNoneMatch?.status).toBe(304);
+
+    const rangeIfNoneMatch = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=0-4", "if-none-match": full?.headers.get("etag")! } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(rangeIfNoneMatch?.status).toBe(304);
+  });
+
+  test("rejects invalid Range headers", async () => {
+    const dir = tempDir();
+    const content = "0123456789";
+    writeFileSync(join(dir, "range.txt"), content);
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    for (const range of ["bytes=5-0", "bytes=10-", "bytes=-", "bytes=abc-def", "bytes=0-4,5-6,7-8,9-10,11-12,13-14,15-16,17-18,19-20,21-22,23-24"]) {
+      const response = await assets.handle(
+        new Request("http://localhost/range.txt", { headers: { range } }),
+        new URL("http://localhost/range.txt"),
+      );
+      expect(response?.status).toBe(200);
+      expect(await response?.text()).toBe(content);
+    }
+  });
+
+  test("serves partial content from embedded assets", async () => {
+    const content = "0123456789abcdef";
+    const assets = new StaticAssets({
+      mode: "embedded",
+      assets: { "/range.txt": content },
+    });
+
+    const full = await assets.handle(new Request("http://localhost/range.txt"), new URL("http://localhost/range.txt"));
+    expect(full?.status).toBe(200);
+    expect(await full?.text()).toBe(content);
+
+    const range = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=0-4" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(range?.status).toBe(206);
+    expect(await range?.text()).toBe("01234");
+    expect(range?.headers.get("content-range")).toBe(`bytes 0-4/${content.length}`);
+    expect(range?.headers.get("content-length")).toBe("5");
+  });
 });
