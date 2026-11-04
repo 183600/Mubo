@@ -7,6 +7,13 @@ import { Database } from "bun:sqlite";
 import { boolFlag, parseCliArgs, stringFlag } from "../src/cli/args.ts";
 import { devForwardedArgs } from "../src/cli/commands.ts";
 import { initProject } from "../src/cli/init.ts";
+import {
+  compareVersions,
+  ENTRY_CANDIDATES,
+  findEntry,
+  MINIMUM_BUN_VERSION,
+  satisfiesMinimumBunVersion,
+} from "../src/cli/project.ts";
 import { loadAndResolveConfig, resolveConfig } from "../src/core/config.ts";
 
 const tempDirs: string[] = [];
@@ -180,6 +187,61 @@ describe("CLI", () => {
     const result = await runCli(cwd, ["dev", "--entry", "entry-dir"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("Cannot find app entry: entry-dir");
+  });
+
+  test("compares Bun versions numerically", () => {
+    expect(compareVersions("1.2.0", "1.2.0")).toBe(0);
+    expect(compareVersions("1.2.0", "1.2")).toBe(0);
+    expect(compareVersions("1.2", "1.2.0")).toBe(0);
+    expect(compareVersions("1.10.0", "1.9.0")).toBe(1);
+    expect(compareVersions("1.9.0", "1.10.0")).toBe(-1);
+    expect(compareVersions("1.2.0", "1.2.1")).toBe(-1);
+    expect(compareVersions("2.0.0", "1.99.99")).toBe(1);
+    expect(compareVersions("1.2.3.4", "1.2.3")).toBe(1);
+    expect(compareVersions("1.2.0-rc.1", "1.2.0")).toBe(0);
+    expect(compareVersions("", "1.0.0")).toBe(-1);
+    expect(compareVersions("1.0.0", "")).toBe(1);
+  });
+
+  test("checks the minimum supported Bun version", () => {
+    expect(satisfiesMinimumBunVersion("1.2.0")).toBe(true);
+    expect(satisfiesMinimumBunVersion("1.2.1")).toBe(true);
+    expect(satisfiesMinimumBunVersion("1.3.0")).toBe(true);
+    expect(satisfiesMinimumBunVersion("2.0.0")).toBe(true);
+    expect(satisfiesMinimumBunVersion("1.1.9")).toBe(false);
+    expect(satisfiesMinimumBunVersion("1.0.0")).toBe(false);
+    expect(satisfiesMinimumBunVersion("1.2.0", "1.2.1")).toBe(false);
+    expect(satisfiesMinimumBunVersion("1.2.1", "1.2.1")).toBe(true);
+    expect(satisfiesMinimumBunVersion("1.3.0", "1.2.1")).toBe(true);
+  });
+
+  test("detects the application entry using the documented priority", () => {
+    const cwd = tempDir();
+    for (const candidate of ENTRY_CANDIDATES) {
+      const absolute = resolve(cwd, candidate);
+      mkdirSync(join(absolute, ".."), { recursive: true });
+      writeFileSync(absolute, "export default {};\n");
+      expect(findEntry(cwd)).toBe(absolute);
+      rmSync(absolute);
+    }
+    expect(() => findEntry(cwd)).toThrow(/Cannot find app entry/);
+    expect(() => findEntry(cwd)).toThrow(/src\/server\/index\.ts/);
+  });
+
+  test("honours an explicit entry path", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, "custom"), { recursive: true });
+    const entry = join(cwd, "custom", "main.ts");
+    writeFileSync(entry, "export default {};\n");
+    expect(findEntry(cwd, "custom/main.ts")).toBe(entry);
+    expect(findEntry(cwd, entry)).toBe(entry);
+    expect(() => findEntry(cwd, "custom/missing.ts")).toThrow(
+      /Cannot find app entry: custom\/missing\.ts/,
+    );
+  });
+
+  test("exposes a minimum Bun version matching the package engines", () => {
+    expect(MINIMUM_BUN_VERSION).toBe("1.2.0");
   });
 
   test("init creates a complete project and refuses to overwrite non-empty dirs", async () => {
