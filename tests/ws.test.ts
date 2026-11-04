@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createMuboApp, serializePayload, type MuboApp } from "../src/index.ts";
+import type { ServerWebSocket } from "bun";
+import { createMuboApp, serializePayload, type MuboApp, type WsSocketData } from "../src/index.ts";
+import { createLogger } from "../src/core/logger.ts";
 import { MuboError } from "../src/core/errors.ts";
 
 const apps: MuboApp[] = [];
@@ -1077,5 +1079,61 @@ describe("WebSocket connection limits", () => {
     const msg2 = await socket2.next() as { type: string };
     expect(msg2.type).toBe("ready");
     socket2.socket.close();
+  });
+
+  test("closes sockets that fail to open instead of throwing", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-open-failure-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { maxConnections: 1, heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {});
+    await app.start();
+    apps.push(app);
+
+    const closes: Array<[number | undefined, string | undefined]> = [];
+    const makeSocket = (routePath: string, closeImpl?: () => void) =>
+      ({
+        data: {
+          routePath,
+          requestId: "req-open-failure",
+          url: "ws://localhost/ws",
+          ip: "127.0.0.1",
+          user: undefined,
+          state: {},
+        },
+        send: () => 1,
+        ping: () => {},
+        close: (code?: number, reason?: string) => {
+          closes.push([code, reason]);
+          closeImpl?.();
+        },
+      }) as unknown as ServerWebSocket<WsSocketData>;
+
+    const internals = app as unknown as {
+      handleWsOpen(ws: ServerWebSocket<WsSocketData>): void;
+    };
+
+    // Occupy the only connection slot so the next registration is refused.
+    app.wsHub.add(makeSocket("/ws"), app, createLogger({ level: "error" }), "127.0.0.1");
+    const rejected = makeSocket("/ws");
+    expect(() => internals.handleWsOpen(rejected)).not.toThrow();
+    expect(closes.some(([code]) => code === 1013)).toBe(true);
+
+    // Unknown routes and failing close calls must not escape the handler.
+    closes.length = 0;
+    const unknown = makeSocket("/missing");
+    expect(() => internals.handleWsOpen(unknown)).not.toThrow();
+    expect(closes).toEqual([[1011, "Unknown WebSocket route"]]);
+
+    const broken = makeSocket("/missing", () => {
+      throw new Error("socket already closed");
+    });
+    expect(() => internals.handleWsOpen(broken)).not.toThrow();
   });
 });

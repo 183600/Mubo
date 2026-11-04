@@ -484,14 +484,35 @@ export class MuboApp {
     log.debug("WebSocket disconnected", { code, reason, path: ws.data.routePath });
   }
 
+  /** Closes a WebSocket without letting close failures escape. */
+  private closeWs(ws: ServerWebSocket<WsSocketData>, code: number, reason: string): void {
+    try {
+      ws.close(code, reason);
+    } catch (error) {
+      this.logger.child({ requestId: ws.data.requestId }).debug("WebSocket close failed", {
+        error: errorMessage(error),
+      });
+    }
+  }
+
   /** Handles new WebSocket connection: creates context, runs onConnect. */
   private handleWsOpen(ws: ServerWebSocket<WsSocketData>): void {
     const route = this.wsRoute(ws);
     if (!route) {
-      ws.close(1011, "Unknown WebSocket route");
+      this.closeWs(ws, 1011, "Unknown WebSocket route");
       return;
     }
-    const ctx = this.wsHub.add(ws, this, this.logger.child({ requestId: ws.data.requestId }), ws.data.ip);
+    let ctx: MuboWsContext;
+    try {
+      ctx = this.wsHub.add(ws, this, this.logger.child({ requestId: ws.data.requestId }), ws.data.ip);
+    } catch (error) {
+      this.logger.child({ requestId: ws.data.requestId }).warn("WebSocket connection rejected", {
+        path: route.path,
+        error: errorMessage(error),
+      });
+      this.closeWs(ws, 1013, "Connection rejected");
+      return;
+    }
     ctx.log.debug("WebSocket connected", { id: ctx.id, path: route.path, ip: ctx.ip });
     if (route.handlers.onConnect) {
       this.runWsHandler(ctx, route.handlers, () => route.handlers.onConnect!(ctx));
