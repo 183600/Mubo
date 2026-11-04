@@ -441,10 +441,9 @@ export default defineConfig({
     expect(second.static.cache.immutableExtensions).not.toContain("custom");
   });
 
-  test("treats an empty MUBO_ENV as unset and falls back to NODE_ENV", () => {
-    const config = resolveConfig({}, { env: { MUBO_ENV: "", NODE_ENV: "production" }, argv: [] });
-    expect(config.app.env).toBe("production");
-    expect(config.log.json).toBe(true);
+  test("rejects empty MUBO_ENV and trims surrounding whitespace", () => {
+    expect(() => resolveConfig({}, { env: { MUBO_ENV: "", NODE_ENV: "production" }, argv: [] })).toThrow(/MUBO_ENV is empty/);
+    expect(() => resolveConfig({}, { env: { MUBO_ENV: "   ", NODE_ENV: "production" }, argv: [] })).toThrow(/MUBO_ENV is empty/);
 
     const spaced = resolveConfig(
       {},

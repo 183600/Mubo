@@ -229,8 +229,15 @@ function requireChoice(name: string, value: unknown, allowed: readonly string[])
 }
 
 function resolveEnvironment(env: Record<string, string | undefined>): string | undefined {
-  const explicit = readChoice(env.MUBO_ENV, "MUBO_ENV", APP_ENVIRONMENTS);
-  if (explicit) return explicit;
+  const raw = env.MUBO_ENV;
+  if (raw !== undefined) {
+    const trimmed = raw.trim();
+    if (trimmed === "") {
+      throw new MuboError("CONFIG_ERROR", "MUBO_ENV is empty");
+    }
+    const explicit = readChoice(trimmed, "MUBO_ENV", APP_ENVIRONMENTS);
+    if (explicit) return explicit;
+  }
   const nodeEnv = env.NODE_ENV?.trim();
   if ((APP_ENVIRONMENTS as readonly string[]).includes(nodeEnv ?? "")) return nodeEnv;
   return undefined;
