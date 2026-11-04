@@ -618,6 +618,27 @@ describe("static assets", () => {
     await app.stop();
   });
 
+  test("returns 416 over HTTP for unsatisfiable range requests", async () => {
+    const dir = publicDir();
+    writeFileSync(join(dir, "range.txt"), "0123456789");
+    const app = await startStatic(dir, true);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    const partial = await fetch(`${root}/range.txt`, { headers: { range: "bytes=0-4" } });
+    expect(partial.status).toBe(206);
+    expect(await partial.text()).toBe("01234");
+
+    const unsatisfiable = await fetch(`${root}/range.txt`, { headers: { range: "bytes=10-" } });
+    expect(unsatisfiable.status).toBe(416);
+    expect(unsatisfiable.headers.get("content-range")).toBe("bytes */10");
+    expect(await unsatisfiable.text()).toBe("");
+
+    const ignored = await fetch(`${root}/range.txt`, { headers: { range: "bytes=5-0" } });
+    expect(ignored.status).toBe(200);
+    expect(await ignored.text()).toBe("0123456789");
+    await app.stop();
+  });
+
   test("serves embedded assets in disk mode when embedded not found", async () => {
     const dir = publicDir();
     writeFileSync(join(dir, "embedded.txt"), "from disk");
@@ -1083,7 +1104,7 @@ describe("static assets", () => {
     writeFileSync(join(dir, "range.txt"), content);
     const assets = new StaticAssets({ mode: "disk", dir }, dir);
 
-    for (const range of ["bytes=5-0", "bytes=10-", "bytes=-", "bytes=abc-def", "bytes=0-4,5-6,7-8,9-10,11-12,13-14,15-16,17-18,19-20,21-22,23-24"]) {
+    for (const range of ["bytes=5-0", "bytes=-", "bytes=abc-def", "bytes=-0", "bytes=0-4,5-6,7-8,9-10,11-12,13-14,15-16,17-18,19-20,21-22,23-24"]) {
       const response = await assets.handle(
         new Request("http://localhost/range.txt", { headers: { range } }),
         new URL("http://localhost/range.txt"),
@@ -1091,6 +1112,47 @@ describe("static assets", () => {
       expect(response?.status).toBe(200);
       expect(await response?.text()).toBe(content);
     }
+  });
+
+  test("responds with 416 for unsatisfiable ranges", async () => {
+    const dir = tempDir();
+    const content = "0123456789";
+    writeFileSync(join(dir, "range.txt"), content);
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+
+    for (const range of ["bytes=10-", "bytes=20-30", "bytes=100-"]) {
+      const response = await assets.handle(
+        new Request("http://localhost/range.txt", { headers: { range } }),
+        new URL("http://localhost/range.txt"),
+      );
+      expect(response?.status).toBe(416);
+      expect(response?.headers.get("content-range")).toBe(`bytes */${content.length}`);
+      expect(response?.headers.get("content-length")).toBe("0");
+      expect(await response?.text()).toBe("");
+    }
+
+    const head = await assets.handle(
+      new Request("http://localhost/range.txt", { method: "HEAD", headers: { range: "bytes=50-" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(head?.status).toBe(416);
+    expect(head?.headers.get("content-range")).toBe(`bytes */${content.length}`);
+    expect(await head?.text()).toBe("");
+  });
+
+  test("responds with 416 for unsatisfiable ranges of embedded assets", async () => {
+    const assets = new StaticAssets({
+      mode: "embedded",
+      assets: { "/range.txt": "0123456789" },
+    });
+
+    const response = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=10-" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(response?.status).toBe(416);
+    expect(response?.headers.get("content-range")).toBe("bytes */10");
+    expect(await response?.text()).toBe("");
   });
 
   test("serves partial content from embedded assets", async () => {

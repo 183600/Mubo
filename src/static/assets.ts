@@ -9,47 +9,61 @@ import { textResponse } from "../http/response.ts";
 
 const RANGE_MAX_PARTS = 10;
 
-function parseRangeHeader(header: string | null, size: number): { start: number; end: number }[] | null {
-  if (!header || !header.startsWith("bytes=")) return null;
-  const ranges = header.slice(6).split(",");
-  const result: { start: number; end: number }[] = [];
-  for (const range of ranges) {
-    const trimmed = range.trim();
-    const match = trimmed.match(/^(\d*)-(\d*)$/);
-    if (!match) return null;
-    const startStr = match[1] ?? "";
-    const endStr = match[2] ?? "";
-    let start: number;
-    let end: number;
+/**
+ * Result of parsing a `Range` header.
+ *
+ * `ignore` covers headers the server does not act on (unknown unit, invalid
+ * syntax or multiple ranges); the full representation is returned instead.
+ * `unsatisfiable` covers syntactically valid ranges that fall outside the
+ * representation and therefore require a `416` response.
+ */
+type ParsedRange =
+  | { kind: "ignore" }
+  | { kind: "unsatisfiable" }
+  | { kind: "range"; start: number; end: number };
 
-    if (startStr === "" && endStr === "") {
-      return null;
-    }
+function parseRangeHeader(header: string | null, size: number): ParsedRange {
+  if (!header || !header.startsWith("bytes=")) return { kind: "ignore" };
+  const specs = header.slice(6).split(",");
+  if (specs.length > RANGE_MAX_PARTS) return { kind: "ignore" };
+  if (specs.length > 1) return { kind: "ignore" };
+  const trimmed = specs[0]!.trim();
+  const match = trimmed.match(/^(\d*)-(\d*)$/);
+  if (!match) return { kind: "ignore" };
+  const startStr = match[1] ?? "";
+  const endStr = match[2] ?? "";
+  let start: number;
+  let end: number;
 
-    if (startStr === "") {
-      // suffix-byte-range: last N bytes
-      const suffixLength = parseInt(endStr, 10);
-      if (!Number.isFinite(suffixLength) || suffixLength < 0) return null;
-      start = size - suffixLength;
-      end = size - 1;
-      if (start < 0) start = 0;
-    } else if (endStr === "") {
-      // byte-range from start to end
-      start = parseInt(startStr, 10);
-      if (!Number.isFinite(start) || start < 0 || start >= size) return null;
-      end = size - 1;
-    } else {
-      // byte-range: start-end
-      start = parseInt(startStr, 10);
-      end = parseInt(endStr, 10);
-      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < 0) return null;
-    }
-
-    if (start > end || start >= size) return null;
-    result.push({ start, end: Math.min(end, size - 1) });
-    if (result.length > RANGE_MAX_PARTS) return null;
+  if (startStr === "" && endStr === "") {
+    return { kind: "ignore" };
   }
-  return result;
+
+  if (startStr === "") {
+    // suffix-byte-range: last N bytes
+    const suffixLength = parseInt(endStr, 10);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return { kind: "ignore" };
+    start = size - suffixLength;
+    end = size - 1;
+    if (start < 0) start = 0;
+  } else if (endStr === "") {
+    // byte-range from start to end
+    start = parseInt(startStr, 10);
+    if (!Number.isFinite(start) || start < 0) return { kind: "ignore" };
+    end = size - 1;
+  } else {
+    // byte-range: start-end
+    start = parseInt(startStr, 10);
+    end = parseInt(endStr, 10);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < 0) {
+      return { kind: "ignore" };
+    }
+    // A last-byte-pos below the first-byte-pos makes the specification invalid.
+    if (end < start) return { kind: "ignore" };
+  }
+
+  if (start > end || start >= size) return { kind: "unsatisfiable" };
+  return { kind: "range", start, end: Math.min(end, size - 1) };
 }
 
 function sliceBody(body: Uint8Array | Bun.BunFile, start: number, end: number): Uint8Array | Blob {
@@ -363,10 +377,13 @@ export class StaticAssets {
     }
 
     const range = parseRangeHeader(request.headers.get("range"), size);
-    if (range !== null && range.length === 1) {
-      const first = range[0]!;
-      const start = first.start;
-      const end = first.end;
+    if (range.kind === "unsatisfiable") {
+      headers.set("content-range", `bytes */${size}`);
+      headers.set("content-length", "0");
+      return new Response(null, { status: 416, headers });
+    }
+    if (range.kind === "range") {
+      const { start, end } = range;
       const chunk = sliceBody(body, start, end);
       headers.set("content-range", `bytes ${start}-${end}/${size}`);
       headers.set("content-length", String(end - start + 1));

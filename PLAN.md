@@ -518,6 +518,7 @@ In `disk` mode, if embedded resources exist they match first, then fall back to 
 - Other resources: `public, max-age=<defaultMaxAgeSeconds>`
 - Supports `ETag`, `If-None-Match`, weak ETags and `304`
 - `HEAD` returns headers but not body
+- Single byte ranges answer `206`; unsatisfiable ranges answer `416` with `Content-Range: bytes */<size>`, malformed ranges are ignored
 
 Hash detection based on filename token, e.g., `app.3f9a1c2d.js`. `immutableExtensions` case-insensitive, ignoring leading dots.
 
