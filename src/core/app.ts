@@ -147,6 +147,14 @@ function applyCors(request: Request, response: Response, config: ResolvedMuboCon
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+/** Copies the automatic preflight headers onto a response without overwriting explicit ones. */
+function mergePreflightHeaders(response: Response, preflight: Headers): void {
+  preflight.forEach((value, key) => {
+    if (key === "vary" || key === "x-request-id") return;
+    if (!response.headers.has(key)) response.headers.set(key, value);
+  });
+}
+
 export class MuboApp {
   readonly config: ResolvedMuboConfig;
   readonly logger: Logger;
@@ -707,10 +715,11 @@ export class MuboApp {
     }
 
     try {
+      let preflightHeaders: Headers | undefined;
       if (this.config.http.cors && request.method.toUpperCase() === "OPTIONS") {
         const allowOrigin = originAllowed(request, this.config);
         if (allowOrigin) {
-          const headers = new Headers({
+          preflightHeaders = new Headers({
             "access-control-allow-origin": allowOrigin,
             "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
             "access-control-allow-headers":
@@ -718,10 +727,15 @@ export class MuboApp {
             "access-control-max-age": String(this.config.http.cors.maxAgeSeconds ?? 600),
             vary: "Origin",
           });
-          if (this.config.http.cors.credentials) headers.set("access-control-allow-credentials", "true");
-          headers.set("x-request-id", requestId);
-          this.logHttp(request, url, requestId, 204, started, ip);
-          return new Response(null, { status: 204, headers });
+          if (this.config.http.cors.credentials) preflightHeaders.set("access-control-allow-credentials", "true");
+          // A registered OPTIONS route takes precedence over the automatic
+          // preflight response, but the preflight headers are still applied to
+          // it so browsers accept the request.
+          if (this.router.match("OPTIONS", url.pathname).type !== "match") {
+            preflightHeaders.set("x-request-id", requestId);
+            this.logHttp(request, url, requestId, 204, started, ip);
+            return new Response(null, { status: 204, headers: preflightHeaders });
+          }
         }
       }
 
@@ -738,7 +752,9 @@ export class MuboApp {
 
       const match = this.router.match(request.method, url.pathname);
       const response = await this.dispatchHttp(request, url, requestId, match, started, ip);
-      return applyCors(request, response, this.config);
+      const corsResponse = applyCors(request, response, this.config);
+      if (preflightHeaders) mergePreflightHeaders(corsResponse, preflightHeaders);
+      return corsResponse;
     } catch (error) {
       const expected =
         isMuboError(error) &&

@@ -242,7 +242,7 @@ const app = await createMuboApp({
 
 - `requestTimeoutMs` aborts slow handlers with `504` and `REQUEST_TIMEOUT`.
 - `rateLimit` buckets requests per client IP; pass `key: (request) => string` to use another bucket key. Responses carry `x-ratelimit-limit`, `x-ratelimit-remaining` and `x-ratelimit-reset`; exceeding the limit returns `429` and `RATE_LIMITED`.
-- `cors` accepts `"*"` or a list of origins. `credentials` cannot be combined with `"*"`; pre-flight requests are answered with `204`.
+- `cors` accepts `"*"` or a list of origins. `credentials` cannot be combined with `"*"`; pre-flight requests are answered with `204`. When an `OPTIONS` route is registered for the path it handles the request instead, and the pre-flight headers are added to its response.
 - `ctx.ip` exposes the resolved client address and honours `trustProxy`.
 
 ### Database

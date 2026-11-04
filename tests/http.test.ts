@@ -1114,6 +1114,38 @@ describe("middleware boundaries", () => {
     expect(await getResponse.json()).toEqual({ ok: true });
   });
 
+  test("CORS keeps a registered OPTIONS route reachable and adds the preflight headers", async () => {
+    const app = await startApp({
+      app: { name: "options-cors-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { cors: { origin: ["http://allowed.test"], credentials: true, maxAgeSeconds: 120 } },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/resource", (ctx) => ctx.json({ ok: true }));
+    app.options("/resource", (ctx) => ctx.json({ custom: true }));
+
+    const response = await fetch(`${base(app)}/resource`, {
+      method: "OPTIONS",
+      headers: { origin: "http://allowed.test" },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ custom: true });
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+    expect(response.headers.get("access-control-allow-credentials")).toBe("true");
+    expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(response.headers.get("access-control-max-age")).toBe("120");
+    expect(response.headers.get("vary")).toBe("Origin");
+
+    // Paths without an OPTIONS route keep the automatic preflight response.
+    const fallback = await fetch(`${base(app)}/other`, {
+      method: "OPTIONS",
+      headers: { origin: "http://allowed.test" },
+    });
+    expect(fallback.status).toBe(204);
+    expect(fallback.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+  });
+
   test("app.patch() registers a PATCH route and handles partial updates", async () => {
     const app = await startApp({
       app: { name: "patch-test", env: "test" },
