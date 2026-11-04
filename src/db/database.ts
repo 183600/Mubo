@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Database as SQLiteDatabase, type SQLQueryBindings, type Statement } from "bun:sqlite";
 import { ensureDataDir } from "../core/config.ts";
-import { MuboError } from "../core/errors.ts";
+import { isMuboError, MuboError } from "../core/errors.ts";
 import type { Logger } from "../core/logger.ts";
 import {
   applyMigrations,
@@ -51,6 +51,21 @@ interface TransactionContext {
 function normalizeParams(params: unknown[]): QueryArgument[] {
   if (params.length === 1 && Array.isArray(params[0])) return params[0] as QueryArgument[];
   return params as QueryArgument[];
+}
+
+/**
+ * Converts a SQLite failure into a MuboError so callers get a stable code.
+ *
+ * The original error is kept as the cause and the failing statement is
+ * attached to the details for diagnostics.
+ */
+function translateSqliteError(error: unknown, sql: string): unknown {
+  if (isMuboError(error)) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  return new MuboError("DB_ERROR", message, {
+    cause: error,
+    details: { sql: sql.replace(/\s+/g, " ").slice(0, 500) },
+  });
 }
 
 export class MuboDatabase {
@@ -120,7 +135,7 @@ export class MuboDatabase {
   }
 
   private assertOpen(): void {
-    if (this.closed) throw new MuboError("MIGRATION_ERROR", "Database is closed");
+    if (this.closed) throw new MuboError("DB_CLOSED", "Database is closed");
   }
 
   private assertTransactionActive(): void {
@@ -139,6 +154,8 @@ export class MuboDatabase {
     const start = performance.now();
     try {
       return operation();
+    } catch (error) {
+      throw translateSqliteError(error, sql);
     } finally {
       const duration = performance.now() - start;
       if (duration >= this.slowQueryMs) {
@@ -168,7 +185,12 @@ export class MuboDatabase {
         this.assertOpen();
         this.assertTransactionActive();
         const context = this.transactionContext.getStore();
-        const iterator = this.raw.query<Row, QueryArgument[]>(sql).iterate(...normalizeParams(params));
+        let iterator: IterableIterator<Row>;
+        try {
+          iterator = this.raw.query<Row, QueryArgument[]>(sql).iterate(...normalizeParams(params));
+        } catch (error) {
+          throw translateSqliteError(error, sql);
+        }
         const assertIteratorActive = () => {
           this.assertOpen();
           let current = context;
@@ -479,7 +501,7 @@ export class MuboDatabase {
     this.statementCache.clear();
     const pending = this.transactionQueue.splice(0);
     if (pending.length > 0) {
-      const error = new MuboError("MIGRATION_ERROR", "Database is closed");
+      const error = new MuboError("DB_CLOSED", "Database is closed");
       for (const task of pending) task.cancel(error);
     }
     this.raw.close(force);

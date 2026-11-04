@@ -259,6 +259,8 @@ app.db.transaction((db) => {
 
 Transaction callbacks are sync when given sync functions, return `Promise` for async. Nested transactions use `SAVEPOINT`. Queries use cached prepared statements; migration failures roll back and throw `MIGRATION_ERROR`.
 
+SQLite failures are reported as `MuboError` with the code `DB_ERROR`; the failing statement is attached to `error.details.sql` and the original SQLite error is kept as `error.cause`. Using a database that was already closed throws `DB_CLOSED` (`503`).
+
 `app.db.migrate(schema, options)` applies the declarative schema using the app's configured `db.migrations` settings (history table, mode, `safeOnly` and lock strategy), so manual migrations record history in the same table as startup migrations. Explicit `options` override the configuration.
 
 With `db.migrations.lock: "file"`, migrations are serialized through a lock file next to the database. Locks left behind by crashed processes are detected and reclaimed automatically; locks held by a live process are respected.

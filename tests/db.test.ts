@@ -98,6 +98,106 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("reports SQLite failures as DB_ERROR with the failing statement", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    try {
+      let caught: unknown;
+      try {
+        db.query("SELECT FROM WHERE").all();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(MuboError);
+      const failure = caught as MuboError;
+      expect(failure.code).toBe("DB_ERROR");
+      expect(failure.status).toBe(500);
+      expect(failure.expose).toBe(false);
+      expect(failure.details).toMatchObject({ sql: "SELECT FROM WHERE" });
+      expect(failure.cause).toBeInstanceOf(Error);
+
+      let execFailure: unknown;
+      try {
+        db.exec("NOT SQL");
+      } catch (error) {
+        execFailure = error;
+      }
+      expect(execFailure).toBeInstanceOf(MuboError);
+      expect((execFailure as MuboError).code).toBe("DB_ERROR");
+      expect((execFailure as MuboError).details).toMatchObject({ sql: "NOT SQL" });
+
+      let iterateFailure: unknown;
+      try {
+        db.query("SELECT FROM WHERE").iterate().next();
+      } catch (error) {
+        iterateFailure = error;
+      }
+      expect(iterateFailure).toBeInstanceOf(MuboError);
+      expect((iterateFailure as MuboError).code).toBe("DB_ERROR");
+    } finally {
+      db.close();
+    }
+  });
+
+  test("reports constraint violations as DB_ERROR", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE)");
+    try {
+      db.query("INSERT INTO users (email) VALUES (?)").run("ada@example.com");
+      let caught: unknown;
+      try {
+        db.query("INSERT INTO users (email) VALUES (?)").run("ada@example.com");
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(MuboError);
+      expect((caught as MuboError).code).toBe("DB_ERROR");
+      expect((caught as MuboError).message).toContain("UNIQUE constraint failed");
+    } finally {
+      db.close();
+    }
+  });
+
+  test("reports a closed database with the DB_CLOSED code", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.close();
+
+    let caught: unknown;
+    try {
+      db.query("SELECT 1").get();
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(MuboError);
+    expect((caught as MuboError).code).toBe("DB_CLOSED");
+    expect((caught as MuboError).status).toBe(503);
+    expect((caught as MuboError).message).toBe("Database is closed");
+  });
+
+  test("cancels queued transactions with the DB_CLOSED code", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const active = db.transaction(async () => {
+      await gate;
+      return "active";
+    });
+    const queued = db.transaction(() => "queued");
+
+    db.close();
+    let caught: unknown;
+    try {
+      await queued;
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(MuboError);
+    expect((caught as MuboError).code).toBe("DB_CLOSED");
+    release();
+    await expect(active).rejects.toThrow();
+  });
+
   test("persists migrations and applies additive changes after restart", async () => {
     const path = join(tempDir(), "app.sqlite");
     const v1 = new MuboDatabase({ path });

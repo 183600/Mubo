@@ -1035,7 +1035,7 @@ export async function applyMigrations(
           try {
             db.exec(statement);
           } catch (error) {
-            if (isMuboError(error)) throw error;
+            if (isMuboError(error) && error.code !== "DB_ERROR") throw error;
             const summary = statement.replace(/\s+/g, " ").slice(0, 200);
             throw new MuboError("MIGRATION_ERROR", `Failed to apply migration statement: ${summary}`, {
               cause: error,
@@ -1059,7 +1059,7 @@ export async function applyMigrations(
             ).run(fresh.id, appliedAt, fresh.id, meta);
           }
         } catch (error) {
-          if (isMuboError(error)) throw error;
+          if (isMuboError(error) && error.code !== "DB_ERROR") throw error;
           throw new MuboError(
             "MIGRATION_ERROR",
             `Failed to record migration history for ${fresh.id}`,

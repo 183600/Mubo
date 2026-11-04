@@ -979,6 +979,28 @@ describe("middleware boundaries", () => {
     expect(order).toEqual(["a-before", "b-before", "handler", "b-after", "a-after"]);
   });
 
+  test("reports database failures with the DB_ERROR code", async () => {
+    const app = await startApp({
+      app: { name: "db-error-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/broken", () => {
+      app.db.query("SELECT FROM WHERE").all();
+      return new Response("unreachable");
+    });
+
+    const response = await fetch(`${base(app)}/broken`);
+    expect(response.status).toBe(500);
+    const payload = (await response.json()) as {
+      error: { code: string; message: string; details?: unknown };
+      requestId: string;
+    };
+    expect(payload.error.code).toBe("DB_ERROR");
+    expect(payload.requestId).toBeTruthy();
+  });
+
   test("rejects invalid route handlers and middleware at registration time", async () => {
     const app = await startApp({
       app: { name: "registration-validation-test", env: "test" },
