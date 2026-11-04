@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { Database } from "bun:sqlite";
 import { boolFlag, parseCliArgs, stringFlag } from "../src/cli/args.ts";
 import { initProject } from "../src/cli/init.ts";
-import { resolveConfig } from "../src/core/config.ts";
+import { loadAndResolveConfig, resolveConfig } from "../src/core/config.ts";
 
 const tempDirs: string[] = [];
 const cli = resolve(import.meta.dir, "../src/cli/index.ts");
@@ -434,4 +434,73 @@ export default defineConfig({
     const help3 = parseCliArgs(["--help=true"]);
     expect(help3.flags.get("help")).toBe("true");
   });
+});
+
+test("cli help output contains key sections", async () => {
+  const cwd = tempDir();
+  writeFileSync(join(cwd, "mubo.config.ts"), `export default { app: { name: "test" } };\n`);
+  const result = await runCli(cwd, ["--help"]);
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain("Usage:");
+  expect(result.stdout).toContain("mubo init");
+  expect(result.stdout).toContain("Environment:");
+});
+
+test("cli parseCliArgs with dash-dash separator", () => {
+  const parsed = parseCliArgs(["build", "--", "--port", "4000"]);
+  expect(parsed.command).toBe("build");
+  expect(parsed.positionals).toEqual(["--port", "4000"]);
+  expect(parsed.flags.size).toBe(0);
+});
+
+test("cli parseCliArgs captures positionals correctly", () => {
+  const parsed = parseCliArgs(["init", "my-app", "--force"]);
+  expect(parsed.command).toBe("init");
+  expect(parsed.positionals).toEqual(["my-app"]);
+  expect(parsed.flags.get("force")).toBe(true);
+});
+
+test("cli parseCliArgs with boolean flags", () => {
+  const parsed = parseCliArgs(["dev", "--json=true", "--host=127.0.0.1"]);
+  expect(boolFlag(parsed, "json")).toBe(true);
+  expect(stringFlag(parsed, "host")).toBe("127.0.0.1");
+});
+
+test("cli resolveConfig with environment variables", () => {
+  const config = resolveConfig({}, {
+    cwd: tempDir(),
+    env: { MUBO_PORT: "4321", MUBO_HOST: "0.0.0.0" },
+    argv: [],
+  });
+  expect(config.http.port).toBe(4321);
+  expect(config.http.host).toBe("0.0.0.0");
+});
+
+test("cli resolveConfig defaults", () => {
+  const config = resolveConfig({}, {
+    cwd: tempDir(),
+    env: {},
+    argv: [],
+  });
+  expect(config.app.name).toBe("mubo-app");
+  expect(config.http.port).toBe(3000);
+  expect(config.http.host).toBe("127.0.0.1");
+  expect(config.db.path).not.toBeUndefined();
+});
+
+test("cli loadAndResolveConfig with file", async () => {
+  const cwd = tempDir();
+  writeFileSync(join(cwd, "mubo.config.ts"), `export default { app: { name: "from-file" } };\n`);
+  const config = await loadAndResolveConfig({}, { cwd, loadFile: true, env: {}, argv: [] });
+  expect(config.app.name).toBe("from-file");
+});
+
+test("cli loadAndResolveConfig with overrides", async () => {
+  const cwd = tempDir();
+  writeFileSync(join(cwd, "mubo.config.ts"), `export default { app: { name: "default" } };\n`);
+  const config = await loadAndResolveConfig(
+    { app: { name: "overridden" } },
+    { cwd, loadFile: true, env: {}, argv: [] }
+  );
+  expect(config.app.name).toBe("overridden");
 });
