@@ -344,7 +344,8 @@ export class MuboDatabase {
           this.raw.run(`ROLLBACK TO ${savepoint}`);
           this.raw.run(`RELEASE ${savepoint}`);
         }
-      } catch {
+      } catch (error) {
+        this.logger?.warn("Transaction rollback failed", { error: (error as Error).message });
       } finally {
         finish();
       }
