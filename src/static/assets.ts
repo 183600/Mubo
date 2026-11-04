@@ -514,31 +514,30 @@ export class StaticAssets {
     return null;
   }
 
-async hasFile(pathname: string): Promise<boolean> {
-     if (!this.enabled) return false;
-     if (this.assets.size > 0) {
-       try {
-         const found = this.findEmbedded(pathname, this.mode === "embedded");
-         if (found) {
-           const fallback =
-             found.path === "/index.html" && normalizeKey(pathname) !== "/index.html";
-           if (!(this.mode === "embedded" && fallback)) return true;
-         }
-       } catch {
-         return false;
-       }
-     }
-     if (this.mode !== "disk" && !(this.mode === "embedded" && this.assets.size === 0)) return false;
-     const resolved = this.safeDiskPath(pathname);
-     if (resolved.error) return false;
-     const target = resolved.directory ? join(resolved.path, "index.html") : resolved.path;
-     if (await Bun.file(target).exists()) return true;
-     if (!resolved.directory) {
-       const indexFile = join(resolved.path, "index.html");
-       if (await Bun.file(indexFile).exists()) return true;
-     }
-     return false;
-   }
+  async hasFile(pathname: string): Promise<boolean> {
+    if (!this.enabled) return false;
+    if (this.assets.size > 0) {
+      try {
+        const found = this.findEmbedded(pathname, this.mode === "embedded");
+        if (found) {
+          const fallback = found.path === "/index.html" && normalizeKey(pathname) !== "/index.html";
+          if (!(this.mode === "embedded" && fallback)) return true;
+        }
+      } catch {
+        return false;
+      }
+    }
+    if (this.mode !== "disk" && !(this.mode === "embedded" && this.assets.size === 0)) return false;
+    const resolved = this.safeDiskPath(pathname);
+    if (resolved.error) return false;
+    const target = resolved.directory ? join(resolved.path, "index.html") : resolved.path;
+    if (await Bun.file(target).exists()) return true;
+    if (!resolved.directory) {
+      const indexFile = join(resolved.path, "index.html");
+      if (await Bun.file(indexFile).exists()) return true;
+    }
+    return false;
+  }
 }
 
 export { MIME_TYPES, normalizeKey };
