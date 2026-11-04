@@ -265,6 +265,14 @@ SQLite failures are reported as `MuboError` with the code `DB_ERROR`; the failin
 
 `app.db.migrate(schema, options)` applies the declarative schema using the app's configured `db.migrations` settings (history table, mode, `safeOnly` and lock strategy), so manual migrations record history in the same table as startup migrations. Explicit `options` override the configuration.
 
+Automatic migrations are append-only: dropping columns or tables, changing column types, primary keys, foreign keys, `UNIQUE` constraints, defaults or nullability is rejected with `MIGRATION_ERROR`. Apply such a change by hand before `app.start()` - the automatic migration then sees the updated structure and stays a no-op:
+
+```ts
+const app = await createMuboApp(config);
+app.db.exec("ALTER TABLE users DROP COLUMN nickname"); // manual migration
+await app.start();
+```
+
 With `db.migrations.lock: "file"`, migrations are serialized through a lock file next to the database. Locks left behind by crashed processes are detected and reclaimed automatically; locks held by a live process are respected.
 
 Database tuning options: `db.wal` (WAL mode, default `true`), `db.foreignKeys` (default `true`), `db.busyTimeoutMs` (default `5000`) and `db.slowQueryMs` (default `200`, logs a warning for slower queries).

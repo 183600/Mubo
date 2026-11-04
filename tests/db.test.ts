@@ -1122,6 +1122,38 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("accepts a destructive change after the SQL was applied manually", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const withName = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true, autoIncrement: true },
+            name: { type: "text" },
+          },
+        },
+      },
+    });
+    const withoutName = defineSchema({
+      tables: {
+        users: {
+          columns: { id: { type: "integer", primaryKey: true, autoIncrement: true } },
+        },
+      },
+    });
+    expect((await db.migrate(withName)).status).toBe("applied");
+    await expect(db.migrate(withoutName)).rejects.toThrow(/Dropping column users\.name/);
+
+    // The documented escape hatch: destructive SQL is applied by hand and the
+    // automatic migration then sees the updated structure.
+    db.exec("ALTER TABLE users DROP COLUMN name");
+    expect((await db.migrate(withoutName)).status).toBe("none");
+    expect(
+      db.query("SELECT name FROM pragma_table_info('users') WHERE name = 'name'").get(),
+    ).toBeNull();
+    db.close();
+  });
+
   test("repairs missing schema objects even when a plan was applied before", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const schema = defineSchema({

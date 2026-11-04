@@ -157,7 +157,10 @@ function validateTable(name: string, table: TableDefinition): void {
   }
   const primaryKeys = entries.filter(([, column]) => column.primaryKey);
   if (primaryKeys.length > 1) {
-    throw new MuboError("MIGRATION_ERROR", `Table ${name} has multiple primary keys; use one composite key instead`);
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Table ${name} has multiple primary keys; declare a single primary key column or use a manual migration`,
+    );
   }
   for (const [columnName, column] of entries) {
     quoteIdentifier(columnName);
