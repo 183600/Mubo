@@ -1390,6 +1390,32 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("stores value defaults literally and keeps sql defaults as SQL", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: {
+        events: {
+          columns: {
+            id: { type: "integer", primaryKey: true, autoIncrement: true },
+            literal: { type: "text", default: "CURRENT_TIMESTAMP" },
+            generated: { type: "text", sqlDefault: "CURRENT_TIMESTAMP" },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("applied");
+    expect((await db.migrate(schema)).status).toBe("none");
+
+    db.query("INSERT INTO events (id) VALUES (1)").run();
+    const row = db.query<{ literal: string; generated: string }>(
+      "SELECT literal, generated FROM events WHERE id = 1",
+    ).get();
+    expect(row?.literal).toBe("CURRENT_TIMESTAMP");
+    expect(row?.generated).not.toBe("CURRENT_TIMESTAMP");
+    expect(String(row?.generated)).toMatch(/^\d{4}-\d{2}-\d{2} /);
+    db.close();
+  });
+
   test("ignores keyword-like identifiers and defaults when detecting autoincrement", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const schema = defineSchema({

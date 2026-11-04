@@ -266,6 +266,34 @@ SQLite failures are reported as `MuboError` with the code `DB_ERROR`; the failin
 
 `app.db.migrate(schema, options)` applies the declarative schema using the app's configured `db.migrations` settings (history table, mode, `safeOnly` and lock strategy), so manual migrations record history in the same table as startup migrations. Explicit `options` override the configuration.
 
+### Declarative Schema
+
+`defineSchema` describes the tables and indexes of the application. The schema is applied as append-only migrations when the app starts.
+
+```ts
+const schema = defineSchema({
+  tables: {
+    users: {
+      columns: {
+        id: { type: "integer", primaryKey: true, autoIncrement: true },
+        email: { type: "text", notNull: true, unique: true },
+        name: { type: "text", default: "anon" },
+        org_id: { type: "integer", references: { table: "orgs", column: "id", onDelete: "CASCADE" } },
+        created_at: { type: "text", sqlDefault: "CURRENT_TIMESTAMP" },
+      },
+      indexes: [
+        { name: "idx_users_name", columns: ["name"] },
+        { name: "idx_users_open", columns: ["email"], unique: true, where: "active = 1" },
+      ],
+    },
+  },
+});
+```
+
+Column options are `type` (`text`, `integer`, `real`, `blob`, `numeric`, `boolean`), `primaryKey`, `autoIncrement`, `notNull`, `unique`, `default`, `sqlDefault` and `references` (`table`, `column`, `onDelete`, `onUpdate`). Index options are `name`, `columns`, `unique` and `where`.
+
+`default` takes a JavaScript value and is stored as a literal, `sqlDefault` is raw SQL. Use `sqlDefault: "CURRENT_TIMESTAMP"` for the SQLite timestamp function; `default: "CURRENT_TIMESTAMP"` stores the text `CURRENT_TIMESTAMP`.
+
 Automatic migrations are append-only: dropping columns or tables, changing column types, primary keys, foreign keys, `UNIQUE` constraints, defaults or nullability is rejected with `MIGRATION_ERROR`. Apply such a change by hand before `app.start()` - the automatic migration then sees the updated structure and stays a no-op:
 
 ```ts
