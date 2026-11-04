@@ -933,3 +933,93 @@ describe("request timeout", () => {
     ).toThrow(/Invalid request timeout/);
   });
 });
+
+describe("rate limiting", () => {
+  test("limits requests per window and returns 429 with retry headers", async () => {
+    const app = await startApp({
+      app: { name: "ratelimit-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: {
+        rateLimit: {
+          maxRequests: 3,
+          windowMs: 1000,
+          key: (req) => req.headers.get("x-forwarded-for") ?? "default",
+        },
+      },
+    });
+    app.get("/limited", (ctx) => ctx.json({ ok: true }));
+
+    for (let i = 0; i < 3; i++) {
+      const response = await fetch(`${base(app)}/limited`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-ratelimit-limit")).toBe("3");
+      expect(response.headers.get("x-ratelimit-remaining")).toBe(String(2 - i));
+    }
+
+    const limited = await fetch(`${base(app)}/limited`);
+    expect(limited.status).toBe(429);
+    const payload = (await limited.json()) as { error: { code: string; details: { retryAfterSeconds: number } } };
+    expect(payload.error.code).toBe("RATE_LIMITED");
+    expect(payload.error.details.retryAfterSeconds).toBeGreaterThan(0);
+    expect(limited.headers.get("x-ratelimit-limit")).toBe("3");
+    expect(limited.headers.get("x-ratelimit-remaining")).toBe("0");
+  });
+
+  test("uses custom key function for rate limiting", async () => {
+    const app = await startApp({
+      app: { name: "ratelimit-custom-key-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: {
+        rateLimit: {
+          maxRequests: 2,
+          windowMs: 1000,
+          key: (req) => new URL(req.url).searchParams.get("user") ?? "anonymous",
+        },
+      },
+    });
+    app.get("/limited", (ctx) => ctx.json({ ok: true }));
+
+    const r1 = await fetch(`${base(app)}/limited?user=alice`);
+    expect(r1.status).toBe(200);
+    const r2 = await fetch(`${base(app)}/limited?user=alice`);
+    expect(r2.status).toBe(200);
+    const r3 = await fetch(`${base(app)}/limited?user=alice`);
+    expect(r3.status).toBe(429);
+
+    const r4 = await fetch(`${base(app)}/limited?user=bob`);
+    expect(r4.status).toBe(200);
+  });
+
+  test("does not apply rate limiting when disabled", async () => {
+    const app = await startApp({
+      app: { name: "no-ratelimit-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/unlimited", (ctx) => ctx.json({ ok: true }));
+
+    for (let i = 0; i < 10; i++) {
+      const response = await fetch(`${base(app)}/unlimited`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-ratelimit-limit")).toBeNull();
+    }
+  });
+
+  test("rejects invalid rateLimit config", () => {
+    expect(() => resolveConfig({ http: { rateLimit: { maxRequests: 10, windowMs: 1000, key: "not-a-function" as never } } }, { env: {}, argv: [] })).toThrow(/Invalid rate limit key/);
+    expect(() =>
+      resolveConfig({ http: { rateLimit: { maxRequests: 0, windowMs: 1000, key: () => "x" } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid rate limit maxRequests/);
+    expect(() =>
+      resolveConfig({ http: { rateLimit: { maxRequests: 10, windowMs: -1, key: () => "x" } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid rate limit windowMs/);
+    expect(() =>
+      resolveConfig({ http: { rateLimit: { maxRequests: 10, windowMs: 1000, key: "not-a-function" as never } } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid rate limit key/);
+  });
+});

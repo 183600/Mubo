@@ -26,6 +26,11 @@ export interface MuboConfig {
     cors?: false | CorsConfig;
     bodyLimit?: number;
     requestTimeoutMs?: number;
+    rateLimit?: false | {
+      maxRequests: number;
+      windowMs: number;
+      key?: (request: Request) => string;
+    };
   };
   db?: {
     path?: string;
@@ -81,6 +86,11 @@ export interface ResolvedMuboConfig {
     cors: false | CorsConfig;
     bodyLimit: number;
     requestTimeoutMs: number;
+    rateLimit: false | {
+      maxRequests: number;
+      windowMs: number;
+      key: (request: Request) => string;
+    };
   };
   db: {
     path: string;
@@ -498,6 +508,7 @@ export function resolveConfig(
       cors: false,
       bodyLimit: 1024 * 1024,
       requestTimeoutMs: 0,
+      rateLimit: false,
     },
     db: {
       path: "",
@@ -631,6 +642,20 @@ export function resolveConfig(
   }
   if (!Number.isInteger(merged.http.requestTimeoutMs) || merged.http.requestTimeoutMs < 0) {
     throw new MuboError("CONFIG_ERROR", `Invalid request timeout: ${merged.http.requestTimeoutMs}`);
+  }
+  if (merged.http.rateLimit !== false) {
+    if (!merged.http.rateLimit || typeof merged.http.rateLimit !== "object") {
+      throw new MuboError("CONFIG_ERROR", "Invalid rate limit configuration");
+    }
+    if (!Number.isInteger(merged.http.rateLimit.maxRequests) || merged.http.rateLimit.maxRequests <= 0) {
+      throw new MuboError("CONFIG_ERROR", "Invalid rate limit maxRequests");
+    }
+    if (!Number.isInteger(merged.http.rateLimit.windowMs) || merged.http.rateLimit.windowMs <= 0) {
+      throw new MuboError("CONFIG_ERROR", "Invalid rate limit windowMs");
+    }
+    if (typeof merged.http.rateLimit.key !== "function") {
+      throw new MuboError("CONFIG_ERROR", "Invalid rate limit key function");
+    }
   }
   if (merged.http.cors && merged.http.cors.maxAgeSeconds !== undefined) {
     requireInteger("CORS max age", merged.http.cors.maxAgeSeconds, { min: 0 });

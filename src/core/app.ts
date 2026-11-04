@@ -253,6 +253,54 @@ export class MuboApp {
     };
   }
 
+  private createRateLimitMiddleware(): RouteMiddleware {
+    const rateLimit = this.config.http.rateLimit;
+    if (rateLimit === false) {
+      return async (ctx, next) => next();
+    }
+    const { maxRequests, windowMs, key } = rateLimit;
+    const store = new Map<string, { count: number; resetAt: number }>();
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [k, v] of store.entries()) {
+        if (v.resetAt < now) store.delete(k);
+      }
+    }, windowMs);
+    cleanupInterval.unref?.();
+
+    const addRateLimitHeaders = (response: Response, remaining: number, resetAt: number): Response => {
+      const headers = new Headers(response.headers);
+      headers.set("x-ratelimit-limit", String(maxRequests));
+      headers.set("x-ratelimit-remaining", String(remaining));
+      headers.set("x-ratelimit-reset", String(Math.ceil(resetAt / 1000)));
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    };
+
+    return async (ctx, next) => {
+      const identifier = key(ctx.req);
+      const now = Date.now();
+      const entry = store.get(identifier);
+      if (!entry || entry.resetAt < now) {
+        store.set(identifier, { count: 1, resetAt: now + windowMs });
+      } else {
+        entry.count++;
+        if (entry.count > maxRequests) {
+          const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+          const errorResponse = ctx.fail(
+            "RATE_LIMITED",
+            "Too many requests",
+            429,
+            { retryAfterSeconds: retryAfter },
+          );
+          return addRateLimitHeaders(errorResponse, 0, entry.resetAt);
+        }
+      }
+      const response = await next();
+      const remaining = Math.max(0, maxRequests - (store.get(identifier)?.count ?? 0));
+      return addRateLimitHeaders(response, remaining, store.get(identifier)?.resetAt ?? now + windowMs);
+    };
+  }
+
   private async healthResponse(ctx: MuboRequestContext, pathname: string): Promise<Response | null> {
     const normalized = normalizePath(pathname);
     const path = normalized.replace(/^\/+|\/+$/g, "");
@@ -619,6 +667,10 @@ export class MuboApp {
 
     if (this.config.http.requestTimeoutMs > 0) {
       this.middlewares.unshift(this.createRequestTimeoutMiddleware());
+    }
+
+    if (this.config.http.rateLimit !== false) {
+      this.middlewares.unshift(this.createRateLimitMiddleware());
     }
 
     const serveOptions = {
