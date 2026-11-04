@@ -999,4 +999,68 @@ export default defineConfig({
     const config = resolveConfig({}, { env: { MUBO_HOST: "0.0.0.0" }, argv: [] });
     expect(config.http.host).toBe("0.0.0.0");
   });
+
+  test("parses MUBO_WS_MAX_CONNECTIONS and MUBO_WS_MAX_CONNECTIONS_PER_IP from environment", () => {
+    const config = resolveConfig(
+      {},
+      {
+        env: { MUBO_WS_MAX_CONNECTIONS: "100", MUBO_WS_MAX_CONNECTIONS_PER_IP: "10" },
+        argv: [],
+      },
+    );
+    expect(config.ws.maxConnections).toBe(100);
+    expect(config.ws.maxConnectionsPerIp).toBe(10);
+  });
+
+  test("rejects invalid MUBO_WS_MAX_CONNECTIONS and MUBO_WS_MAX_CONNECTIONS_PER_IP from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_MAX_CONNECTIONS: "-1" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket max connections/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_MAX_CONNECTIONS: "1.5" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket max connections/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_MAX_CONNECTIONS_PER_IP: "-1" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket max connections per IP/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_MAX_CONNECTIONS_PER_IP: "1.5" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket max connections per IP/);
+  });
+
+  test("accepts zero for MUBO_WS_MAX_CONNECTIONS and MUBO_WS_MAX_CONNECTIONS_PER_IP from environment", () => {
+    const config = resolveConfig({}, { env: { MUBO_WS_MAX_CONNECTIONS: "0" }, argv: [] });
+    expect(config.ws.maxConnections).toBe(0);
+    const configPerIp = resolveConfig({}, { env: { MUBO_WS_MAX_CONNECTIONS_PER_IP: "0" }, argv: [] });
+    expect(configPerIp.ws.maxConnectionsPerIp).toBe(0);
+  });
+
+  test("parses MUBO_STATIC_SPA_FALLBACK from environment", () => {
+    const config = resolveConfig({}, { env: { MUBO_STATIC_SPA_FALLBACK: "false" }, argv: [] });
+    expect(config.static.spaFallback).toBe(false);
+    const trueConfig = resolveConfig({}, { env: { MUBO_STATIC_SPA_FALLBACK: "true" }, argv: [] });
+    expect(trueConfig.static.spaFallback).toBe(true);
+  });
+
+  test("rejects invalid MUBO_STATIC_SPA_FALLBACK from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_STATIC_SPA_FALLBACK: "maybe" }, argv: [] }),
+    ).toThrow(/Invalid boolean value/);
+  });
+
+  test("parses MUBO_WS_MAX_PAYLOAD from environment", () => {
+    const config = resolveConfig({}, { env: { MUBO_WS_MAX_PAYLOAD: "2097152" }, argv: [] });
+    expect(config.ws.maxPayloadBytes).toBe(2097152);
+  });
+
+  test("rejects invalid MUBO_WS_MAX_PAYLOAD from environment", () => {
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_MAX_PAYLOAD: "0" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket max payload/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_MAX_PAYLOAD: "-1" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket max payload/);
+    expect(() =>
+      resolveConfig({}, { env: { MUBO_WS_MAX_PAYLOAD: "1.5" }, argv: [] }),
+    ).toThrow(/Invalid WebSocket max payload/);
+  });
 });
