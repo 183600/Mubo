@@ -153,6 +153,7 @@ export class MuboApp {
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private startedAt?: number;
   private hasStopped = false;
+  private builtInMiddlewaresInstalled = false;
 
   constructor(
     config: ResolvedMuboConfig,
@@ -241,6 +242,24 @@ export class MuboApp {
   static(options: StaticAssetsOptions = {}): this {
     this.staticAssets.configure(options, this.cwd);
     return this;
+  }
+
+  /**
+   * Installs the framework provided middleware exactly once.
+   *
+   * A failed `start()` attempt (for example a busy port) may be retried, and
+   * installing the middleware again would apply the request timeout and the
+   * rate limiter twice for every request.
+   */
+  private installBuiltInMiddlewares(): void {
+    if (this.builtInMiddlewaresInstalled) return;
+    if (this.config.http.requestTimeoutMs > 0) {
+      this.middlewares.unshift(this.createRequestTimeoutMiddleware());
+    }
+    if (this.config.http.rateLimit !== false) {
+      this.middlewares.unshift(this.createRateLimitMiddleware());
+    }
+    this.builtInMiddlewaresInstalled = true;
   }
 
   /** Executes middleware chain in onion model, throwing if next() is called multiple times. */
@@ -715,13 +734,7 @@ export class MuboApp {
       });
     }
 
-    if (this.config.http.requestTimeoutMs > 0) {
-      this.middlewares.unshift(this.createRequestTimeoutMiddleware());
-    }
-
-    if (this.config.http.rateLimit !== false) {
-      this.middlewares.unshift(this.createRateLimitMiddleware());
-    }
+    this.installBuiltInMiddlewares();
 
     const serveOptions = {
       hostname: this.config.http.host,

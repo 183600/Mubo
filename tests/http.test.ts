@@ -411,6 +411,48 @@ describe("HTTP routing and middleware", () => {
     }
   });
 
+  test("does not duplicate built-in middleware when a failed start is retried", async () => {
+    const blocker = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("busy") });
+    let keyCalls = 0;
+    const app = await createMuboApp(
+      {
+        app: { name: "failed-start-retry-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        http: {
+          port: blocker.port,
+          rateLimit: {
+            maxRequests: 2,
+            windowMs: 60_000,
+            key: () => {
+              keyCalls++;
+              return "client";
+            },
+          },
+        },
+      },
+      { argv: [] },
+    );
+    apps.push(app);
+    await expect(app.start()).rejects.toThrow(/in use|listen|EADDRINUSE/i);
+    await blocker.stop(true);
+
+    await app.start();
+    app.get("/limited", (ctx) => ctx.json({ ok: true }));
+
+    const first = await fetch(`${base(app)}/limited`);
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-ratelimit-remaining")).toBe("1");
+    expect(keyCalls).toBe(1);
+    const second = await fetch(`${base(app)}/limited`);
+    expect(second.status).toBe(200);
+    expect(second.headers.get("x-ratelimit-remaining")).toBe("0");
+    const limited = await fetch(`${base(app)}/limited`);
+    expect(limited.status).toBe(429);
+    expect(keyCalls).toBe(3);
+  });
+
   test("refuses to restart an application that was stopped", async () => {
     const app = await createMuboApp(
       {
