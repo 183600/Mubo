@@ -142,6 +142,8 @@ mubo/
 - `app.stop()`: Stop heartbeats, close WebSocket connections, stop server, close database
 - `app.serverInstance` and `app.port`: Query server state
 - `app.started`: Boolean indicating if server is running
+- `app.stopped`: Boolean indicating if the app has been stopped
+- Stopping during startup aborts the pending start; a stopped app cannot be restarted and reports `APP_STOPPED`
 
 ## 5. Configuration System
 

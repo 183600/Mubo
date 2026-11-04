@@ -174,6 +174,8 @@ app.get("/healthz", () => Response.json({ ok: true }));
 await app.start();
 ```
 
+`app.start()` is idempotent while the app is running: concurrent calls share a single server. `app.stop()` stops the HTTP server, closes WebSocket connections and the database. A stopped application cannot be restarted; create a new one instead.
+
 When `createMuboApp` receives no explicit config, it loads the local `mubo.config.*`; any explicit config disables file loading (use `{ loadFile: true }` to force it). Explicit `--config <file>` always loads that file, overriding inline config. Environment variables and other CLI flags still take precedence over everything. CLI-generated entry files import config directly, so single-file binaries don't depend on runtime config files.
 
 ### Routes and Middleware

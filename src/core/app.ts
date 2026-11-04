@@ -138,6 +138,7 @@ export class MuboApp {
   private stopping?: Promise<void>;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private startedAt?: number;
+  private hasStopped = false;
 
   constructor(
     config: ResolvedMuboConfig,
@@ -163,6 +164,10 @@ export class MuboApp {
 
   get started(): boolean {
     return this.server !== undefined;
+  }
+
+  get stopped(): boolean {
+    return this.hasStopped;
   }
 
   use(middleware: RouteMiddleware): this {
@@ -538,7 +543,13 @@ export class MuboApp {
 
   private async startOnce(): Promise<Server<WsSocketData>> {
     if (this.server) return this.server;
+    if (this.hasStopped) {
+      throw new MuboError("APP_STOPPED", "Application has been stopped and cannot be restarted");
+    }
     const migration = await this.migrate();
+    if (this.hasStopped) {
+      throw new MuboError("APP_STOPPED", "Application was stopped while starting");
+    }
     if (migration.status === "pending") {
       throw new MuboError(
         "MIGRATION_REQUIRED",
@@ -615,6 +626,15 @@ export class MuboApp {
   }
 
   private async stopOnce(): Promise<void> {
+    this.hasStopped = true;
+    const starting = this.starting;
+    if (starting) {
+      try {
+        await starting;
+      } catch {
+        // The pending start was aborted because the app is shutting down.
+      }
+    }
     runningApps.delete(this);
     if (runningApps.size === 0) removeShutdownHandlers();
     if (this.heartbeatTimer) {

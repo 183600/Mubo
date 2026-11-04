@@ -9,6 +9,7 @@ export type ErrorCode =
   | "CONFIG_ERROR"
   | "MIGRATION_ERROR"
   | "MIGRATION_REQUIRED"
+  | "APP_STOPPED"
   | "INTERNAL_ERROR";
 
 const DEFAULT_STATUS: Record<string, number> = {
@@ -22,6 +23,7 @@ const DEFAULT_STATUS: Record<string, number> = {
   CONFIG_ERROR: 500,
   MIGRATION_ERROR: 500,
   MIGRATION_REQUIRED: 503,
+  APP_STOPPED: 503,
   INTERNAL_ERROR: 500,
 };
 

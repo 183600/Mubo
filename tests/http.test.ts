@@ -409,6 +409,50 @@ describe("HTTP routing and middleware", () => {
     }
   });
 
+  test("refuses to restart an application that was stopped", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "restart-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    expect(app.started).toBe(true);
+    expect(app.stopped).toBe(false);
+
+    await app.stop();
+    expect(app.started).toBe(false);
+    expect(app.stopped).toBe(true);
+
+    await expect(app.start()).rejects.toThrow(/stopped/);
+    const error = await app.start().catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(MuboError);
+    expect((error as MuboError).code).toBe("APP_STOPPED");
+    expect((error as MuboError).status).toBe(503);
+  });
+
+  test("does not start listening when the application is stopped during startup", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "stop-during-start-test", env: "test" },
+        db: { path: ":memory:" },
+        schema,
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    const starting = app.start();
+    await app.stop();
+    await expect(starting).rejects.toThrow(/stopped/);
+    expect(app.started).toBe(false);
+    expect(app.stopped).toBe(true);
+    expect(app.port).toBeUndefined();
+  });
+
   test("validates request ID format and falls back to UUID", async () => {
     const app = await startApp({
       app: { name: "request-id-test", env: "test" },
