@@ -209,8 +209,8 @@ app.get("/api/hello/:name", (ctx) =>
 
 app.get("/api/users", async (ctx) =>
   ctx.json({
-    users: await ctx.db.transaction(async (db) => {
-      return ctx.db.query("SELECT id, email, name, created_at FROM users ORDER BY id").all();
+    users: await ctx.db.transaction((db) => {
+      return db.query("SELECT id, email, name, created_at FROM users ORDER BY id").all();
     }),
   }),
 );
