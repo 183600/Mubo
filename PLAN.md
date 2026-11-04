@@ -423,6 +423,7 @@ Index support:
    - Recalculate plan in transaction to prevent duplicate on concurrent starts
    - Execute SQL, write migration history
    - Failure rolls back with context-rich `MIGRATION_ERROR`
+   - `migrations.lock = "file"` additionally guards migrations with a lock file next to the database; locks owned by a dead process or older than the stale threshold are reclaimed automatically
 
 5. **Migration History**
    - Default table: `_mubo_migrations`

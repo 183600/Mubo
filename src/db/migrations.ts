@@ -1,7 +1,7 @@
 import { isMuboError, MuboError } from "../core/errors.ts";
 import type { MuboDatabase } from "./database.ts";
 import type { ColumnDefinition, IndexDefinition, MuboSchema, TableDefinition } from "./schema.ts";
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 export interface MigrationOptions {
@@ -885,18 +885,82 @@ function normalizeMigrationOptions(options: MigrationOptions): NormalizedMigrati
   return { mode, table, safeOnly, lock };
 }
 
-async function acquireFileLock(dbPath: string, table: string): Promise<string> {
+const LOCK_RETRY_ATTEMPTS = 50;
+const LOCK_RETRY_DELAY_MS = 100;
+const LOCK_STALE_AFTER_MS = 10 * 60 * 1000;
+
+export interface FileLockOptions {
+  attempts?: number;
+  delayMs?: number;
+  staleAfterMs?: number;
+}
+
+function processAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+interface LockInfo {
+  pid?: number;
+  createdAt?: number;
+}
+
+function readLockInfo(lockPath: string): LockInfo {
+  try {
+    const raw = readFileSync(lockPath, "utf8");
+    const [pidText, timestampText] = raw.split("\n");
+    const pid = Number.parseInt(pidText ?? "", 10);
+    const timestamp = Number.parseInt(timestampText ?? "", 10);
+    if (Number.isInteger(pid) && pid > 0) {
+      return { pid, createdAt: Number.isFinite(timestamp) ? timestamp : undefined };
+    }
+  } catch {
+  }
+  try {
+    return { createdAt: statSync(lockPath).mtimeMs };
+  } catch {
+    return {};
+  }
+}
+
+function isStaleLock(lockPath: string, staleAfterMs: number): boolean {
+  const info = readLockInfo(lockPath);
+  if (info.createdAt !== undefined && Date.now() - info.createdAt > staleAfterMs) return true;
+  if (info.pid !== undefined && !processAlive(info.pid)) return true;
+  return false;
+}
+
+export async function acquireFileLock(
+  dbPath: string,
+  table: string,
+  options: FileLockOptions = {},
+): Promise<string> {
+  const attempts = options.attempts ?? LOCK_RETRY_ATTEMPTS;
+  const delayMs = options.delayMs ?? LOCK_RETRY_DELAY_MS;
+  const staleAfterMs = options.staleAfterMs ?? LOCK_STALE_AFTER_MS;
   const lockDir = dirname(dbPath === ":memory:" ? resolve(".mubo-locks") : dbPath);
   mkdirSync(lockDir, { recursive: true });
   const lockPath = join(lockDir, `.${table}.lock`);
   let acquired = false;
-  for (let attempt = 0; attempt < 50; attempt++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     try {
       writeFileSync(lockPath, `${process.pid}\n${Date.now()}`, { flag: "wx" });
       acquired = true;
       break;
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (isStaleLock(lockPath, staleAfterMs)) {
+        try {
+          rmSync(lockPath, { force: true });
+        } catch {
+        }
+        continue;
+      }
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
   if (!acquired) {
@@ -905,8 +969,10 @@ async function acquireFileLock(dbPath: string, table: string): Promise<string> {
   return lockPath;
 }
 
-function releaseFileLock(lockPath: string): void {
+export function releaseFileLock(lockPath: string): void {
   try {
+    const info = readLockInfo(lockPath);
+    if (info.pid !== undefined && info.pid !== process.pid) return;
     rmSync(lockPath, { force: true });
   } catch {
     // Lock file may have been cleaned up externally.

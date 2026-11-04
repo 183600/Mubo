@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MuboDatabase } from "../src/db/database.ts";
 import { defineSchema } from "../src/db/schema.ts";
 import { MuboError } from "../src/core/errors.ts";
 import { createLogger } from "../src/core/logger.ts";
+import { acquireFileLock, releaseFileLock } from "../src/db/migrations.ts";
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -1899,6 +1900,73 @@ describe("database and automatic migrations", () => {
     const offResult = await db.migrate(unchanged, { mode: "off" });
     expect(offResult.status).toBe("off");
 
+    db.close();
+  });
+
+  test("reclaims migration file locks left behind by dead processes", async () => {
+    const dir = tempDir();
+    const lockPath = join(dir, "._mubo_migrations.lock");
+    const dead = Bun.spawn(["bun", "-e", "process.exit(0)"]);
+    await dead.exited;
+    writeFileSync(lockPath, `${dead.pid}\n${Date.now()}`);
+
+    const acquired = await acquireFileLock(join(dir, "app.sqlite"), "_mubo_migrations", {
+      attempts: 3,
+      delayMs: 5,
+    });
+    expect(acquired).toBe(lockPath);
+    expect(readFileSync(lockPath, "utf8").startsWith(`${process.pid}\n`)).toBe(true);
+    releaseFileLock(acquired);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test("reclaims migration file locks that expired", async () => {
+    const dir = tempDir();
+    const lockPath = join(dir, "._mubo_migrations.lock");
+    writeFileSync(lockPath, `${process.pid}\n${Date.now() - 60 * 60 * 1000}`);
+
+    const acquired = await acquireFileLock(join(dir, "app.sqlite"), "_mubo_migrations", {
+      attempts: 3,
+      delayMs: 5,
+    });
+    expect(acquired).toBe(lockPath);
+    releaseFileLock(acquired);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test("keeps migration file locks held by live processes", async () => {
+    const dir = tempDir();
+    const lockPath = join(dir, "._mubo_migrations.lock");
+    const owner = `${process.pid}\n${Date.now()}`;
+    writeFileSync(lockPath, owner);
+
+    await expect(
+      acquireFileLock(join(dir, "app.sqlite"), "_mubo_migrations", { attempts: 2, delayMs: 5 }),
+    ).rejects.toThrow(/Could not acquire file lock/);
+    expect(readFileSync(lockPath, "utf8")).toBe(owner);
+  });
+
+  test("does not release a migration file lock owned by another process", async () => {
+    const dir = tempDir();
+    const lockPath = join(dir, "._mubo_migrations.lock");
+    writeFileSync(lockPath, `${process.pid + 1_000_000}\n${Date.now()}`);
+
+    releaseFileLock(lockPath);
+    expect(existsSync(lockPath)).toBe(true);
+  });
+
+  test("applies migrations with the file lock while a stale lock exists", async () => {
+    const dir = tempDir();
+    const dbPath = join(dir, "app.sqlite");
+    const lockPath = join(dir, "._mubo_migrations.lock");
+    const dead = Bun.spawn(["bun", "-e", "process.exit(0)"]);
+    await dead.exited;
+    writeFileSync(lockPath, `${dead.pid}\n${Date.now()}`);
+
+    const db = new MuboDatabase({ path: dbPath, dataDir: dir });
+    const result = await db.migrate(baseSchema, { mode: "apply", lock: "file" });
+    expect(result.status).toBe("applied");
+    expect(existsSync(lockPath)).toBe(false);
     db.close();
   });
 });

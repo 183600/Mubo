@@ -235,6 +235,8 @@ app.db.transaction((db) => {
 
 Transaction callbacks are sync when given sync functions, return `Promise` for async. Nested transactions use `SAVEPOINT`. Queries use cached prepared statements; migration failures roll back and throw `MIGRATION_ERROR`.
 
+With `db.migrations.lock: "file"`, migrations are serialized through a lock file next to the database. Locks left behind by crashed processes are detected and reclaimed automatically; locks held by a live process are respected.
+
 ### WebSocket
 
 ```ts
