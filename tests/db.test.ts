@@ -1861,8 +1861,171 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
-  test("plan() passes through safeOnly and other migration options", async () => {
+  test("plans unsafe column additions when safeOnly is disabled", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
+    await db.migrate(
+      defineSchema({
+        tables: { settings: { columns: { id: { type: "integer", primaryKey: true } } } },
+      }),
+    );
+
+    const notNullColumn = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            note: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+    expect(() => db.plan(notNullColumn)).toThrow(/without a default value/);
+    const notNullPlan = db.plan(notNullColumn, { safeOnly: false });
+    expect(notNullPlan.changes).toEqual(["add column settings.note"]);
+    expect(notNullPlan.statements[0]).toContain("ADD COLUMN");
+
+    const applied = await db.migrate(notNullColumn, { safeOnly: false });
+    expect(applied.status).toBe("applied");
+    expect(
+      db.query<{ name: string }>("PRAGMA table_info(settings)").all().map((column) => column.name),
+    ).toContain("note");
+
+    db.exec("INSERT INTO settings (id, note) VALUES (1, 'first')");
+    const secondNotNullColumn = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            note: { type: "text", notNull: true },
+            label: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+    expect(db.plan(secondNotNullColumn, { safeOnly: false }).changes).toEqual([
+      "add column settings.label",
+    ]);
+    await expect(db.migrate(secondNotNullColumn, { safeOnly: false })).rejects.toThrow(
+      /Failed to apply migration statement/,
+    );
+    expect(
+      db.query<{ name: string }>("PRAGMA table_info(settings)").all().map((column) => column.name),
+    ).not.toContain("label");
+
+    const expressionDefault = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            note: { type: "text", notNull: true },
+            created: { type: "text", sqlDefault: "(lower('X'))" },
+          },
+        },
+      },
+    });
+    expect(() => db.plan(expressionDefault)).toThrow(/non-constant default/);
+    const expressionPlan = db.plan(expressionDefault, { safeOnly: false });
+    expect(expressionPlan.changes).toEqual(["add column settings.created"]);
+    await expect(db.migrate(expressionDefault, { safeOnly: false })).rejects.toThrow(
+      /Failed to apply migration statement/,
+    );
+    expect(db.query("SELECT id FROM settings").all()).toEqual([{ id: 1 }]);
+    db.close();
+  });
+
+  test("reports failures raised by queued nested transactions", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
+
+    await db.transaction(async (tx) => {
+      const first = tx.transaction(async (inner) => {
+        inner.query("INSERT INTO events (value) VALUES (?)").run(1);
+        await Bun.sleep(20);
+        return "first";
+      }) as Promise<unknown>;
+      const queued = tx.transaction(async (inner) => {
+        inner.query("INSERT INTO events (value) VALUES (?)").run(2);
+        throw new Error("queued nested failed");
+      }) as Promise<unknown>;
+
+      await expect(queued).rejects.toThrow("queued nested failed");
+      await expect(first).resolves.toBe("first");
+    });
+
+    expect(db.query("SELECT value FROM events").all()).toEqual([{ value: 1 }]);
+    db.close();
+  });
+
+  test("resolves queued nested transactions that finish synchronously", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
+
+    await db.transaction(async (tx) => {
+      const first = tx.transaction(async (inner) => {
+        await Bun.sleep(10);
+        return "first";
+      }) as Promise<unknown>;
+      const queued = tx.transaction((inner) => {
+        inner.query("INSERT INTO events (value) VALUES (?)").run(1);
+        return "queued";
+      }) as Promise<unknown>;
+
+      await expect(queued).resolves.toBe("queued");
+      await expect(first).resolves.toBe("first");
+    });
+
+    expect(db.query("SELECT value FROM events").all()).toEqual([{ value: 1 }]);
+    db.close();
+  });
+
+  test("propagates failures from queued top-level transactions", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const first = db.transaction(async () => {
+      await gate;
+      return "first";
+    });
+    const queuedSync = db.transaction(() => {
+      throw new Error("queued sync failed");
+    });
+    const queuedAsync = db.transaction(async () => {
+      throw new Error("queued async failed");
+    });
+    const outcomes = Promise.allSettled([first, queuedSync, queuedAsync]);
+
+    release();
+    const results = await outcomes;
+    expect(results[0]?.status).toBe("fulfilled");
+    expect(results[1]?.status).toBe("rejected");
+    expect(results[2]?.status).toBe("rejected");
+    expect((results[1] as PromiseRejectedResult).reason).toEqual(
+      new Error("queued sync failed"),
+    );
+    expect((results[2] as PromiseRejectedResult).reason).toEqual(
+      new Error("queued async failed"),
+    );
+    expect(db.transactionBusy).toBe(false);
+    db.close();
+  });
+
+  test("reports whether the database is still open", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    expect(db.isOpen).toBe(true);
+    db.close();
+    expect(db.isOpen).toBe(false);
+  });
+
+  test("reports a database path that cannot be opened", () => {
+    const dir = tempDir();
+    expect(() => new MuboDatabase({ path: dir })).toThrow(/Cannot open SQLite database/);
+    expect(() => new MuboDatabase({ path: dir })).toThrow(/CONFIG_ERROR|Cannot open SQLite database/);
+  });
+
+  test("plan() passes through safeOnly and other migration options", async () => {    const db = new MuboDatabase({ path: ":memory:" });
 
     await db.migrate(
       defineSchema({

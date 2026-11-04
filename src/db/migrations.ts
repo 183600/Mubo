@@ -726,24 +726,23 @@ function planForSchema(
         }
         const defaultExpression = column.sqlDefault === undefined ? defaultSql(column) : column.sqlDefault;
         const fallback = normalizeDefault(defaultExpression);
-        if (column.notNull && fallback === null) {
-        if (safeOnly)
+        if (column.notNull && fallback === null && safeOnly) {
           throw new MuboError(
             "MIGRATION_ERROR",
             `Cannot automatically add NOT NULL column ${tableName}.${columnName} without a default value`,
           );
-      }
-      if (
-        defaultExpression !== null &&
-        !isConstantAddColumnDefault(defaultExpression) &&
-        tableHasRows(db, tableName)
-      ) {
-        if (safeOnly)
+        }
+        if (
+          safeOnly &&
+          defaultExpression !== null &&
+          !isConstantAddColumnDefault(defaultExpression) &&
+          tableHasRows(db, tableName)
+        ) {
           throw new MuboError(
             "MIGRATION_ERROR",
             `Cannot automatically add column ${tableName}.${columnName} with a non-constant default to a non-empty table; use a manual migration`,
           );
-      }
+        }
         statements.push(`ALTER TABLE ${quoteIdentifier(tableName)} ADD COLUMN ${columnSql(columnName, column, false)}`);
         changes.push(`add column ${tableName}.${columnName}`);
         continue;
