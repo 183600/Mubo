@@ -57,6 +57,16 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("planning an already-applied schema yields an empty plan", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    await db.migrate(baseSchema);
+    const plan = db.plan(baseSchema);
+    expect(plan.id).toBeNull();
+    expect(plan.statements).toEqual([]);
+    expect(plan.changes).toEqual([]);
+    db.close();
+  });
+
   test("applies NORMAL synchronous mode even when WAL is disabled", () => {
     const db = new MuboDatabase({ path: ":memory:", wal: false });
     expect(db.raw.query("PRAGMA synchronous").get()).toEqual({ synchronous: 1 });
