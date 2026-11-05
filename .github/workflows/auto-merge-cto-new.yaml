@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
 
+concurrency:
+  # 同一 PR 的连发 synchronize 只保留最新一次 autopush，旧的直接取消
+  group: auto-merge-cto-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
