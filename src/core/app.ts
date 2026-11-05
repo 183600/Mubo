@@ -403,12 +403,29 @@ export class MuboApp {
     };
   }
 
+  /** Builds the unified 405 response with an Allow header for the given methods. */
+  private methodNotAllowedResponse(ctx: MuboRequestContext, allowed: string[]): Response {
+    const response = jsonResponse(
+      errorPayload(
+        ctx.requestId,
+        new MuboError("METHOD_NOT_ALLOWED", `Method ${ctx.method} is not allowed`),
+      ),
+      { status: 405 },
+    );
+    response.headers.set("allow", allowed.join(", "));
+    return response;
+  }
+
   /** Handles /healthz and /readyz endpoints, returning health check responses. */
   private async healthResponse(ctx: MuboRequestContext, pathname: string): Promise<Response | null> {
     const normalized = normalizePath(pathname);
     const path = normalized.replace(/^\/+|\/+$/g, "");
     if (path !== "healthz" && path !== "readyz") return null;
-    if (ctx.method !== "GET" && ctx.method !== "HEAD") return null;
+    // The health endpoints are served for GET and HEAD only; other methods
+    // answer 405 with an Allow header instead of a misleading 404.
+    if (ctx.method !== "GET" && ctx.method !== "HEAD") {
+      return this.methodNotAllowedResponse(ctx, ["GET", "HEAD"]);
+    }
     if (path === "readyz") {
       const dbReady = this.db.ping();
       let migrationsReady = true;
@@ -701,12 +718,7 @@ export class MuboApp {
         return normalizeResponse(await match.route.handler(ctx));
       }
       if (match.type === "method-not-allowed") {
-        const response = jsonResponse(
-          errorPayload(requestId, new MuboError("METHOD_NOT_ALLOWED", `Method ${ctx.method} is not allowed`)),
-          { status: 405 },
-        );
-        response.headers.set("allow", match.allowed.join(", "));
-        return response;
+        return this.methodNotAllowedResponse(ctx, match.allowed);
       }
       const health = await this.healthResponse(ctx, url.pathname);
       if (health) return health;

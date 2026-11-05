@@ -370,6 +370,24 @@ describe("HTTP routing and middleware", () => {
     expect(await headReady.text()).toBe("");
     expect(headReady.headers.get("content-type")).toBe("application/json; charset=utf-8");
 
+    for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
+      const rejected = await fetch(`${base(app)}/healthz`, { method });
+      expect(rejected.status).toBe(405);
+      expect(rejected.headers.get("allow")).toBe("GET, HEAD");
+      expect(((await rejected.json()) as any).error.code).toBe("METHOD_NOT_ALLOWED");
+      expect(rejected.headers.get("x-request-id")).toBeTruthy();
+      const rejectedReady = await fetch(`${base(app)}/readyz`, { method });
+      expect(rejectedReady.status).toBe(405);
+      expect(rejectedReady.headers.get("allow")).toBe("GET, HEAD");
+    }
+
+    // A user-registered route on a health path takes precedence over the
+    // built-in method restriction.
+    app.post("/healthz", (ctx) => ctx.json({ custom: true }));
+    const custom = await fetch(`${base(app)}/healthz`, { method: "POST" });
+    expect(custom.status).toBe(200);
+    expect(await custom.json()).toEqual({ custom: true });
+
     const missing = await fetch(`${base(app)}/missing`);
     expect(missing.status).toBe(404);
     expect(((await missing.json()) as any).error.code).toBe("NOT_FOUND");
