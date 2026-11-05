@@ -105,6 +105,25 @@ function importPath(fromDir: string, toFile: string): string {
   return value;
 }
 
+/**
+ * Computes the path of the compiled executable.
+ *
+ * Windows builds use the `.exe` suffix, either because the target is a Windows
+ * runtime or because the build runs on Windows itself.
+ */
+export function resolveBuildOutfile(
+  cwd: string,
+  options: { outfile?: string; target?: string; platform?: string } = {},
+  name = "app",
+): string {
+  const platform = options.platform ?? process.platform;
+  const outfile = options.outfile ? resolve(cwd, options.outfile) : join(cwd, "dist", name);
+  const needsExe =
+    options.target?.toLowerCase().includes("windows") || (!options.target && platform === "win32");
+  if (needsExe && !outfile.toLowerCase().endsWith(".exe")) return `${outfile}.exe`;
+  return outfile;
+}
+
 export async function buildProject(options: BuildOptions = {}): Promise<BuildResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const entry = findEntry(cwd, options.entry);
@@ -130,11 +149,7 @@ export async function buildProject(options: BuildOptions = {}): Promise<BuildRes
   const name = sanitizeAppName(
     env.MUBO_APP_NAME?.trim() || config.app?.name || (await packageName(cwd)) || basename(cwd),
   );
-  let outfile = options.outfile ? resolve(cwd, options.outfile) : join(cwd, "dist", name);
-  const needsExe =
-    options.target?.toLowerCase().includes("windows") ||
-    (!options.target && process.platform === "win32");
-  if (needsExe && !outfile.toLowerCase().endsWith(".exe")) outfile += ".exe";
+  const outfile = resolveBuildOutfile(cwd, options, name);
   if (outfile === entry) {
     throw new MuboError("CONFIG_ERROR", `Output path must not overwrite the entry: ${outfile}`);
   }

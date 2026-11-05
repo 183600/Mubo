@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { Database } from "bun:sqlite";
-import { buildProject } from "../src/cli/build.ts";
+import { buildProject, resolveBuildOutfile } from "../src/cli/build.ts";
 import { EMBEDDED_ASSETS_KEY } from "../src/static/assets.ts";
 
 const tempDirs: string[] = [];
@@ -39,6 +39,26 @@ async function waitFor(url: string, timeoutMs = 10_000): Promise<Response> {
 }
 
 describe("single-file build", () => {
+  test("appends the executable suffix for Windows targets", () => {
+    const cwd = tempDir();
+    expect(resolveBuildOutfile(cwd, {}, "my-app")).toBe(join(cwd, "dist", "my-app"));
+    expect(resolveBuildOutfile(cwd, { outfile: "dist/custom" }, "my-app")).toBe(
+      join(cwd, "dist", "custom"),
+    );
+    expect(resolveBuildOutfile(cwd, { target: "bun-windows-x64" }, "my-app")).toBe(
+      join(cwd, "dist", "my-app.exe"),
+    );
+    expect(resolveBuildOutfile(cwd, { target: "bun-windows-x64", outfile: "dist/custom.exe" })).toBe(
+      join(cwd, "dist", "custom.exe"),
+    );
+    expect(resolveBuildOutfile(cwd, { platform: "win32" }, "my-app")).toBe(
+      join(cwd, "dist", "my-app.exe"),
+    );
+    expect(resolveBuildOutfile(cwd, { target: "bun-linux-x64", platform: "win32" }, "my-app")).toBe(
+      join(cwd, "dist", "my-app"),
+    );
+  });
+
   test("rejects entry and static paths with the wrong file type", async () => {
     const cwd = tempDir();
     mkdirSync(join(cwd, "entry-dir"));
