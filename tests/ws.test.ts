@@ -1631,6 +1631,117 @@ describe("WebSocket connection limits", () => {
     expect(internals.wsHub.getConnectionCountForIp("10.9.9.9")).toBe(1);
     again();
   });
+
+  test("rejects sockets at open when the connection limit is reached and releases their reservation", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-open-limit-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { maxConnections: 1, heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {});
+    await app.start();
+    apps.push(app);
+
+    const internals = app as unknown as {
+      handleWsOpen(ws: ServerWebSocket<WsSocketData>): void;
+      wsHub: {
+        add(ws: ServerWebSocket<WsSocketData>, app: unknown, logger: unknown, ip: string): unknown;
+        reserveConnection(ip: string, limit: number): () => void;
+        getConnectionCountForIp(ip: string): number;
+      };
+    };
+
+    const closes: Array<[number | undefined, string | undefined]> = [];
+    const makeSocket = (ip: string, releasePerIp?: () => void) =>
+      ({
+        data: {
+          routePath: "/ws",
+          requestId: "req-open-limit",
+          url: "ws://localhost/ws",
+          ip,
+          user: undefined,
+          state: {},
+          releasePerIp,
+        },
+        send: () => 1,
+        ping: () => {},
+        close: (code?: number, reason?: string) => closes.push([code, reason]),
+      }) as unknown as ServerWebSocket<WsSocketData>;
+
+    // Occupy the only connection slot directly in the hub, bypassing the
+    // upgrade-time check, so the open-time limit enforcement has to reject.
+    const occupant = makeSocket("10.8.8.1");
+    internals.wsHub.add(occupant, app, app.logger, "10.8.8.1");
+
+    const reserved = internals.wsHub.reserveConnection("10.8.8.2", 5);
+    const late = makeSocket("10.8.8.2", reserved);
+    expect(() => internals.handleWsOpen(late)).not.toThrow();
+    expect(closes).toEqual([[1013, "Connection rejected"]]);
+    // The rejected socket's reservation must not leak.
+    expect(internals.wsHub.getConnectionCountForIp("10.8.8.2")).toBe(0);
+    expect(internals.wsHub.getConnectionCountForIp("10.8.8.1")).toBe(0);
+  });
+
+  test("routes socket errors to onError and tolerates unknown sockets", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-error-internals-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    const errors: Array<{ id?: string; message: string }> = [];
+    app.ws("/ws", {
+      onError(ctx, error) {
+        errors.push({ id: ctx.id, message: (error as Error).message });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const internals = app as unknown as {
+      handleWsError(ws: ServerWebSocket<WsSocketData>, error: Error): void;
+      handleWsOpen(ws: ServerWebSocket<WsSocketData>): void;
+    };
+
+    const makeSocket = (routePath: string) =>
+      ({
+        data: {
+          routePath,
+          requestId: "req-error",
+          url: "ws://localhost/ws",
+          ip: "127.0.0.1",
+          user: undefined,
+          state: {},
+        },
+        send: () => 1,
+        ping: () => {},
+        close: () => {},
+      }) as unknown as ServerWebSocket<WsSocketData>;
+
+    // An error on an unknown route must not throw and must not reach onError.
+    expect(() =>
+      internals.handleWsError(makeSocket("/missing"), new Error("phantom failure")),
+    ).not.toThrow();
+    expect(errors).toEqual([]);
+
+    // An error on a live connection is reported to onError.
+    const live = makeSocket("/ws");
+    internals.handleWsOpen(live);
+    expect(() =>
+      internals.handleWsError(live, new Error("handler failure")),
+    ).not.toThrow();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.message).toBe("handler failure");
+  });
 });
 
 describe("WebSocket send payload validation", () => {
