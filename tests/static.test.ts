@@ -2,7 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMuboApp, type MuboApp, StaticAssets } from "../src/index.ts";
+import {
+  createMuboApp,
+  EMBEDDED_ASSETS_KEY,
+  getEmbeddedAssets,
+  registerEmbeddedAssets,
+  type MuboApp,
+  StaticAssets,
+} from "../src/index.ts";
 
 const tempDirs: string[] = [];
 const apps: MuboApp[] = [];
@@ -41,6 +48,28 @@ async function startStatic(dir: string, spaFallback = true): Promise<MuboApp> {
 }
 
 describe("static assets", () => {
+  test("registers embedded assets globally and serves them without a disk source", async () => {
+    const previous = getEmbeddedAssets();
+    registerEmbeddedAssets({ "/index.html": "<h1>registered</h1>", "/app.js": "console.log(1)" });
+    try {
+      expect(getEmbeddedAssets()).toEqual({
+        "/index.html": "<h1>registered</h1>",
+        "/app.js": "console.log(1)",
+      });
+      expect((globalThis as Record<string, unknown>)[EMBEDDED_ASSETS_KEY]).toBeDefined();
+
+      const assets = new StaticAssets({ mode: "embedded" });
+      const response = await assets.handle(
+        new Request("http://localhost/"),
+        new URL("http://localhost/"),
+      );
+      expect(response).not.toBeNull();
+      expect(await response!.text()).toBe("<h1>registered</h1>");
+    } finally {
+      registerEmbeddedAssets(previous);
+    }
+  });
+
   test("accepts a filesystem root as the static directory", () => {
     if (process.platform === "win32") return;
     const assets = new StaticAssets({ mode: "disk", dir: "/" });

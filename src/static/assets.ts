@@ -71,7 +71,13 @@ function sliceBody(body: Uint8Array | Bun.BunFile, start: number, end: number): 
   return body.slice(start, end + 1);
 }
 
-const GLOBAL_ASSETS_KEY = "__MUBO_EMBEDDED_ASSETS__";
+/**
+ * Global key that holds the assets embedded into a compiled application.
+ *
+ * The single-file build writes the manifest with this key, so both sides must
+ * agree on it.
+ */
+export const EMBEDDED_ASSETS_KEY = "__MUBO_EMBEDDED_ASSETS__";
 
 const MIME_TYPES: Record<string, string> = {
   html: "text/html; charset=utf-8",
@@ -218,12 +224,19 @@ function normalizeAssets(assets: EmbeddedAssets | undefined): Map<string, Embedd
   return map;
 }
 
-export function registerEmbeddedAssets(assets: EmbeddedAssets): void {
-  (globalThis as Record<string, unknown>)[GLOBAL_ASSETS_KEY] = assets;
+/**
+ * Registers the assets that are served in embedded mode.
+ *
+ * Passing `undefined` removes the registered assets again.
+ */
+export function registerEmbeddedAssets(assets: EmbeddedAssets | undefined): void {
+  const store = globalThis as Record<string, unknown>;
+  if (assets === undefined) delete store[EMBEDDED_ASSETS_KEY];
+  else store[EMBEDDED_ASSETS_KEY] = assets;
 }
 
 export function getEmbeddedAssets(): EmbeddedAssets | undefined {
-  return (globalThis as Record<string, unknown>)[GLOBAL_ASSETS_KEY] as EmbeddedAssets | undefined;
+  return (globalThis as Record<string, unknown>)[EMBEDDED_ASSETS_KEY] as EmbeddedAssets | undefined;
 }
 
 function assetMetadata(

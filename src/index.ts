@@ -49,6 +49,7 @@ export {
   type ErrorPayload,
 } from "./http/response.ts";
 export {
+  EMBEDDED_ASSETS_KEY,
   StaticAssets,
   getEmbeddedAssets,
   registerEmbeddedAssets,

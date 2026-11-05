@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { Database } from "bun:sqlite";
 import { buildProject } from "../src/cli/build.ts";
+import { EMBEDDED_ASSETS_KEY } from "../src/static/assets.ts";
 
 const tempDirs: string[] = [];
 const framework = resolve(import.meta.dir, "../src/index.ts").split(sep).join("/");
@@ -154,6 +155,20 @@ describe("single-file build", () => {
     expect(result.entry).toBe(join(cwd, "src", "server", "index.js"));
     expect(existsSync(result.outfile)).toBe(true);
     expect(result.assets).toBe(0);
+  }, 60_000);
+
+  test("writes the embedded asset manifest with the shared runtime key", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "console.log('manifest');\n");
+    mkdirSync(join(cwd, "public"), { recursive: true });
+    writeFileSync(join(cwd, "public", "index.html"), "<h1>manifest</h1>");
+
+    const result = await buildProject({ cwd, outfile: "dist/manifest-app" });
+    expect(result.assets).toBe(1);
+
+    const manifest = readFileSync(join(cwd, ".mubo", "embedded-assets.ts"), "utf8");
+    expect(manifest).toContain(JSON.stringify(EMBEDDED_ASSETS_KEY));
+    expect(manifest).toContain("/index.html");
   }, 60_000);
 
   test(

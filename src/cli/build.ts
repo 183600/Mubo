@@ -8,7 +8,7 @@ import {
   type MuboConfig,
 } from "../core/config.ts";
 import { MuboError } from "../core/errors.ts";
-import { mimeTypeForExtension } from "../static/assets.ts";
+import { EMBEDDED_ASSETS_KEY, mimeTypeForExtension } from "../static/assets.ts";
 import { findEntry } from "./project.ts";
 
 export interface BuildOptions {
@@ -152,7 +152,7 @@ export async function buildProject(options: BuildOptions = {}): Promise<BuildRes
   const wrapperPath = join(generatedDir, "build-entry.ts");
   await Bun.write(
     manifestPath,
-    `(globalThis as Record<string, unknown>).__MUBO_EMBEDDED_ASSETS__ = ${JSON.stringify(assets)};\n`,
+    `(globalThis as Record<string, unknown>)[${JSON.stringify(EMBEDDED_ASSETS_KEY)}] = ${JSON.stringify(assets)};\n`,
   );
   // The project configuration is baked into the binary so compiled apps keep
   // the settings they were built with instead of depending on a config file
