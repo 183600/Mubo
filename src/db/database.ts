@@ -108,22 +108,34 @@ export class MuboDatabase {
     if (path !== ":memory:") {
       ensureDataDir(path, options.dataDir ?? process.cwd());
     }
+    let database: SQLiteDatabase | undefined;
     try {
-      this.raw = new SQLiteDatabase(path, { create: true, readwrite: true, strict: true });
+      database = new SQLiteDatabase(path, { create: true, readwrite: true, strict: true });
+      database.run(`PRAGMA busy_timeout = ${Math.max(0, Math.trunc(busyTimeoutMs))}`);
+      if (options.foreignKeys ?? true) database.run("PRAGMA foreign_keys = ON");
+      if (options.wal ?? true) {
+        // WAL is a best-effort optimization: filesystems or modes that cannot
+        // enable it (including :memory: databases) fall back safely.
+        try {
+          database.run("PRAGMA journal_mode = WAL");
+        } catch {
+        }
+      }
+      database.run("PRAGMA synchronous = NORMAL");
     } catch (error) {
+      // A corrupt or unreadable database file often opens lazily and only
+      // fails on the first statement, so the PRAGMA setup shares the open
+      // error handling.
+      try {
+        database?.close(true);
+      } catch {
+        // Nothing else to release.
+      }
       throw new MuboError("CONFIG_ERROR", `Cannot open SQLite database at ${path}`, {
         cause: error,
       });
     }
-    this.raw.run(`PRAGMA busy_timeout = ${Math.max(0, Math.trunc(busyTimeoutMs))}`);
-    if (options.foreignKeys ?? true) this.raw.run("PRAGMA foreign_keys = ON");
-    if (options.wal ?? true) {
-      try {
-        this.raw.run("PRAGMA journal_mode = WAL");
-      } catch {
-      }
-    }
-    this.raw.run("PRAGMA synchronous = NORMAL");
+    this.raw = database;
   }
 
   get isOpen(): boolean {

@@ -185,6 +185,24 @@ describe("database and automatic migrations", () => {
     }
   });
 
+  test("reports a corrupt database file as CONFIG_ERROR instead of a raw SQLite error", () => {
+    const dir = tempDir();
+    const dbPath = join(dir, "corrupt.sqlite");
+    writeFileSync(dbPath, "this is not a sqlite database at all");
+
+    let caught: unknown;
+    try {
+      new MuboDatabase({ path: dbPath, dataDir: dir });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(MuboError);
+    const failure = caught as MuboError;
+    expect(failure.code).toBe("CONFIG_ERROR");
+    expect(failure.message).toContain("Cannot open SQLite database at");
+    expect(failure.cause).toBeInstanceOf(Error);
+  });
+
   test("reports a closed database with the DB_CLOSED code", () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.close();
