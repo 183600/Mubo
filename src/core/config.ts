@@ -353,7 +353,7 @@ function argvOverrides(argv: string[]): MuboConfig {
         if (enabled === undefined) {
           throw new MuboError("CONFIG_ERROR", "Missing value for --no-static");
         }
-        if (enabled) result.static = { ...result.static, mode: "off" };
+        result.static = { ...result.static, mode: enabled ? "off" : "disk" };
         break;
       }
       case "no-ws": {
@@ -365,7 +365,7 @@ function argvOverrides(argv: string[]): MuboConfig {
         if (enabled === undefined) {
           throw new MuboError("CONFIG_ERROR", "Missing value for --no-ws");
         }
-        if (enabled) result.ws = { ...result.ws, enabled: false };
+        result.ws = { ...result.ws, enabled: !enabled };
         break;
       }
       default:
