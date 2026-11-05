@@ -1721,6 +1721,86 @@ describe("database and automatic migrations", () => {
     releaseFileLock(acquired);
   });
 
+  test("rejects column type changes on existing columns", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const initial = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+    await db.migrate(initial);
+
+    const changed = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "integer", notNull: true },
+          },
+        },
+      },
+    });
+    expect(() => db.plan(changed)).toThrow(/Column type change for users\.email/);
+    db.close();
+  });
+
+  test("compares index predicates with mixed parentheses exactly", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(
+      "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, active INTEGER); " +
+        "CREATE INDEX idx_users_email ON users(email) WHERE ((email IS NOT NULL) AND (active = 1));",
+    );
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text" },
+            active: { type: "integer" },
+          },
+          indexes: [
+            {
+              name: "idx_users_email",
+              columns: ["email"],
+              where: "(email IS NOT NULL) AND (active = 1)",
+            },
+          ],
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("none");
+    db.close();
+  });
+
+  test("rejects index predicates that only differ after normalization", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(
+      "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT); " +
+        "CREATE INDEX idx_users_email ON users(email) WHERE email IS NOT NULL;",
+    );
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text" },
+          },
+          indexes: [
+            // An unterminated string cannot match the stored predicate.
+            { name: "idx_users_email", columns: ["email"], where: "'unterminated WHERE x" },
+          ],
+        },
+      },
+    });
+    expect(() => db.plan(schema)).toThrow(/already exists with a different definition/);
+    db.close();
+  });
+
   test("rejects added NOT NULL columns when the SQL default is NULL", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(
