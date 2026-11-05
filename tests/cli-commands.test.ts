@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseCliArgs } from "../src/cli/args.ts";
@@ -316,6 +316,65 @@ export default defineConfig({
     const sqlite = checks.find((check) => check.name === "sqlite");
     expect(sqlite?.ok).toBe(true);
     expect(sqlite?.detail).toContain("writable");
+  });
+
+  test("checks in-memory databases without touching the filesystem", async () => {
+    const cwd = tempDir();
+    const dataDir = join(cwd, "data");
+    writeFileSync(
+      join(cwd, "mubo.config.ts"),
+      `import { defineConfig } from ${JSON.stringify(frameworkImport)};
+export default defineConfig({
+  app: { name: "doctor-memory", env: "test" },
+  db: { path: ":memory:" },
+  dataDir: ${JSON.stringify(dataDir)},
+  http: { port: 0 },
+  static: { mode: "off" },
+  log: { level: "error" },
+});
+`,
+    );
+    const { stdout, code } = await captureCommand(() =>
+      doctorCommand({ cwd, args: parseCliArgs(["doctor", "--json"]) })
+    );
+    expect(code).toBe(0);
+    const checks = JSON.parse(stdout) as Array<{ name: string; ok: boolean; detail: string }>;
+    const sqlite = checks.find((check) => check.name === "sqlite");
+    expect(sqlite?.ok).toBe(true);
+    expect(sqlite?.detail).toContain(":memory:");
+  });
+
+  test("flags a read-only data directory as a fatal problem", async () => {
+    const cwd = tempDir();
+    const dataDir = join(cwd, "locked");
+    mkdirSync(dataDir, { recursive: true });
+    const originalMode = statSync(dataDir).mode;
+    chmodSync(dataDir, 0o555);
+    try {
+      writeFileSync(
+        join(cwd, "mubo.config.ts"),
+        `import { defineConfig } from ${JSON.stringify(frameworkImport)};
+export default defineConfig({
+  app: { name: "doctor-readonly", env: "test" },
+  dataDir: ${JSON.stringify(dataDir)},
+  db: { path: ${JSON.stringify(join(cwd, "elsewhere.sqlite"))} },
+  http: { port: 0 },
+  static: { mode: "off" },
+  log: { level: "error" },
+});
+`,
+      );
+      const { stdout, code } = await captureCommand(() =>
+        doctorCommand({ cwd, args: parseCliArgs(["doctor", "--json"]) })
+      );
+      expect(code).toBe(1);
+      const checks = JSON.parse(stdout) as Array<{ name: string; ok: boolean; detail: string }>;
+      const dataDirCheck = checks.find((check) => check.name === "data-dir");
+      expect(dataDirCheck?.ok).toBe(false);
+      expect(dataDirCheck?.detail).toBe(dataDir);
+    } finally {
+      chmodSync(dataDir, originalMode);
+    }
   });
 });
 

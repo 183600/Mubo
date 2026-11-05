@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import { Database } from "bun:sqlite";
 import { buildProject, resolveBuildOutfile } from "../src/cli/build.ts";
 import { EMBEDDED_ASSETS_KEY } from "../src/static/assets.ts";
@@ -112,6 +112,39 @@ describe("single-file build", () => {
     const result = await buildProject({ cwd, outfile: "dist/fallback-app" });
     expect(result.staticDir).toBe(join(cwd, "dist", "client"));
     expect(result.assets).toBe(1);
+  }, 60_000);
+
+  test("builds without assets when neither public nor dist/client exists", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "console.log('no assets');\n");
+    writeFileSync(join(cwd, "mubo.config.ts"), `export default { static: { dir: "./public" } };\n`);
+
+    const result = await buildProject({ cwd, outfile: "dist/asset-less-app" });
+    expect(result.staticDir).toBeUndefined();
+    expect(result.assets).toBe(0);
+    expect(existsSync(result.outfile)).toBe(true);
+  }, 60_000);
+
+  test("fails with a diagnostic when the entry cannot be compiled", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "this is (( not valid typescript\n");
+    await expect(buildProject({ cwd, outfile: "dist/broken-app" })).rejects.toThrow(
+      /bun build failed with exit code/,
+    );
+  }, 60_000);
+
+  test("falls back to the directory name when package.json has no usable name", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "console.log('pkg fallback');\n");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: 12345 }));
+    mkdirSync(join(cwd, "public"));
+    writeFileSync(join(cwd, "public", "index.html"), "ok");
+
+    // Without --outfile the executable name derives from the app name, which
+    // must fall back to the sanitized directory name instead of crashing.
+    const result = await buildProject({ cwd });
+    expect(result.outfile).toBe(join(cwd, "dist", basename(cwd)));
+    expect(existsSync(result.outfile)).toBe(true);
   }, 60_000);
 
   test("treats a blank configured static directory as unset", async () => {
