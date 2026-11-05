@@ -126,6 +126,21 @@ describe("response helpers", () => {
     expect(await response.json()).toBeNull();
   });
 
+  test("falls back to a generic payload when the error itself is unreadable", async () => {
+    const hostile = Object.create(Error.prototype);
+    Object.defineProperty(hostile, "message", {
+      get() {
+        throw new Error("message getter exploded");
+      },
+    });
+    const response = errorResponse("req-hostile", hostile, false);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: { code: "INTERNAL_ERROR", message: "Internal server error" },
+      requestId: "req-hostile",
+    });
+  });
+
   test("turn errors into tagged JSON responses", async () => {
     const response = errorResponse("req-6", new MuboError("BAD_REQUEST", "bad"));
     expect(response.status).toBe(400);
