@@ -1415,3 +1415,50 @@ describe("WebSocket connection limits", () => {
     expect(() => internals.handleWsOpen(broken)).not.toThrow();
   });
 });
+
+describe("WebSocket send payload validation", () => {
+  test("ctx.send() with a non-JSON-serializable value throws VALIDATION_ERROR", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-send-validation-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+      },
+      onMessage(ctx) {
+        let thrown: unknown;
+        try {
+          ctx.send(undefined);
+        } catch (error) {
+          thrown = error;
+        }
+        ctx.send({
+          type: "send-result",
+          threw: thrown instanceof MuboError,
+          code: (thrown as MuboError)?.code,
+        });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+    expect(await socket.next()).toEqual({ type: "ready" });
+    socket.socket.send("anything");
+    const result = (await socket.next()) as {
+      type: string;
+      threw: boolean;
+      code?: string;
+    };
+    expect(result.threw).toBe(true);
+    expect(result.code).toBe("VALIDATION_ERROR");
+    socket.socket.close();
+  });
+});
