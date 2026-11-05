@@ -517,6 +517,17 @@ export default defineConfig({
     expect(({} as { polluted?: string }).polluted).toBeUndefined();
   });
 
+  test("mergeConfig returns non-object overrides as-is", () => {
+    const base = { app: { name: "base" } } as unknown;
+    expect(mergeConfig(base, "replacement")).toBe("replacement");
+    expect(mergeConfig(base, null)).toBeNull();
+    expect(mergeConfig(base, [1, 2])).toEqual([1, 2]);
+  });
+
+  test("mergeConfig keeps the base when override is undefined", () => {
+    expect(mergeConfig({ app: { name: "base" } }, undefined as unknown)).toEqual({ app: { name: "base" } });
+  });
+
   test("does not share mutable cache defaults between resolutions", () => {
     const first = resolveConfig({}, { env: {}, argv: [] });
     first.static.cache.immutableExtensions.push("custom");
