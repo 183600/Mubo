@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { createMuboApp, loadAndResolveConfig, registerBuildConfig, resolveConfig } from "../src/index.ts";
 import { defaultDataDir, mergeConfig, sanitizeAppName } from "../src/core/config.ts";
+import { MuboDatabase } from "../src/db/database.ts";
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -321,6 +322,16 @@ export default defineConfig({
     expect(config.dataDir).toBe(defaultDataDir("mubo-app", {}));
   });
 
+  test("reports the data directory that could not be created", () => {
+    const cwd = tempDir();
+    // A regular file cannot become a directory, so the recursive mkdir fails.
+    const occupied = join(cwd, "occupied");
+    writeFileSync(occupied, "not a directory");
+    expect(() =>
+      new MuboDatabase({ path: join(occupied, "app.sqlite"), dataDir: join(occupied, "data") }),
+    ).toThrow(/Cannot create data directory/);
+  });
+
   test("rejects missing flag values and invalid log levels", async () => {
     expect(() => resolveConfig({}, { env: {}, argv: ["--port"] })).toThrow(/Missing value for --port/);
     expect(() => resolveConfig({}, { env: {}, argv: ["--data-dir", "--port", "4000"] })).toThrow(
@@ -391,8 +402,26 @@ export default defineConfig({
     expect(() => resolveConfig({}, { env: {}, argv: ["--no-static="] })).toThrow(
       /Missing value for --no-static/,
     );
+    expect(() => resolveConfig({}, { env: {}, argv: ["--no-ws="] })).toThrow(
+      /Missing value for --no-ws/,
+    );
     expect(() => resolveConfig({}, { env: {}, argv: ["--no-ws=maybe"] })).toThrow(
       /Invalid boolean value/,
+    );
+  });
+
+  test("parses the --request-timeout flag", () => {
+    const enabled = resolveConfig({}, { env: {}, argv: ["--request-timeout", "2500"] });
+    expect(enabled.http.requestTimeoutMs).toBe(2500);
+
+    const inline = resolveConfig({}, { env: {}, argv: ["--request-timeout=0"] });
+    expect(inline.http.requestTimeoutMs).toBe(0);
+
+    expect(() => resolveConfig({}, { env: {}, argv: ["--request-timeout"] })).toThrow(
+      /Missing value for --request-timeout/,
+    );
+    expect(() => resolveConfig({}, { env: {}, argv: ["--request-timeout", "soon"] })).toThrow(
+      /--request-timeout must be a number/,
     );
   });
 
@@ -847,6 +876,15 @@ export default defineConfig({
         { env: {}, argv: [] },
       ),
     ).toThrow(/Invalid rate limit key function/);
+  });
+
+  test("rejects a rate limit section that is not an object", () => {
+    expect(() =>
+      resolveConfig({ http: { rateLimit: 5 as never } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid rate limit configuration/);
+    expect(() =>
+      resolveConfig({ http: { rateLimit: "yes" as never } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid rate limit configuration/);
   });
 
   test("rejects out-of-range numeric settings", () => {
