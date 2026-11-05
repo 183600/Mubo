@@ -7,10 +7,22 @@ function makeHeaders(headers: ResponseInit["headers"]): Headers {
   return new Headers(headers as any);
 }
 
+/**
+ * Serializes a JSON response payload.
+ *
+ * An `undefined` payload becomes `null` so the body stays parseable, and
+ * bigint values become strings - matching the WebSocket payload and log
+ * serializers instead of failing the response with an internal error.
+ */
+function serializeJsonPayload(data: unknown): string {
+  if (data === undefined) return "null";
+  return JSON.stringify(data, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
+}
+
 export function jsonResponse(data: unknown, init: JsonInit = {}): Response {
   const headers = makeHeaders(init.headers);
   if (!headers.has("content-type")) headers.set("content-type", "application/json; charset=utf-8");
-  return new Response(JSON.stringify(data), { status: init.status, statusText: init.statusText, headers });
+  return new Response(serializeJsonPayload(data), { status: init.status, statusText: init.statusText, headers });
 }
 
 export function textResponse(text: string, init: ResponseInit = {}): Response {

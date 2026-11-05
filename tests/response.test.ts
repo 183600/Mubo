@@ -79,7 +79,7 @@ describe("response helpers", () => {
   test("fall back safely for unserializable details and invalid statuses", async () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
-    for (const details of [circular, { value: 1n }]) {
+    for (const details of [circular]) {
       const response = errorResponse(
         "req-safe",
         new MuboError("VALIDATION_ERROR", "bad input", { details }),
@@ -99,6 +99,31 @@ describe("response helpers", () => {
       code: "BAD_REQUEST",
       message: "Internal server error",
     });
+  });
+
+  test("serializes bigint values as strings like the WebSocket and log encoders", async () => {
+    const response = jsonResponse({ id: 10n, nested: { count: 1n } });
+    expect(await response.json()).toEqual({ id: "10", nested: { count: "1" } });
+
+    // Error details containing bigints stay intact instead of being stripped.
+    const withBigint = errorResponse(
+      "req-big",
+      new MuboError("VALIDATION_ERROR", "bad input", { details: { value: 1n } }),
+    );
+    expect(await withBigint.json()).toEqual({
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "bad input",
+        details: { value: "1" },
+      },
+      requestId: "req-big",
+    });
+  });
+
+  test("serializes an undefined payload as null so the body stays parseable", async () => {
+    const response = jsonResponse(undefined);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toBeNull();
   });
 
   test("turn errors into tagged JSON responses", async () => {
