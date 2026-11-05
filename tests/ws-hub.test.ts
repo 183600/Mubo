@@ -417,6 +417,15 @@ describe("WebSocket room hub", () => {
     expect(hub.getConnectionCountForIp("10.0.0.5")).toBe(0);
   });
 
+  test("reserveConnection decrements one slot at a time while others remain", () => {
+    const hub = new WsRoomHub(logger, 0, 2);
+    const first = hub.reserveConnection("10.0.0.5", 2);
+    hub.reserveConnection("10.0.0.5", 2);
+    expect(hub.getConnectionCountForIp("10.0.0.5")).toBe(2);
+    first();
+    expect(hub.getConnectionCountForIp("10.0.0.5")).toBe(1);
+  });
+
   test("reserveConnection handles release when count is already zero", () => {
     const hub = new WsRoomHub(logger, 0, 2);
     const release = hub.reserveConnection("10.0.0.6", 2);

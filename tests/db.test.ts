@@ -2456,6 +2456,58 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("reports synchronous failures raised by queued nested transactions", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
+
+    await db.transaction(async (tx) => {
+      const first = tx.transaction(async (inner) => {
+        inner.query("INSERT INTO events (value) VALUES (?)").run(1);
+        await Bun.sleep(20);
+        return "first";
+      }) as Promise<unknown>;
+      // A synchronous throw while another nested transaction is active takes
+      // the queue's reject path instead of returning a rejected promise.
+      const queued = tx.transaction(() => {
+        db.query("INSERT INTO events (value) VALUES (?)").run(2);
+        throw new Error("queued sync nested failed");
+      }) as Promise<unknown>;
+
+      await expect(queued).rejects.toThrow("queued sync nested failed");
+      await expect(first).resolves.toBe("first");
+    });
+
+    expect(db.query("SELECT value FROM events").all()).toEqual([{ value: 1 }]);
+    db.close();
+  });
+
+  test("reports SQLite failures when a transaction cannot begin", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
+    // A raw BEGIN that the framework does not know about makes the next
+    // transaction fail while acquiring the write lock.
+    db.raw.run("BEGIN");
+    let caught: unknown;
+    try {
+      db.transaction((tx) => {
+        tx.query("INSERT INTO events (value) VALUES (?)").run(1);
+      });
+    } catch (error) {
+      caught = error;
+    } finally {
+      // The framework's rollback already released the manual transaction.
+      try {
+        db.raw.run("ROLLBACK");
+      } catch {
+        // No transaction is active anymore.
+      }
+    }
+    expect(caught).toBeInstanceOf(MuboError);
+    expect((caught as MuboError).code).toBe("DB_ERROR");
+    expect((caught as Error).message).toMatch(/within a transaction/);
+    db.close();
+  });
+
   test("resolves queued nested transactions that finish synchronously", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
