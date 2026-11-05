@@ -408,4 +408,27 @@ describe("WebSocket room hub", () => {
     expect(hub.publish("lobby", new Blob([]))).toBe(1);
     expect(socket.sent).toHaveLength(3);
   });
+
+  test("reserveConnection releases slot correctly when count reaches zero", () => {
+    const hub = new WsRoomHub(logger, 0, 2);
+    const release = hub.reserveConnection("10.0.0.5", 2);
+    expect(hub.getConnectionCountForIp("10.0.0.5")).toBe(1);
+    release();
+    expect(hub.getConnectionCountForIp("10.0.0.5")).toBe(0);
+  });
+
+  test("reserveConnection handles release when count is already zero", () => {
+    const hub = new WsRoomHub(logger, 0, 2);
+    const release = hub.reserveConnection("10.0.0.6", 2);
+    release();
+    release(); // Second release should not throw or corrupt state
+    expect(hub.getConnectionCountForIp("10.0.0.6")).toBe(0);
+  });
+
+  test("reserveConnection throws when limit exceeded and releases on error", () => {
+    const hub = new WsRoomHub(logger, 0, 1);
+    hub.reserveConnection("10.0.0.7", 1);
+    expect(() => hub.reserveConnection("10.0.0.7", 1)).toThrow(/Too many connections/);
+    expect(hub.getConnectionCountForIp("10.0.0.7")).toBe(1);
+  });
 });

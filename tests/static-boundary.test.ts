@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMuboApp, StaticAssets } from "../src/index.ts";
+import { validateStaticAssetsOptions, normalizeKey } from "../src/static/assets.ts";
 
 const tempDirs: string[] = [];
 const apps: any[] = [];
@@ -570,5 +571,59 @@ describe("paths that exceed the platform path limit", () => {
     expect(response.status).toBe(404);
 
     await app.stop();
+  });
+});
+
+describe("static asset configuration edge cases", () => {
+  test("validateStaticAssetsOptions rejects empty asset keys", () => {
+    expect(() => validateStaticAssetsOptions({ assets: { "": "content" } })).toThrow(/Invalid static asset key/);
+    expect(() => validateStaticAssetsOptions({ assets: { "valid": "content", "": "bad" } })).toThrow(/Invalid static asset key/);
+  });
+
+  test("validateStaticAssetsOptions rejects invalid asset payloads", () => {
+    expect(() => validateStaticAssetsOptions({ assets: { "/test": { data: 123 } } } as any)).toThrow(/Invalid static asset payload/);
+    expect(() => validateStaticAssetsOptions({ assets: { "/test": { data: "ok", encoding: "invalid" } } } as any)).toThrow(/Invalid static asset payload/);
+    expect(() => validateStaticAssetsOptions({ assets: { "/test": { data: "ok", type: 123 } } } as any)).toThrow(/Invalid static asset payload/);
+    expect(() => validateStaticAssetsOptions({ assets: { "/test": { data: "ok", etag: 123 } } } as any)).toThrow(/Invalid static asset payload/);
+  });
+
+  test("StaticAssets handles malformed percent-encoding in asset keys gracefully", async () => {
+    const dir = tempDir();
+    const assets = new StaticAssets({
+      mode: "embedded",
+      assets: { "/%ZZ": "bad-encoding", "/normal": "ok" },
+    }, dir);
+    const response = await assets.handle(new Request("http://localhost/%ZZ"), new URL("http://localhost/%ZZ"));
+    expect(response?.status).toBe(400);
+    const normal = await assets.handle(new Request("http://localhost/normal"), new URL("http://localhost/normal"));
+    expect(normal?.status).toBe(200);
+    expect(await normal?.text()).toBe("ok");
+  });
+
+  test("StaticAssets handles ArrayBuffer data in embedded assets", async () => {
+    const dir = tempDir();
+    const buffer = new ArrayBuffer(4);
+    new Uint8Array(buffer).set([1, 2, 3, 4]);
+    const assets = new StaticAssets({
+      mode: "embedded",
+      assets: { "/buffer.bin": { data: buffer } },
+    }, dir);
+    const response = await assets.handle(new Request("http://localhost/buffer.bin"), new URL("http://localhost/buffer.bin"));
+    expect(response?.status).toBe(200);
+    const data = new Uint8Array(await response!.arrayBuffer());
+    expect([...data]).toEqual([1, 2, 3, 4]);
+  });
+
+  test("StaticAssets.configure updates immutableExtensions and defaultMaxAgeSeconds", () => {
+    const dir = tempDir();
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    assets.configure({ cache: { immutableExtensions: ["custom"], defaultMaxAgeSeconds: 7200 } }, dir);
+    expect(assets.enabled).toBe(true);
+  });
+
+  test("StaticAssets.handle returns null for unsupported mode", async () => {
+    const assets = new StaticAssets({ mode: "off" }, tempDir());
+    const response = await assets.handle(new Request("http://localhost/test"), new URL("http://localhost/test"));
+    expect(response).toBeNull();
   });
 });
