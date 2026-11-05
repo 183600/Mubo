@@ -1415,6 +1415,44 @@ describe("WebSocket connection limits", () => {
     socket2.socket.close();
   });
 
+  test("allows unlimited connections per IP when maxConnectionsPerIp is 0", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-unlimited-ip-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { maxConnectionsPerIp: 0, maxConnections: 0, heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    // Connect 3 sockets from the same IP (127.0.0.1) - should all succeed
+    const sockets = [];
+    for (let i = 0; i < 3; i++) {
+      const socket = new WebSocket(`ws://127.0.0.1:${app.port}/ws`);
+      await new Promise<void>((resolve) => socket.addEventListener("open", () => resolve()));
+      await new Promise<void>((resolve) => {
+        socket.addEventListener("message", () => resolve());
+      });
+      sockets.push(socket);
+    }
+
+    // All should succeed since maxConnectionsPerIp is 0 (unlimited)
+    expect(sockets.length).toBe(3);
+
+    // Clean up
+    for (const s of sockets) s.close();
+    await app.stop();
+  });
+
   test("allows new connection after previous one closes", async () => {
     const app = await createMuboApp(
       {
