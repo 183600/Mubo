@@ -915,16 +915,14 @@ interface LockInfo {
 function readLockInfo(lockPath: string): LockInfo {
   try {
     const raw = readFileSync(lockPath, "utf8");
+    const stat = statSync(lockPath);
     const [pidText, timestampText] = raw.split("\n");
     const pid = Number.parseInt(pidText ?? "", 10);
     const timestamp = Number.parseInt(timestampText ?? "", 10);
     if (Number.isInteger(pid) && pid > 0) {
-      return { pid, createdAt: Number.isFinite(timestamp) ? timestamp : undefined };
+      return { pid, createdAt: Number.isFinite(timestamp) ? timestamp : stat.mtimeMs };
     }
-  } catch {
-  }
-  try {
-    return { createdAt: statSync(lockPath).mtimeMs };
+    return { createdAt: stat.mtimeMs };
   } catch {
     return {};
   }
