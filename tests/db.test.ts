@@ -1014,6 +1014,34 @@ describe("database and automatic migrations", () => {
     expect(db.ping()).toBe(false);
   });
 
+  test("logs slow queries while iterating over rows", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map((arg) => String(arg)).join(" "));
+    };
+    const db = new MuboDatabase({
+      path: ":memory:",
+      slowQueryMs: 0,
+      logger: createLogger({ level: "warn", json: true }),
+    });
+    try {
+      db.query("CREATE TABLE items (id integer primary key, name text)").run();
+      db.query("INSERT INTO items (name) VALUES (?), (?)").run("a", "b");
+      warnings.length = 0;
+      const rows = [...db.query<{ id: number; name: string }>("SELECT id, name FROM items ORDER BY id").iterate()];
+      expect(rows).toHaveLength(2);
+    } finally {
+      console.warn = originalWarn;
+    }
+    expect(warnings.length).toBeGreaterThanOrEqual(1);
+    const entry = JSON.parse(warnings[0]!);
+    expect(entry.message).toBe("Slow SQL query");
+    expect(entry.sql).toBe("SELECT id, name FROM items ORDER BY id");
+
+    db.close();
+  });
+
   test("rejects invalid foreign-key actions", () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const invalid = defineSchema({

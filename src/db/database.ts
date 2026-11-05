@@ -197,6 +197,8 @@ export class MuboDatabase {
         this.assertOpen();
         this.assertTransactionActive();
         const context = this.transactionContext.getStore();
+        const slowQueryMs = this.slowQueryMs;
+        const logger = this.logger;
         let iterator: IterableIterator<Row>;
         try {
           iterator = this.raw.query<Row, QueryArgument[]>(sql).iterate(...normalizeParams(params));
@@ -217,7 +219,15 @@ export class MuboDatabase {
           try {
             while (true) {
               assertIteratorActive();
+              const start = performance.now();
               const next = iterator.next();
+              const duration = performance.now() - start;
+              if (duration >= slowQueryMs) {
+                logger?.warn("Slow SQL query", {
+                  durationMs: Math.round(duration * 100) / 100,
+                  sql: sql.replace(/\s+/g, " ").slice(0, 500),
+                });
+              }
               if (next.done) return;
               yield next.value;
             }
