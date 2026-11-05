@@ -1569,6 +1569,37 @@ describe("rate limiting", () => {
     expect(limited.headers.get("x-ratelimit-remaining")).toBe("0");
   });
 
+  test("expires rate limit buckets after the window elapses", async () => {
+    const app = await startApp({
+      app: { name: "ratelimit-expiry-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: {
+        rateLimit: {
+          maxRequests: 1,
+          windowMs: 25,
+          key: () => "single-bucket",
+        },
+      },
+    });
+    app.get("/limited", (ctx) => ctx.json({ ok: true }));
+
+    const first = await fetch(`${base(app)}/limited`);
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-ratelimit-remaining")).toBe("0");
+
+    const second = await fetch(`${base(app)}/limited`);
+    expect(second.status).toBe(429);
+
+    // The periodic cleanup removes expired buckets, so the next request
+    // starts a fresh window once it has elapsed.
+    await Bun.sleep(120);
+    const afterWindow = await fetch(`${base(app)}/limited`);
+    expect(afterWindow.status).toBe(200);
+    expect(afterWindow.headers.get("x-ratelimit-remaining")).toBe("0");
+  });
+
   test("uses custom key function for rate limiting", async () => {
     const app = await startApp({
       app: { name: "ratelimit-custom-key-test", env: "test" },

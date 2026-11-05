@@ -1814,6 +1814,53 @@ describe("WebSocket connection limits", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]!.message).toBe("handler failure");
   });
+
+  test("logs failures thrown by an async onError handler", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-onerror-reject-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    let recovered: unknown;
+    app.ws("/ws", {
+      onError(_ctx, error) {
+        recovered = error;
+        return Promise.reject(new Error("onError itself failed"));
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const internals = app as unknown as {
+      handleWsError(ws: ServerWebSocket<WsSocketData>, error: Error): void;
+      handleWsOpen(ws: ServerWebSocket<WsSocketData>): void;
+    };
+    const socket = {
+      data: {
+        routePath: "/ws",
+        requestId: "req-onerror-reject",
+        url: "ws://localhost/ws",
+        ip: "127.0.0.1",
+        user: undefined,
+        state: {},
+      },
+      send: () => 1,
+      ping: () => {},
+      close: () => {},
+    } as unknown as ServerWebSocket<WsSocketData>;
+
+    internals.handleWsOpen(socket);
+    expect(() => internals.handleWsError(socket, new Error("original failure"))).not.toThrow();
+    expect((recovered as Error).message).toBe("original failure");
+    // Let the rejected onError promise settle so the logged failure is
+    // observable and does not leak into other tests.
+    await Bun.sleep(10);
+  });
 });
 
 describe("WebSocket send payload validation", () => {
