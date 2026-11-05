@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMuboApp } from "../src/core/app.ts";
@@ -1641,6 +1641,84 @@ describe("database and automatic migrations", () => {
       empty.query<{ name: string }>("PRAGMA table_info(settings)").all().map((column) => column.name),
     ).toContain("created");
     empty.close();
+  });
+
+  test("ignores WHERE keywords inside quoted and bracket-quoted index predicates", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    // The predicate contains a backtick-quoted identifier, a doubled single
+    // quote inside a string literal and a bracket-quoted identifier; none of
+    // those must be mistaken for the clause boundary.
+    db.exec(
+      'CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, "where" TEXT); ' +
+        "CREATE INDEX idx_users_email ON users(email) " +
+        "WHERE `where` = 'a WHERE b''s' AND [where] = \"x WHERE y\";",
+    );
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text" },
+            where: { type: "text" },
+          },
+          indexes: [
+            {
+              name: "idx_users_email",
+              columns: ["email"],
+              where: "`where` = 'a WHERE b''s' AND [where] = \"x WHERE y\"",
+            },
+          ],
+        },
+      },
+    });
+    expect((await db.migrate(schema)).status).toBe("none");
+    db.close();
+  });
+
+  test("accepts hex blob literals as constant defaults on non-empty tables", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const initial = defineSchema({
+      tables: {
+        settings: {
+          columns: { id: { type: "integer", primaryKey: true }, note: { type: "text" } },
+        },
+      },
+    });
+    await db.migrate(initial);
+    db.exec("INSERT INTO settings (id, note) VALUES (1, 'a')");
+
+    const next = defineSchema({
+      tables: {
+        settings: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            note: { type: "text" },
+            payload: { type: "blob", sqlDefault: "x'DEADBEEF'" },
+          },
+        },
+      },
+    });
+    expect((await db.migrate(next)).status).toBe("applied");
+    const stored = db.query<{ payload: Uint8Array }>("SELECT payload FROM settings").get();
+    expect([...stored!.payload]).toEqual([0xde, 0xad, 0xbe, 0xef]);
+    db.close();
+  });
+
+  test("reclaims stale lock files that carry no process id", async () => {
+    const dir = tempDir();
+    const lockPath = join(dir, "._mubo_migrations.lock");
+    writeFileSync(lockPath, "not-a-pid");
+    // Age the lock past the stale threshold by rewriting its timestamps.
+    const stale = new Date(Date.now() - 20 * 60 * 1000);
+    utimesSync(lockPath, stale, stale);
+
+    const acquired = await acquireFileLock(join(dir, "app.sqlite"), "_mubo_migrations", {
+      attempts: 3,
+      delayMs: 5,
+    });
+    expect(acquired).toBe(lockPath);
+    expect(readFileSync(lockPath, "utf8").startsWith(`${process.pid}\n`)).toBe(true);
+    releaseFileLock(acquired);
   });
 
   test("rejects added NOT NULL columns when the SQL default is NULL", async () => {

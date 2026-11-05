@@ -58,6 +58,20 @@ describe("logger", () => {
     expect(lines[0]).toContain('empty=""');
   });
 
+  test("human-readable output tolerates circular fields", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const logger = createLogger({ level: "debug", json: false });
+
+    const lines = captureLogs(() => {
+      logger.info("payload", { data: circular });
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("payload");
+    expect(lines[0]).toContain("[object Object]");
+  });
+
   test("escapes line separators in human-readable messages and fields", () => {
     const logger = createLogger({ level: "debug", json: false });
     const lines = captureLogs(() => {

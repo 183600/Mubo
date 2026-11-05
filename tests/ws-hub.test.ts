@@ -432,6 +432,22 @@ describe("WebSocket room hub", () => {
     expect(hub.getConnectionCountForIp("10.0.0.7")).toBe(1);
   });
 
+  test("counts per-IP connections for clients added without a reservation", () => {
+    const hub = new WsRoomHub(logger, 0, 2);
+    const first = hub.add(fakeSocket().ws, null, logger, "10.0.0.8");
+    const second = hub.add(fakeSocket().ws, null, logger, "10.0.0.8");
+    expect(hub.getConnectionCountForIp("10.0.0.8")).toBe(2);
+
+    // The third connection from the same IP would exceed the limit.
+    expect(() => hub.reserveConnection("10.0.0.8", 2)).toThrow(/Too many connections/);
+
+    // Disconnects free the slots again.
+    hub.remove((first as { ws: ServerWebSocket<WsSocketData> }).ws);
+    expect(hub.getConnectionCountForIp("10.0.0.8")).toBe(1);
+    hub.remove((second as { ws: ServerWebSocket<WsSocketData> }).ws);
+    expect(hub.getConnectionCountForIp("10.0.0.8")).toBe(0);
+  });
+
   test("add rejects a new connection once the global limit is reached", () => {
     const hub = new WsRoomHub(logger, 1, 0);
     const first = fakeSocket();
