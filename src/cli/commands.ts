@@ -10,7 +10,7 @@ import { errorMessage, MuboError } from "../core/errors.ts";
 import { MuboDatabase } from "../db/database.ts";
 import { validateSchema } from "../db/migrations.ts";
 import type { CliArgs } from "./args.ts";
-import { boolFlag, stringFlag } from "./args.ts";
+import { boolFlag, cliArgsToArgv, stringFlag } from "./args.ts";
 import { findEntry, MINIMUM_BUN_VERSION, satisfiesMinimumBunVersion } from "./project.ts";
 
 export interface CommandContext {
@@ -27,7 +27,7 @@ async function projectConfig(context: CommandContext): Promise<ResolvedMuboConfi
       cwd: context.cwd,
       loadFile: true,
       configFile: stringFlag(context.args, "config"),
-      argv: process.argv.slice(2),
+      argv: cliArgsToArgv(context.args),
     },
   );
 }

@@ -144,6 +144,52 @@ export default defineConfig({
     );
     expect(stdout).toContain("migrations are disabled");
   });
+
+  test("applies migrations to the database selected with --db", async () => {
+    const cwd = tempDir();
+    const configPath = join(cwd, "config.sqlite");
+    const flagPath = join(cwd, "flag.sqlite");
+    writeFileSync(join(cwd, "mubo.config.ts"), configSource(configPath, false));
+
+    const { stdout } = await captureCommand(() =>
+      migrateCommand({ cwd, args: parseCliArgs(["migrate", "--db", flagPath]) })
+    );
+    expect(stdout).toContain("applied migration");
+    expect(existsSync(flagPath)).toBe(true);
+    // The configured database must stay untouched: CLI flags win over the file.
+    expect(existsSync(configPath)).toBe(false);
+  });
+
+  test("stores the database in the data directory selected with --data-dir", async () => {
+    const cwd = tempDir();
+    const dataDir = join(cwd, "data");
+    writeFileSync(
+      join(cwd, "mubo.config.ts"),
+      `import { defineConfig, defineSchema } from ${JSON.stringify(frameworkImport)};
+export default defineConfig({
+  app: { name: "cmds-data-dir", env: "test" },
+  http: { port: 0 },
+  static: { mode: "off" },
+  log: { level: "error" },
+  schema: defineSchema({
+    tables: {
+      users: {
+        columns: {
+          id: { type: "integer", primaryKey: true, autoIncrement: true },
+        },
+      },
+    },
+  }),
+});
+`,
+    );
+
+    const { stdout } = await captureCommand(() =>
+      migrateCommand({ cwd, args: parseCliArgs(["migrate", "--data-dir", dataDir]) })
+    );
+    expect(stdout).toContain("applied migration");
+    expect(existsSync(join(dataDir, "mubo.sqlite"))).toBe(true);
+  });
 });
 
 describe("doctorCommand", () => {
@@ -202,8 +248,8 @@ export default defineConfig({
       fetch: () => new Response("ok"),
     });
     try {
-      // The occupied port has to be part of the config file: in-process CLI
-      // flags come from process.argv, which bun test controls.
+      // The occupied port comes from the config file here; the equivalent
+      // check for a CLI flag lives in the test below.
       writeFileSync(join(cwd, "mubo.config.ts"), doctorConfigSource(cwd, { port: server.port }));
       const { stdout, code } = await captureCommand(() =>
         doctorCommand({ cwd, args: parseCliArgs(["doctor", "--json"]) })
@@ -212,6 +258,32 @@ export default defineConfig({
       const checks = JSON.parse(stdout) as Array<{ name: string; ok: boolean; detail: string }>;
       const port = checks.find((check) => check.name === "port");
       expect(port?.ok).toBe(false);
+      expect(port?.detail).toContain("already in use");
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("checks the port selected with --port instead of the configured one", async () => {
+    const cwd = tempDir();
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response("ok"),
+    });
+    try {
+      writeFileSync(join(cwd, "mubo.config.ts"), doctorConfigSource(cwd));
+      const { stdout, code } = await captureCommand(() =>
+        doctorCommand({
+          cwd,
+          args: parseCliArgs(["doctor", "--json", "--port", String(server.port)]),
+        })
+      );
+      expect(code).toBe(0);
+      const checks = JSON.parse(stdout) as Array<{ name: string; ok: boolean; detail: string }>;
+      const port = checks.find((check) => check.name === "port");
+      expect(port?.ok).toBe(false);
+      expect(port?.detail).toContain(String(server.port));
       expect(port?.detail).toContain("already in use");
     } finally {
       await server.stop(true);

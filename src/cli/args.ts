@@ -52,6 +52,22 @@ export function parseCliArgs(argv: string[]): CliArgs {
   return { command: positionals.shift(), positionals, flags };
 }
 
+/**
+ * Rebuilds an argv list from parsed arguments.
+ *
+ * Commands resolve their configuration from the tokens they were invoked with,
+ * so the parsed flags have to be turned back into argv form.
+ */
+export function cliArgsToArgv(args: CliArgs): string[] {
+  const argv: string[] = [];
+  if (args.command !== undefined) argv.push(args.command);
+  argv.push(...args.positionals);
+  for (const [name, value] of args.flags) {
+    argv.push(value === true ? `--${name}` : `--${name}=${value}`);
+  }
+  return argv;
+}
+
 export function stringFlag(args: CliArgs, name: string): string | undefined {
   const value = args.flags.get(name);
   if (value === undefined) return undefined;
