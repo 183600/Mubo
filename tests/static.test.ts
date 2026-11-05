@@ -559,6 +559,27 @@ describe("static assets", () => {
     }
   });
 
+  test("handles escaped quotes inside quoted ETags per RFC 7230", async () => {
+    const dir = tempDir();
+    const escapedEtag = '"escaped\\",quote"';
+    const assets = new StaticAssets(
+      {
+        mode: "embedded",
+        assets: { "/escaped.js": { data: "escaped", etag: escapedEtag } },
+      },
+      dir,
+    );
+    const url = "http://localhost/escaped.js";
+    for (const header of [escapedEtag, `"other", ${escapedEtag}`]) {
+      const response = await assets.handle(
+        new Request(url, { headers: { "if-none-match": header } }),
+        new URL(url),
+      );
+      expect(response?.status).toBe(304);
+      expect(response?.headers.get("etag")).toBe(escapedEtag);
+    }
+  });
+
   test("serves files with leading slash in path", async () => {
     const dir = publicDir();
     writeFileSync(join(dir, "a.txt"), "hello");

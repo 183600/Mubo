@@ -281,7 +281,9 @@ function splitEtags(header: string): string[] {
   for (let index = 0; index < header.length; index++) {
     const char = header[index];
     if (char === '"') {
-      quoted = !quoted;
+      let backslashes = 0;
+      for (let j = index - 1; j >= 0 && header[j] === "\\"; j--) backslashes++;
+      if (backslashes % 2 === 0) quoted = !quoted;
       continue;
     }
     if (char === "," && !quoted) {
