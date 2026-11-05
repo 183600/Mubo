@@ -674,6 +674,50 @@ describe("HTTP routing and middleware", () => {
     expect((error as MuboError).status).toBe(503);
   });
 
+  test("stopping an application that was never started marks it stopped", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "stop-before-start-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    expect(app.started).toBe(false);
+    expect(app.stopped).toBe(false);
+
+    await app.stop();
+    expect(app.started).toBe(false);
+    expect(app.stopped).toBe(true);
+
+    await expect(app.start()).rejects.toThrow(/stopped/);
+    const caught = await app.start().catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(MuboError);
+    expect((caught as MuboError).code).toBe("APP_STOPPED");
+  });
+
+  test("stopping an already stopped application is idempotent", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "double-stop-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    await app.stop();
+    expect(app.stopped).toBe(true);
+
+    // A second stop must not throw and leaves the app stopped.
+    await app.stop();
+    expect(app.stopped).toBe(true);
+    expect(app.started).toBe(false);
+    await expect(app.start()).rejects.toThrow(/stopped/);
+  });
+
   test("stops running applications when a shutdown signal is received", async () => {
     const app = await startApp({
       app: { name: "signal-shutdown-test", env: "test" },
