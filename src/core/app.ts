@@ -160,7 +160,7 @@ export class MuboApp {
   readonly logger: Logger;
   readonly db: MuboDatabase;
   readonly router = new Router();
-  readonly wsHub: WsRoomHub;
+  readonly wsHub: WsRoomHub<MuboApp>;
   readonly staticAssets: StaticAssets;
   private readonly middlewares: RouteMiddleware[] = [];
   private readonly wsRoutes = new Map<string, WsRoute>();
@@ -184,7 +184,11 @@ export class MuboApp {
     this.logger = logger;
     this.db = db;
     this.staticAssets = staticAssets;
-    this.wsHub = new WsRoomHub(logger, config.ws.maxConnections, config.ws.maxConnectionsPerIp);
+    this.wsHub = new WsRoomHub<MuboApp>(
+      logger,
+      config.ws.maxConnections,
+      config.ws.maxConnectionsPerIp,
+    );
   }
 
   get serverInstance(): Server<WsSocketData> | undefined {

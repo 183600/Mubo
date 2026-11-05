@@ -2,8 +2,9 @@ import type { Logger } from "../core/logger.ts";
 import { MuboError } from "../core/errors.ts";
 import type { MuboDatabase } from "../db/database.ts";
 import { jsonResponse, textResponse } from "./response.ts";
+import type { MuboApp } from "../core/app.ts";
 
-export interface MuboRequestContext {
+export interface MuboRequestContext<App = MuboApp> {
   readonly req: Request;
   readonly url: URL;
   readonly method: string;
@@ -14,7 +15,8 @@ export interface MuboRequestContext {
   readonly state: Record<string, unknown>;
   readonly db: MuboDatabase;
   readonly log: Logger;
-  readonly app: unknown;
+  /** The application instance that serves the request. */
+  readonly app: App;
   set(key: string, value: unknown): void;
   get<T = unknown>(key: string): T | undefined;
   body<T = unknown>(): Promise<T>;
@@ -27,14 +29,14 @@ export interface MuboRequestContext {
   fail(code: string, message: string, status?: number, details?: unknown): Response;
 }
 
-export interface ContextDependencies {
+export interface ContextDependencies<App = MuboApp> {
   req: Request;
   url: URL;
   params: Record<string, string>;
   requestId: string;
   db: MuboDatabase;
   log: Logger;
-  app: unknown;
+  app: App;
   bodyLimit: number;
   /** Client IP resolved by the server; honours `http.trustProxy`. */
   ip?: string;
@@ -46,7 +48,9 @@ function payloadTooLarge(limit: number): MuboError {
   });
 }
 
-export function createRequestContext(deps: ContextDependencies): MuboRequestContext {
+export function createRequestContext<App = MuboApp>(
+  deps: ContextDependencies<App>,
+): MuboRequestContext<App> {
   let rawBodyPromise: Promise<Uint8Array> | undefined;
   let parsedBodyPromise: Promise<unknown> | undefined;
   const state = Object.create(null) as Record<string, unknown>;
@@ -114,7 +118,7 @@ export function createRequestContext(deps: ContextDependencies): MuboRequestCont
     return parsedBodyPromise;
   };
 
-  const context: MuboRequestContext = {
+  const context: MuboRequestContext<App> = {
     req: deps.req,
     url: deps.url,
     method: deps.req.method.toUpperCase(),

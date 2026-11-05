@@ -551,6 +551,38 @@ describe("WebSocket rooms and broadcasting", () => {
     second.socket.close();
   });
 
+  test("exposes the running application through the WebSocket context", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-context-app", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        // The context exposes the typed application instance, so handlers can
+        // reach framework services such as the room hub.
+        const name: string = ctx.app.config.app.name;
+        ctx.subscribe("lobby");
+        ctx.send({ name, sameApp: ctx.app === app, rooms: [...ctx.rooms] });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+    expect(await socket.next()).toEqual({
+      name: "ws-context-app",
+      sameApp: true,
+      rooms: ["lobby"],
+    });
+    socket.socket.close();
+  });
+
   test("returns request ids on rejected websocket upgrades", async () => {
     const app = await createMuboApp(
       {

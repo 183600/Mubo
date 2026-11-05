@@ -213,7 +213,9 @@ Route paths, middleware functions and WebSocket handlers are validated when they
 
 ### Request Context
 
-Properties: `ctx.req`, `ctx.url`, `ctx.method`, `ctx.params`, `ctx.query`, `ctx.requestId`, `ctx.ip`, `ctx.state`, `ctx.db`, `ctx.log`, `ctx.set/get`, `ctx.body()`, `ctx.text()`, `ctx.formData()` (alias `ctx.form()`), `ctx.json()`, `ctx.textResponse()`, `ctx.ok()`, `ctx.fail()`.
+Properties: `ctx.req`, `ctx.url`, `ctx.method`, `ctx.params`, `ctx.query`, `ctx.requestId`, `ctx.ip`, `ctx.state`, `ctx.db`, `ctx.log`, `ctx.app`, `ctx.set/get`, `ctx.body()`, `ctx.text()`, `ctx.formData()` (alias `ctx.form()`), `ctx.json()`, `ctx.textResponse()`, `ctx.ok()`, `ctx.fail()`.
+
+`ctx.app` is the running application instance, so handlers can reach framework services such as `ctx.app.wsHub` or `ctx.app.config` without capturing the app in a closure.
 
 Request body is read only once and cached. If business code consumes the stream directly before calling `ctx.body()` / `ctx.text()`, those methods return a clear `BAD_REQUEST` error. Unhandled `MuboError` exceptions produce JSON:
 
@@ -327,7 +329,7 @@ app.ws("/ws", {
 });
 ```
 
-WebSocket context: `ctx.id`, `ctx.ip`, `ctx.url`, `ctx.user`, `ctx.state`, `ctx.rooms`, `ctx.send()`, `ctx.emit()`, `ctx.publish()`, `ctx.broadcast()`, `ctx.subscribe()`, `ctx.unsubscribe()`, `ctx.close()`. The `emit()` protocol uses `{ t: "event", e, d, id? }`.
+WebSocket context: `ctx.id`, `ctx.ip`, `ctx.url`, `ctx.user`, `ctx.state`, `ctx.rooms`, `ctx.app`, `ctx.send()`, `ctx.emit()`, `ctx.publish()`, `ctx.broadcast()`, `ctx.subscribe()`, `ctx.unsubscribe()`, `ctx.close()`. The `emit()` protocol uses `{ t: "event", e, d, id? }`.
 
 WebSocket routes are matched by their exact path, so parameter and wildcard paths are rejected with `CONFIG_ERROR` when they are registered.
 

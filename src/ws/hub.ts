@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import { errorMessage, MuboError } from "../core/errors.ts";
 import type { Logger } from "../core/logger.ts";
+import type { MuboApp } from "../core/app.ts";
 
 export type WsPayload = string | ArrayBuffer | ArrayBufferView | Blob | unknown;
 
@@ -13,7 +14,7 @@ export interface WsSocketData {
   state: Record<string, unknown>;
 }
 
-export interface MuboWsContext {
+export interface MuboWsContext<App = MuboApp> {
   readonly id: string;
   readonly ws: ServerWebSocket<WsSocketData>;
   readonly ip: string;
@@ -23,7 +24,8 @@ export interface MuboWsContext {
   readonly state: Record<string, unknown>;
   readonly rooms: ReadonlySet<string>;
   readonly log: Logger;
-  readonly app: unknown;
+  /** The application instance that owns the connection. */
+  readonly app: App;
   send(data: WsPayload): void;
   emit(event: string, data?: unknown, id?: string): void;
   publish(room: string, data: WsPayload): number;
@@ -44,8 +46,8 @@ export interface WsHandlers {
   onError?: (ctx: MuboWsContext, error: unknown) => unknown | Promise<unknown>;
 }
 
-interface Client {
-  ctx: MuboWsContext;
+interface Client<App> {
+  ctx: MuboWsContext<App>;
   ws: ServerWebSocket<WsSocketData>;
   rooms: Set<string>;
 }
@@ -162,10 +164,10 @@ function sendDirect(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: L
   }
 }
 
-export class WsRoomHub {
-  private readonly clients = new Map<string, Client>();
-  private readonly clientsBySocket = new Map<ServerWebSocket<WsSocketData>, Client>();
-  private readonly rooms = new Map<string, Set<Client>>();
+export class WsRoomHub<App = unknown> {
+  private readonly clients = new Map<string, Client<App>>();
+  private readonly clientsBySocket = new Map<ServerWebSocket<WsSocketData>, Client<App>>();
+  private readonly rooms = new Map<string, Set<Client<App>>>();
   private readonly logger?: Logger;
   private readonly maxConnections: number;
   private readonly maxConnectionsPerIp: number;
@@ -205,15 +207,21 @@ export class WsRoomHub {
     };
   }
 
-  add(ws: ServerWebSocket<WsSocketData>, app: unknown, logger: Logger, ip: string, reserved = false): MuboWsContext {
+  add(
+    ws: ServerWebSocket<WsSocketData>,
+    app: App,
+    logger: Logger,
+    ip: string,
+    reserved = false,
+  ): MuboWsContext<App> {
     const existing = this.clientsBySocket.get(ws);
     if (existing) return existing.ctx;
 
     const id = crypto.randomUUID();
-    let client!: Client;
+    let client!: Client<App>;
     let roomView!: ReadonlySet<string>;
     const state = Object.assign(Object.create(null) as Record<string, unknown>, ws.data.state);
-    const context: MuboWsContext = {
+    const context: MuboWsContext<App> = {
       id,
       ws,
       ip,
@@ -247,11 +255,11 @@ export class WsRoomHub {
     return context;
   }
 
-  getContext(ws: ServerWebSocket<WsSocketData>): MuboWsContext | undefined {
+  getContext(ws: ServerWebSocket<WsSocketData>): MuboWsContext<App> | undefined {
     return this.clientsBySocket.get(ws)?.ctx;
   }
 
-  remove(ws: ServerWebSocket<WsSocketData>): MuboWsContext | undefined {
+  remove(ws: ServerWebSocket<WsSocketData>): MuboWsContext<App> | undefined {
     const client = this.clientsBySocket.get(ws);
     if (!client) return undefined;
     for (const room of [...client.rooms]) this.unsubscribeFromRoom(client.ctx, room);
@@ -266,19 +274,19 @@ export class WsRoomHub {
     return client.ctx;
   }
 
-  subscribe(ctx: MuboWsContext | string, room: string): void {
+  subscribe(ctx: MuboWsContext<App> | string, room: string): void {
     const context = typeof ctx === "string" ? this.clients.get(ctx as string)?.ctx : ctx;
     if (!context) return;
     this.subscribeToRoom(context, room);
   }
 
-  unsubscribe(ctx: MuboWsContext | string, room: string): void {
+  unsubscribe(ctx: MuboWsContext<App> | string, room: string): void {
     const context = typeof ctx === "string" ? this.clients.get(ctx as string)?.ctx : ctx;
     if (!context) return;
     this.unsubscribeFromRoom(context, room);
   }
 
-  private subscribeToRoom(ctx: MuboWsContext, room: string): void {
+  private subscribeToRoom(ctx: MuboWsContext<App>, room: string): void {
     assertRoomName(room);
     const client = this.clients.get(ctx.id);
     if (!client) return;
@@ -292,7 +300,7 @@ export class WsRoomHub {
     members.add(client);
   }
 
-  private unsubscribeFromRoom(ctx: MuboWsContext, room: string): void {
+  private unsubscribeFromRoom(ctx: MuboWsContext<App>, room: string): void {
     assertRoomName(room);
     const client = this.clients.get(ctx.id);
     if (!client) return;

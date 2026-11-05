@@ -136,6 +136,27 @@ describe("HTTP routing and middleware", () => {
     expect(await raw.text()).toBe("raw");
   });
 
+  test("exposes the running application through the request context", async () => {
+    const app = await startApp({
+      app: { name: "context-app", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    let seen: MuboApp | undefined;
+    app.get("/app", (ctx) => {
+      // The context exposes the typed application instance, so handlers can
+      // reach framework services such as the WebSocket hub.
+      const name: string = ctx.app.config.app.name;
+      seen = ctx.app;
+      return ctx.json({ name, sameApp: ctx.app === app });
+    });
+
+    const response = await fetch(`${base(app)}/app`);
+    expect(await response.json()).toEqual({ name: "context-app", sameApp: true });
+    expect(seen).toBe(app);
+  });
+
   test("logs successful and failed requests with their request ids", async () => {
     const app = await createMuboApp(
       {
