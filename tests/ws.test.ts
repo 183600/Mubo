@@ -221,6 +221,40 @@ describe("WebSocket route registration", () => {
     raw.socket.close();
   });
 
+  test("answers incomplete upgrade requests with 400 and malformed paths with 404", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-upgrade-validation-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { maxConnectionsPerIp: 5, heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {});
+    await app.start();
+    apps.push(app);
+
+    // A request that claims to upgrade but is not a valid WebSocket
+    // handshake must be rejected and must not leak its per-IP reservation.
+    const baseUrl = `http://127.0.0.1:${app.port}`;
+    const invalid = await fetch(`${baseUrl}/ws`, {
+      headers: { upgrade: "websocket", connection: "Upgrade" },
+    });
+    expect(invalid.status).toBe(400);
+    expect(((await invalid.json()) as { error: { code: string } }).error.code).toBe("BAD_REQUEST");
+    expect(app.wsHub.getConnectionCountForIp("127.0.0.1")).toBe(0);
+
+    // Malformed percent-encoding on a WebSocket path falls through to the
+    // regular 404 instead of throwing.
+    const malformed = await fetch(`${baseUrl}/%ZZ`, {
+      headers: { upgrade: "websocket", connection: "Upgrade" },
+    });
+    expect(malformed.status).toBe(404);
+    expect(((await malformed.json()) as { error: { code: string } }).error.code).toBe("NOT_FOUND");
+  });
+
   test("rejects paths with query strings or fragments", async () => {
     const app = await createMuboApp(
       {
