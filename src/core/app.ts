@@ -341,14 +341,28 @@ export class MuboApp {
   private createRateLimitMiddleware(rateLimit: RateLimitConfig): RouteMiddleware {
     const { maxRequests, windowMs, key } = rateLimit;
     const store = new Map<string, { count: number; resetAt: number }>();
-    const cleanupInterval = setInterval(() => {
-      const now = Date.now();
-      for (const [k, v] of store.entries()) {
-        if (v.resetAt < now) store.delete(k);
-      }
-    }, windowMs);
-    cleanupInterval.unref?.();
-    this.cleanupTasks.push(() => clearInterval(cleanupInterval));
+    let cleanupTimer: ReturnType<typeof setInterval> | undefined;
+    const scheduleCleanup = () => {
+      if (cleanupTimer) return;
+      cleanupTimer = setInterval(() => {
+        const now = Date.now();
+        let hasEntries = false;
+        for (const [k, v] of store.entries()) {
+          if (v.resetAt < now) store.delete(k);
+          else hasEntries = true;
+        }
+        if (!hasEntries && cleanupTimer) {
+          clearInterval(cleanupTimer);
+          cleanupTimer = undefined;
+        }
+      }, windowMs);
+      cleanupTimer.unref?.();
+    };
+    // Eagerly schedule cleanup to maintain backward compatibility with tests
+    scheduleCleanup();
+    this.cleanupTasks.push(() => {
+      if (cleanupTimer) clearInterval(cleanupTimer);
+    });
 
     const addRateLimitHeaders = (response: Response, remaining: number, resetAt: number): Response => {
       const headers = new Headers(response.headers);
@@ -500,9 +514,12 @@ export class MuboApp {
     if (this.config.ws.maxConnections > 0 && this.wsHub.clientCount >= this.config.ws.maxConnections) {
       return errorResponse(requestId, new MuboError("WS_CONNECTION_LIMIT", "Maximum WebSocket connections reached"), true);
     }
+
+    let releasePerIp: (() => void) | undefined;
     if (this.config.ws.maxConnectionsPerIp > 0) {
-      const ipCount = this.wsHub.getConnectionCountForIp(clientIpAddr);
-      if (ipCount >= this.config.ws.maxConnectionsPerIp) {
+      try {
+        releasePerIp = this.wsHub.reserveConnection(clientIpAddr, this.config.ws.maxConnectionsPerIp);
+      } catch (error) {
         return errorResponse(requestId, new MuboError("WS_CONNECTION_LIMIT_PER_IP", "Too many connections from this IP"), true);
       }
     }
@@ -517,6 +534,7 @@ export class MuboApp {
     };
     const upgraded = server.upgrade(request, { data });
     if (!upgraded) {
+      releasePerIp?.();
       return errorResponse(requestId, new MuboError("BAD_REQUEST", "WebSocket upgrade failed"), true);
     }
     return new Response(null, { status: 101 });
@@ -556,7 +574,7 @@ export class MuboApp {
     }
     let ctx: MuboWsContext;
     try {
-      ctx = this.wsHub.add(ws, this, this.logger.child({ requestId: ws.data.requestId }), ws.data.ip);
+      ctx = this.wsHub.add(ws, this, this.logger.child({ requestId: ws.data.requestId }), ws.data.ip, true);
     } catch (error) {
       this.logger.child({ requestId: ws.data.requestId }).warn("WebSocket connection rejected", {
         path: route.path,
