@@ -157,6 +157,34 @@ describe("database and automatic migrations", () => {
     }
   });
 
+  test("reports COMMIT failures as DB_ERROR and rolls back deferred violations", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec(`
+      CREATE TABLE parent (id INTEGER PRIMARY KEY);
+      CREATE TABLE child (pid INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED);
+    `);
+    try {
+      let caught: unknown;
+      try {
+        db.transaction((tx) => {
+          tx.query("INSERT INTO child (pid) VALUES (?)").run(999);
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(MuboError);
+      const failure = caught as MuboError;
+      expect(failure.code).toBe("DB_ERROR");
+      expect(failure.details).toMatchObject({ sql: "COMMIT" });
+      expect(failure.cause).toBeInstanceOf(Error);
+      expect(failure.message).toContain("FOREIGN KEY constraint failed");
+      // The failed commit must leave the transaction rolled back.
+      expect(db.query("SELECT COUNT(*) AS c FROM child").get()).toEqual({ c: 0 });
+    } finally {
+      db.close();
+    }
+  });
+
   test("reports a closed database with the DB_CLOSED code", () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.close();

@@ -359,6 +359,8 @@ export class MuboDatabase {
       try {
         if (parentDepth === 0) this.raw.run("COMMIT");
         else this.raw.run(`RELEASE ${savepoint}`);
+      } catch (error) {
+        throw translateSqliteError(error, parentDepth === 0 ? "COMMIT" : `RELEASE ${savepoint}`);
       } finally {
         finish();
       }
@@ -377,8 +379,21 @@ export class MuboDatabase {
       }
     };
     try {
-      if (parentDepth === 0) this.raw.run(immediate ? "BEGIN IMMEDIATE" : "BEGIN");
-      else this.raw.run(`SAVEPOINT ${savepoint}`);
+      if (parentDepth === 0) {
+        const beginSql = immediate ? "BEGIN IMMEDIATE" : "BEGIN";
+        try {
+          this.raw.run(beginSql);
+        } catch (error) {
+          throw translateSqliteError(error, beginSql);
+        }
+      } else {
+        const savepointSql = `SAVEPOINT ${savepoint}`;
+        try {
+          this.raw.run(savepointSql);
+        } catch (error) {
+          throw translateSqliteError(error, savepointSql);
+        }
+      }
       const result = this.transactionContext.run(context, () => fn(this));
       if (result instanceof Promise) {
         return result.then(
