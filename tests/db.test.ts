@@ -1694,13 +1694,17 @@ describe("database and automatic migrations", () => {
             id: { type: "integer", primaryKey: true },
             note: { type: "text" },
             payload: { type: "blob", sqlDefault: "x'DEADBEEF'" },
+            label: { type: "text", sqlDefault: "'pending'" },
           },
         },
       },
     });
     expect((await db.migrate(next)).status).toBe("applied");
-    const stored = db.query<{ payload: Uint8Array }>("SELECT payload FROM settings").get();
+    const stored = db.query<{ payload: Uint8Array; label: string }>(
+      "SELECT payload, label FROM settings",
+    ).get();
     expect([...stored!.payload]).toEqual([0xde, 0xad, 0xbe, 0xef]);
+    expect(stored!.label).toBe("pending");
     db.close();
   });
 
