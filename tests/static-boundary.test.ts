@@ -482,6 +482,20 @@ describe("static asset boundary conditions", () => {
   });
 });
 
+test("embedded mode with no assets returns 404", async () => {
+  const app = await createMuboApp({
+    app: { name: "embedded-no-assets-test", env: "test" },
+    db: { path: ":memory:" },
+    log: { level: "error" },
+    static: { mode: "embedded" },
+  });
+  await app.start();
+  const root = `http://127.0.0.1:${app.port}`;
+  const response = await fetch(`${root}/some-path`);
+  expect(response.status).toBe(404);
+  await app.stop();
+});
+
 describe("hasFile security boundaries", () => {
   test("rejects path traversal via .. segments", async () => {
     const dir = publicDir();
