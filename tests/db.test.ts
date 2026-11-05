@@ -1813,6 +1813,96 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("migration mode 'off' skips all migrations even with pending changes", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+    // First apply migrations normally
+    const applied = await db.migrate(schema);
+    expect(applied.status).toBe("applied");
+
+    // Now add a new table to the schema
+    const extendedSchema = defineSchema({
+      tables: {
+        ...schema.tables,
+        notes: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            body: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+
+    // With mode 'off', pending migrations should be ignored
+    const offResult = await db.migrate(extendedSchema, { mode: "off" });
+    expect(offResult.status).toBe("off");
+    expect(offResult.statements).toEqual([]);
+    expect(offResult.changes).toEqual([]);
+
+    // The new table should not exist
+    expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='notes'").get()).toBeNull();
+    db.close();
+  });
+
+  test("migration mode 'off' does not create migration history table", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+
+    // With mode 'off', no migration table should be created
+    const result = await db.migrate(schema, { mode: "off" });
+    expect(result.status).toBe("off");
+
+    // Check that _mubo_migrations table doesn't exist
+    expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='_mubo_migrations'").get()).toBeNull();
+    // The users table also shouldn't be created because migrations are off
+    expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get()).toBeNull();
+    db.close();
+  });
+
+  test("migration mode 'off' with plan still generates plan but doesn't apply", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const schema = defineSchema({
+      tables: {
+        users: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            email: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+
+    // Plan should still work and show pending changes
+    const plan = db.plan(schema, { mode: "off" });
+    expect(plan.statements.length).toBeGreaterThan(0);
+    expect(plan.id).toBeString();
+
+    // But migrate with mode 'off' should not apply them
+    const result = await db.migrate(schema, { mode: "off" });
+    expect(result.status).toBe("off");
+    expect(result.statements).toEqual([]);
+    expect(result.changes).toEqual([]);
+    db.close();
+  });
+
   test("validates schema before creating migration metadata", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await expect(

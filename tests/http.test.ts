@@ -728,6 +728,42 @@ describe("HTTP routing and middleware", () => {
     await expect(app.start()).rejects.toThrow(/stopped/);
   });
 
+  test("cleans up rate limit interval on app stop", async () => {
+    let cleanupCalled = false;
+    const app = await createMuboApp(
+      {
+        app: { name: "rate-limit-cleanup-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        http: {
+          rateLimit: { maxRequests: 10, windowMs: 1000 },
+        },
+      },
+      { argv: [] },
+    );
+    // Intercept the cleanup task registration
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    globalThis.setInterval = ((callback: () => void, timeout?: number, ...args: unknown[]) => {
+      const timer = originalSetInterval(callback, timeout, ...args);
+      globalThis.clearInterval = ((...clearArgs: unknown[]) => {
+        cleanupCalled = true;
+        return originalClearInterval(clearArgs[0] as ReturnType<typeof setInterval>);
+      }) as typeof clearInterval;
+      return timer;
+    }) as typeof setInterval;
+    try {
+      await app.start();
+      apps.push(app);
+      await app.stop();
+      expect(cleanupCalled).toBe(true);
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
+    }
+  });
+
   test("stops running applications when a shutdown signal is received", async () => {
     const app = await startApp({
       app: { name: "signal-shutdown-test", env: "test" },

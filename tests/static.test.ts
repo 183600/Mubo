@@ -518,6 +518,62 @@ describe("static assets", () => {
     expect(head.headers.get("content-length")).toBe("11");
   });
 
+  test("serves HEAD requests for embedded assets with correct headers", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "embedded-head-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: {
+          mode: "embedded",
+          assets: {
+            "/index.html": "<h1>home</h1>",
+            "/script.js": "console.log('test')",
+            "/style.css": "body{}",
+          },
+        },
+      },
+      { argv: [] },
+    );
+    await app.start();
+    apps.push(app);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    // Test HEAD for HTML
+    const headHtml = await fetch(`${root}/`, { method: "HEAD" });
+    expect(headHtml.status).toBe(200);
+    expect(await headHtml.text()).toBe("");
+    expect(headHtml.headers.get("content-type")).toContain("text/html");
+    expect(headHtml.headers.get("cache-control")).toBe("no-cache");
+    expect(headHtml.headers.get("content-length")).toBe("13");
+    expect(headHtml.headers.get("etag")).toBeTruthy();
+    expect(headHtml.headers.get("accept-ranges")).toBe("bytes");
+
+    // Test HEAD for JavaScript
+    const headJs = await fetch(`${root}/script.js`, { method: "HEAD" });
+    expect(headJs.status).toBe(200);
+    expect(await headJs.text()).toBe("");
+    expect(headJs.headers.get("content-type")).toContain("javascript");
+    expect(headJs.headers.get("content-length")).toBe("19");
+    expect(headJs.headers.get("etag")).toBeTruthy();
+
+    // Test HEAD for CSS
+    const headCss = await fetch(`${root}/style.css`, { method: "HEAD" });
+    expect(headCss.status).toBe(200);
+    expect(await headCss.text()).toBe("");
+    expect(headCss.headers.get("content-type")).toContain("css");
+    expect(headCss.headers.get("content-length")).toBe("6");
+    expect(headCss.headers.get("etag")).toBeTruthy();
+
+    // Test HEAD for SPA fallback
+    const headSpa = await fetch(`${root}/client/route`, { method: "HEAD" });
+    expect(headSpa.status).toBe(200);
+    expect(await headSpa.text()).toBe("");
+    expect(headSpa.headers.get("content-type")).toContain("text/html");
+    expect(headSpa.headers.get("cache-control")).toBe("no-cache");
+    expect(headSpa.headers.get("content-length")).toBe("13");
+  });
+
   test("uses weak comparison for weak ETags on either side", async () => {
     const dir = tempDir();
     const assets = new StaticAssets(

@@ -987,6 +987,41 @@ describe("WebSocket rooms and broadcasting", () => {
     await Bun.sleep(200);
   });
 
+  test("disables heartbeats when intervalMs is 0", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-no-heartbeat-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 60_000 } },
+      },
+      { argv: [] },
+    );
+    let heartbeatTimer: unknown;
+    const originalSetInterval = globalThis.setInterval;
+    globalThis.setInterval = ((callback: () => void, timeout?: number, ...args: unknown[]) => {
+      heartbeatTimer = originalSetInterval(callback, timeout, ...args);
+      return heartbeatTimer;
+    }) as typeof setInterval;
+    try {
+      app.ws("/ws", {
+        onConnect(ctx) {
+          ctx.send({ type: "ready" });
+        },
+      });
+      await app.start();
+      apps.push(app);
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+      expect(await socket.next()).toEqual({ type: "ready" });
+      socket.socket.close();
+      await Bun.sleep(200);
+      expect(heartbeatTimer).toBeUndefined();
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+    }
+  });
+
   test("rejects WebSocket payloads exceeding max payload size", async () => {
     const app = await createMuboApp(
       {
@@ -1014,38 +1049,39 @@ describe("WebSocket rooms and broadcasting", () => {
     socket.socket.close();
   });
 
-  test("enforces max payload size on WebSocket messages", async () => {
-    const sent: unknown[] = [];
+  test("maxPayloadBytes validates WebSocket frame size at connection level", async () => {
     const app = await createMuboApp(
       {
-        app: { name: "ws-payload-enforce", env: "test" },
+        app: { name: "ws-max-payload-connection", env: "test" },
         db: { path: ":memory:" },
         log: { level: "error" },
         static: { mode: "off" },
-        ws: { maxPayloadBytes: 10 },
+        ws: { maxPayloadBytes: 100 },
       },
       { argv: [] },
     );
     app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+      },
       onMessage(ctx, message) {
-        sent.push(message);
-        ctx.send(message);
+        ctx.send({ echo: message });
       },
     });
     await app.start();
     apps.push(app);
-    const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
 
-    // Send a payload that exceeds maxPayloadBytes (10)
-    const largePayload = "0123456789ABCDEF"; // 16 chars > 10
-    socket.socket.send(largePayload);
-
-    // Wait for the message to be processed or connection closed
-    await Bun.sleep(100);
-
-    // The payload may be accepted or rejected depending on Bun's implementation;
-    // verify the app didn't crash and check what happened
-    socket.socket.close();
+    // Small payload should work
+    const smallSocket = new WebSocket(`ws://127.0.0.1:${app.port}/ws`);
+    await new Promise<void>((resolve) => smallSocket.addEventListener("open", () => resolve()));
+    await new Promise<void>((resolve) => {
+      smallSocket.addEventListener("message", () => resolve());
+    });
+    smallSocket.send("small");
+    await new Promise<void>((resolve) => {
+      smallSocket.addEventListener("message", () => resolve());
+    });
+    smallSocket.close();
   });
 
   test("onError returning a Promise is awaited and its rejections are logged", async () => {
