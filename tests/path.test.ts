@@ -115,6 +115,13 @@ describe("path utilities", () => {
       expect(routeIdentity("/")).toBe(routeIdentity("/"));
       expect(routeIdentity("///")).toBe(routeIdentity("/"));
     });
+
+    test("keeps undecodable percent-encoded segments raw instead of throwing", () => {
+      const identity = routeIdentity("/a%ZZ");
+      expect(identity).toBe(routeIdentity("/a%ZZ"));
+      expect(identity).toContain('"raw"');
+      expect(identity).toContain("%ZZ");
+    });
   });
 
   describe("compileRouteSegments", () => {
