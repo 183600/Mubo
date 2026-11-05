@@ -411,6 +411,22 @@ export default defineConfig({
     expect(config.static.mode).toBe("disk");
   });
 
+  test("--no-static=false re-enables static mode from off state", () => {
+    const config = resolveConfig(
+      { static: { mode: "off" } },
+      { env: {}, argv: ["--no-static=false"] },
+    );
+    expect(config.static.mode).toBe("disk");
+  });
+
+  test("--no-ws=false re-enables WebSocket from disabled state", () => {
+    const config = resolveConfig(
+      { ws: { enabled: false } },
+      { env: {}, argv: ["--no-ws=false"] },
+    );
+    expect(config.ws.enabled).toBe(true);
+  });
+
   test("resolves relative db and static paths", () => {
     const cwd = tempDir();
     const config = resolveConfig(
