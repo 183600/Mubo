@@ -1679,3 +1679,48 @@ describe("HTTP trustProxy", () => {
     expect(r3.status).toBe(429);
   });
 });
+
+describe("HTTP error responses in production", () => {
+  test("hides internal details and stack for unexpected errors", async () => {
+    const app = await startApp(
+      {
+        app: { name: "prod-app", env: "production" },
+        dataDir: join(tempDir(), "data"),
+        db: { path: ":memory:" },
+        static: { mode: "off" },
+        log: { level: "error" },
+      },
+      { env: { MUBO_ENV: "production" } },
+    );
+    app.get("/boom", () => {
+      throw new Error("secret database password");
+    });
+    app.get("/mubo", () => {
+      throw new MuboError("DB_ERROR", "connection failed", {
+        details: { sql: "SELECT * FROM secrets", secret: true },
+      });
+    });
+
+    const unexpected = await fetch(`${base(app)}/boom`);
+    expect(unexpected.status).toBe(500);
+    const unexpectedBody = (await unexpected.json()) as {
+      error: { code: string; message: string; details?: unknown };
+      requestId: string;
+    };
+    expect(unexpectedBody.error.code).toBe("INTERNAL_ERROR");
+    expect(unexpectedBody.error.message).toBe("Internal server error");
+    expect(unexpectedBody.error.details).toBeUndefined();
+    expect(JSON.stringify(unexpectedBody)).not.toContain("password");
+
+    const known = await fetch(`${base(app)}/mubo`);
+    expect(known.status).toBe(500);
+    const knownBody = (await known.json()) as {
+      error: { code: string; message: string; details?: unknown };
+      requestId: string;
+    };
+    expect(knownBody.error.details).toBeUndefined();
+    expect(knownBody.error.code).toBe("DB_ERROR");
+    expect(knownBody.error.message).toBe("Internal server error");
+    expect(JSON.stringify(knownBody)).not.toContain("secret");
+  });
+});

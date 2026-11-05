@@ -139,6 +139,20 @@ describe("response helpers", () => {
     expect(payload.error.details).toBeUndefined();
   });
 
+  test("errorPayload includes details only when exposed even in production", () => {
+    const exposed = new MuboError("VALIDATION_ERROR", "bad input", { details: { field: "name" } });
+    expect(errorPayload("req-exp", exposed, true).error.details).toEqual({ field: "name" });
+
+    const hidden = new MuboError("CONFIG_ERROR", "bad input", {
+      expose: false,
+      details: { field: "name" },
+    });
+    expect(errorPayload("req-hid", hidden, true).error.details).toBeUndefined();
+
+    const noDetails = new MuboError("NOT_FOUND", "missing");
+    expect(errorPayload("req-none", noDetails, true).error.details).toBeUndefined();
+  });
+
   test("errorPayload exposes custom errors in development", () => {
     const error = new MuboError("CUSTOM_ERROR", "custom error message", { status: 400, details: { secret: true } });
     const payload = errorPayload("req-dev", error, false);
