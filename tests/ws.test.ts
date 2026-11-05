@@ -1362,6 +1362,59 @@ describe("WebSocket connection limits", () => {
     socket1.socket.close();
   });
 
+  test("enforces per-IP max connections limit under concurrent connection attempts", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-per-ip-concurrent-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        http: { port: 0 },
+        ws: { maxConnectionsPerIp: 2, heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready", id: ctx.id });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    // First, establish 2 connections (should succeed)
+    const socket1 = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+    const msg1 = (await socket1.next()) as { type: string };
+    expect(msg1.type).toBe("ready");
+    const socket2 = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+    const msg2 = (await socket2.next()) as { type: string };
+    expect(msg2.type).toBe("ready");
+
+    // Third connection attempt should be rejected at HTTP level
+    const baseUrl = `http://127.0.0.1:${app.port}`;
+    const rejected = await fetch(`${baseUrl}/ws`, {
+      headers: { upgrade: "websocket", "x-request-id": "ws-concurrent-3" },
+    });
+    expect(rejected.status).toBe(429);
+    const payload = (await rejected.json()) as { error: { code: string } };
+    expect(payload.error.code).toBe("WS_CONNECTION_LIMIT_PER_IP");
+
+    // Fourth connection attempt should also be rejected
+    const rejected2 = await fetch(`${baseUrl}/ws`, {
+      headers: { upgrade: "websocket", "x-request-id": "ws-concurrent-4" },
+    });
+    expect(rejected2.status).toBe(429);
+    const payload2 = (await rejected2.json()) as { error: { code: string } };
+    expect(payload2.error.code).toBe("WS_CONNECTION_LIMIT_PER_IP");
+
+    // Verify the first two connections still work
+    socket1.socket.send(JSON.stringify({ type: "ping" }));
+    socket2.socket.send(JSON.stringify({ type: "ping" }));
+
+    socket1.socket.close();
+    socket2.socket.close();
+  });
+
   test("allows new connection after previous one closes", async () => {
     const app = await createMuboApp(
       {

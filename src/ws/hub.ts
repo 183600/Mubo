@@ -190,14 +190,24 @@ export class WsRoomHub {
     return this.connectionsPerIp.get(ip) ?? 0;
   }
 
-  add(ws: ServerWebSocket<WsSocketData>, app: unknown, logger: Logger, ip: string): MuboWsContext {
+  /** Atomically reserves a connection slot for the given IP. Returns a release function. */
+  reserveConnection(ip: string, maxConnectionsPerIp: number): () => void {
+    if (maxConnectionsPerIp <= 0) return () => {};
+    const ipCount = this.connectionsPerIp.get(ip) ?? 0;
+    if (ipCount >= maxConnectionsPerIp) {
+      throw new MuboError("WS_CONNECTION_LIMIT_PER_IP", "Too many connections from this IP");
+    }
+    this.connectionsPerIp.set(ip, ipCount + 1);
+    return () => {
+      const current = this.connectionsPerIp.get(ip) ?? 0;
+      if (current <= 1) this.connectionsPerIp.delete(ip);
+      else this.connectionsPerIp.set(ip, current - 1);
+    };
+  }
+
+  add(ws: ServerWebSocket<WsSocketData>, app: unknown, logger: Logger, ip: string, reserved = false): MuboWsContext {
     const existing = this.clientsBySocket.get(ws);
     if (existing) return existing.ctx;
-
-    if (this.maxConnectionsPerIp > 0) {
-      const ipCount = this.connectionsPerIp.get(ip) ?? 0;
-      this.connectionsPerIp.set(ip, ipCount + 1);
-    }
 
     const id = crypto.randomUUID();
     let client!: Client;
@@ -229,6 +239,11 @@ export class WsRoomHub {
     roomView = createReadonlySetView(client.rooms);
     this.clients.set(id, client);
     this.clientsBySocket.set(ws, client);
+
+    if (!reserved && this.maxConnectionsPerIp > 0) {
+      const ipCount = this.connectionsPerIp.get(ip) ?? 0;
+      this.connectionsPerIp.set(ip, ipCount + 1);
+    }
     return context;
   }
 
