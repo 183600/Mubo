@@ -264,7 +264,7 @@ app.db.transaction((db) => {
 });
 ```
 
-Transaction callbacks are sync when given sync functions, return `Promise` for async. Nested transactions use `SAVEPOINT`. Queries use cached prepared statements; migration failures roll back and throw `MIGRATION_ERROR`.
+Transaction callbacks are sync when given sync functions, return `Promise` for async. Nested transactions use `SAVEPOINT`. Transactions acquire the SQLite write lock with `BEGIN IMMEDIATE` by default; pass `{ immediate: false }` to use a deferred `BEGIN` instead. Queries use cached prepared statements; migration failures roll back and throw `MIGRATION_ERROR`.
 
 SQLite failures are reported as `MuboError` with the code `DB_ERROR`; the failing statement is attached to `error.details.sql` and the original SQLite error is kept as `error.cause`. Using a database that was already closed throws `DB_CLOSED` (`503`).
 
@@ -331,7 +331,7 @@ app.ws("/ws", {
 });
 ```
 
-WebSocket context: `ctx.id`, `ctx.ip`, `ctx.url`, `ctx.user`, `ctx.state`, `ctx.rooms`, `ctx.app`, `ctx.send()`, `ctx.emit()`, `ctx.publish()`, `ctx.broadcast()`, `ctx.subscribe()`, `ctx.unsubscribe()`, `ctx.close()`. The `emit()` protocol uses `{ t: "event", e, d, id? }`.
+WebSocket context: `ctx.id`, `ctx.ip`, `ctx.url`, `ctx.user`, `ctx.state`, `ctx.rooms`, `ctx.app`, `ctx.send()`, `ctx.emit()`, `ctx.publish()`, `ctx.broadcast()`, `ctx.subscribe()`, `ctx.unsubscribe()`, `ctx.close()`. The `emit()` protocol uses `{ t: "event", e, d, id? }`. Both `publish()` and `broadcast()` accept `{ except: connectionId }` to skip a single connection.
 
 WebSocket routes are matched by their exact path, so parameter and wildcard paths are rejected with `CONFIG_ERROR` when they are registered.
 
@@ -366,7 +366,7 @@ Every log entry carries the application name, the environment and, for request s
 
 JSON entries always describe the entry itself with `time`, `level` and `message`. A user field that uses one of those names is preserved under a prefixed key (`field_level`, `field_message`, `field_time`) instead of overwriting the envelope. Newlines in messages and field values are escaped, and circular references and bigint values are serialized safely.
 
-Requests are logged with method, path, status, duration and client IP. Queries slower than `db.slowQueryMs` produce a warning that includes the statement text. `GET /healthz` reports the application name and uptime, `GET /readyz` verifies the database, the migration state and the data directory and answers `503` when any of them is unavailable.
+Requests are logged with method, path, status, duration and client IP. Queries slower than `db.slowQueryMs` produce a warning that includes the statement text. `GET /healthz` reports the application name and uptime, `GET /readyz` verifies the database, the migration state and the data directory and answers `503` when any of them is unavailable. Other methods on the health endpoints answer `405` with an `Allow: GET, HEAD` header unless a user route is registered for the method.
 
 ## Configuration
 
