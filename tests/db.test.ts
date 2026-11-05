@@ -57,6 +57,18 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("mode check returns none when no pending migrations after apply", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    // Apply the schema first
+    await db.migrate(baseSchema, { mode: "apply" });
+    // Check should return "none" since schema is already applied
+    const result = await db.migrate(baseSchema, { mode: "check" });
+    expect(result.status).toBe("none");
+    expect(result.statements).toEqual([]);
+    expect(result.changes).toEqual([]);
+    db.close();
+  });
+
   test("planning an already-applied schema yields an empty plan", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     await db.migrate(baseSchema);
