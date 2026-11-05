@@ -54,6 +54,16 @@ describe("path utilities", () => {
       expect(normalizeRoutePath("/users")).toBe("/users");
       expect(normalizeRoutePath("///users///")).toBe("/users");
     });
+
+    test("throws for paths with null byte", () => {
+      expect(() => normalizeRoutePath("/users\0name")).toThrow(/invalid control characters/);
+    });
+
+    test("throws for paths with control characters", () => {
+      expect(() => normalizeRoutePath("/users\x01name")).toThrow(/invalid control characters/);
+      expect(() => normalizeRoutePath("/users\x1fname")).toThrow(/invalid control characters/);
+      expect(() => normalizeRoutePath("/users\x7fname")).toThrow(/invalid control characters/);
+    });
   });
 
   describe("decodeRoutePath", () => {
@@ -189,6 +199,15 @@ describe("path utilities", () => {
     test("handles multiple slashes", () => {
       const segments = compileRouteSegments("///users///");
       expect(segments).toEqual([{ kind: "literal", value: "users" }]);
+    });
+
+    test("throws for paths with null byte", () => {
+      expect(() => compileRouteSegments("/users\0name")).toThrow(/invalid control characters/);
+    });
+
+    test("throws for paths with control characters", () => {
+      expect(() => compileRouteSegments("/users\x01name")).toThrow(/invalid control characters/);
+      expect(() => compileRouteSegments("/users\x7fname")).toThrow(/invalid control characters/);
     });
   });
 

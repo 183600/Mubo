@@ -13,6 +13,9 @@ export function normalizeRoutePath(path: string): string {
   if (path.includes("?") || path.includes("#")) {
     throw new MuboError("CONFIG_ERROR", `must not contain a query or fragment: ${path}`);
   }
+  if (path.includes("\0") || /[\x01-\x1F\x7F]/.test(path)) {
+    throw new MuboError("CONFIG_ERROR", `Route path contains invalid control characters: ${path}`);
+  }
   return normalizePath(path);
 }
 
@@ -53,6 +56,9 @@ export function compileRouteSegments(path: string): { kind: "literal" | "param" 
   }
   if (path.includes("?") || path.includes("#")) {
     throw new MuboError("CONFIG_ERROR", `Route path must not contain a query or fragment: ${path}`);
+  }
+  if (path.includes("\0") || /[\x01-\x1F\x7F]/.test(path)) {
+    throw new MuboError("CONFIG_ERROR", `Route path contains invalid control characters: ${path}`);
   }
   const trimmed = path.replace(/^\/+|\/+$/g, "");
   const raw = trimmed === "" ? [] : trimmed.split("/");
