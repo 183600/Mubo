@@ -331,6 +331,14 @@ describe("CLI", () => {
     expect(muboDependencySpecifier(join("/tmp", "app"), join("/tmp", "framework"), "0.1.0")).toBe(
       "file:../framework",
     );
+    // Without a readable version the published specifier falls back to the
+    // framework's minimum supported version.
+    expect(
+      muboDependencySpecifier(join("/tmp", "app"), join("/tmp", "node_modules", "mubo")),
+    ).toBe("^0.1.0");
+    expect(
+      muboDependencySpecifier(join("/tmp", "app"), join("/tmp", "node_modules", "mubo"), "1.2.3"),
+    ).toBe("^1.2.3");
   });
 
   test("init depends on the published package when the CLI runs from node_modules", async () => {
