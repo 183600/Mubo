@@ -366,7 +366,7 @@ Every log entry carries the application name, the environment and, for request s
 
 JSON entries always describe the entry itself with `time`, `level` and `message`. A user field that uses one of those names is preserved under a prefixed key (`field_level`, `field_message`, `field_time`) instead of overwriting the envelope. Newlines in messages and field values are escaped, and circular references and bigint values are serialized safely.
 
-Requests are logged with method, path, status, duration and client IP. Queries slower than `db.slowQueryMs` produce a warning that includes the statement text. `GET /healthz` reports the application name and uptime, `GET /readyz` verifies the database, the migration state and the data directory and answers `503` when any of them is unavailable. Other methods on the health endpoints answer `405` with an `Allow: GET, HEAD` header unless a user route is registered for the method.
+Requests are logged with method, path, status, duration and client IP. Queries slower than `db.slowQueryMs` produce a warning that includes the statement text. `GET /healthz` reports the application name and uptime, `GET /readyz` verifies the database, the migration state and the data directory and answers `503` when any of them is unavailable. `OPTIONS` on the health endpoints answers `204` with `Allow: GET, HEAD`; other methods answer `405` with the same header unless a user route is registered for the method.
 
 ## Configuration
 

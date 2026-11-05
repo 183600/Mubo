@@ -648,7 +648,7 @@ test("readiness works with no schema configured", async () => {
     expect(payload.error.code).toBe("BAD_REQUEST");
   });
 
-  test("OPTIONS to a GET-only route returns 405 with Allow and request id", async () => {
+  test("OPTIONS to a GET-only route advertises the supported methods", async () => {
     const app = await startApp({
       app: { name: "options-test", env: "test" },
       db: { path: ":memory:" },
@@ -657,14 +657,36 @@ test("readiness works with no schema configured", async () => {
     });
     app.get("/users/:id", (ctx) => ctx.json({ id: ctx.params.id }));
 
+    // RFC 9110 9.3.7: an OPTIONS request is answered with the Allow header
+    // describing the supported methods instead of a 405.
     const response = await fetch(`${base(app)}/users/1`, { method: "OPTIONS" });
-    expect(response.status).toBe(405);
+    expect(response.status).toBe(204);
     expect(response.headers.get("allow")).toContain("GET");
     expect(response.headers.get("allow")).toContain("HEAD");
     expect(response.headers.get("allow")).toContain("OPTIONS");
     expect(response.headers.get("x-request-id")).toBeString();
-    const payload = (await response.json()) as { error: { code: string } };
-    expect(payload.error.code).toBe("METHOD_NOT_ALLOWED");
+    expect(await response.text()).toBe("");
+  });
+
+  test("OPTIONS on the health endpoints advertises GET and HEAD", async () => {
+    const app = await startApp({
+      app: { name: "options-health-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    for (const path of ["/healthz", "/readyz"]) {
+      const response = await fetch(`${base(app)}${path}`, { method: "OPTIONS" });
+      expect(response.status).toBe(204);
+      expect(response.headers.get("allow")).toBe("GET, HEAD");
+      expect(response.headers.get("x-request-id")).toBeString();
+    }
+
+    // The 405 for other methods stays intact.
+    const rejected = await fetch(`${base(app)}/healthz`, { method: "POST" });
+    expect(rejected.status).toBe(405);
+    expect(rejected.headers.get("allow")).toBe("GET, HEAD");
   });
 
   test("GET with no body returns null from ctx.body", async () => {
@@ -1108,7 +1130,10 @@ test("readiness works with no schema configured", async () => {
       method: "OPTIONS",
       headers: { origin: "http://denied.test" },
     });
-    expect(deniedPreflight.status).toBe(405);
+    // The response never carries the allow-origin header, so the browser
+    // still rejects the preflight; the status itself is the general OPTIONS
+    // discovery answer.
+    expect(deniedPreflight.status).toBe(204);
     expect(deniedPreflight.headers.get("access-control-allow-origin")).toBeNull();
 
     const deniedActual = await fetch(`${base(app)}/data`, {

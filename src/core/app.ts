@@ -416,13 +416,24 @@ export class MuboApp {
     return response;
   }
 
+  /** Answers an OPTIONS request for a resource without an OPTIONS handler. */
+  private optionsDiscoveryResponse(allowed: string[]): Response {
+    const response = new Response(null, { status: 204 });
+    response.headers.set("allow", allowed.join(", "));
+    return response;
+  }
+
   /** Handles /healthz and /readyz endpoints, returning health check responses. */
   private async healthResponse(ctx: MuboRequestContext, pathname: string): Promise<Response | null> {
     const normalized = normalizePath(pathname);
     const path = normalized.replace(/^\/+|\/+$/g, "");
     if (path !== "healthz" && path !== "readyz") return null;
     // The health endpoints are served for GET and HEAD only; other methods
-    // answer 405 with an Allow header instead of a misleading 404.
+    // answer 405 with an Allow header instead of a misleading 404. OPTIONS
+    // advertises the supported methods like every other resource.
+    if (ctx.method === "OPTIONS") {
+      return this.optionsDiscoveryResponse(["GET", "HEAD"]);
+    }
     if (ctx.method !== "GET" && ctx.method !== "HEAD") {
       return this.methodNotAllowedResponse(ctx, ["GET", "HEAD"]);
     }
@@ -731,6 +742,13 @@ export class MuboApp {
         return normalizeResponse(await match.route.handler(ctx));
       }
       if (match.type === "method-not-allowed") {
+        // An OPTIONS request without a registered handler advertises the
+        // supported methods instead of rejecting itself with 405; the Allow
+        // header already lists OPTIONS, so answering it keeps the header
+        // accurate (RFC 9110 9.3.7).
+        if (ctx.method === "OPTIONS") {
+          return this.optionsDiscoveryResponse(match.allowed);
+        }
         return this.methodNotAllowedResponse(ctx, match.allowed);
       }
       const health = await this.healthResponse(ctx, url.pathname);
