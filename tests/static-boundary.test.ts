@@ -540,4 +540,35 @@ describe("hasFile security boundaries", () => {
     expect(await assets.hasFile("/../etc/passwd")).toBe(false);
     expect(await assets.hasFile("/%00")).toBe(false);
   });
+
+  test("reports paths that exceed the platform path limit as missing", async () => {
+    const dir = publicDir();
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    expect(await assets.hasFile(`/${"a".repeat(5000)}`)).toBe(false);
+  });
+});
+
+describe("paths that exceed the platform path limit", () => {
+  test("serves the SPA fallback instead of failing the request", async () => {
+    const dir = publicDir();
+    const app = await startStatic(dir);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    const response = await fetch(`${root}/${"a".repeat(5000)}`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Mubo");
+
+    await app.stop();
+  });
+
+  test("answers with 404 when the SPA fallback is disabled", async () => {
+    const dir = publicDir();
+    const app = await startStatic(dir, false);
+    const root = `http://127.0.0.1:${app.port}`;
+
+    const response = await fetch(`${root}/${"a".repeat(5000)}`);
+    expect(response.status).toBe(404);
+
+    await app.stop();
+  });
 });

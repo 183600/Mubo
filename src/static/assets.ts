@@ -479,26 +479,42 @@ export class StaticAssets {
     return { path: target, directory };
   }
 
+  /**
+   * Opens a file from the asset directory.
+   *
+   * Paths that the filesystem cannot represent (for example URLs that are
+   * longer than the platform path limit) do not exist as far as the static
+   * handler is concerned, so they are reported as missing instead of failing
+   * the request with an internal error.
+   */
+  private async existingFile(target: string): Promise<Bun.BunFile | null> {
+    try {
+      const file = Bun.file(target);
+      if (await file.exists()) return file;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   private async diskResponse(request: Request, pathname: string): Promise<Response | null> {
     const resolved = this.safeDiskPath(pathname);
     if (resolved.error) return resolved.error;
     let target = resolved.directory ? join(resolved.path, "index.html") : resolved.path;
-    let file = Bun.file(target);
-    let exists = await file.exists();
-    if (!exists && !resolved.directory) {
+    let file = await this.existingFile(target);
+    if (!file && !resolved.directory) {
       const directoryIndex = join(resolved.path, "index.html");
-      const candidate = Bun.file(directoryIndex);
-      if (await candidate.exists()) {
+      const candidate = await this.existingFile(directoryIndex);
+      if (candidate) {
         target = directoryIndex;
         file = candidate;
-        exists = true;
       }
     }
-    if (!exists) {
+    if (!file) {
       if (!this.spaFallback) return null;
       const fallback = join(this.root, "index.html");
-      const candidate = Bun.file(fallback);
-      if (!(await candidate.exists())) return null;
+      const candidate = await this.existingFile(fallback);
+      if (!candidate) return null;
       target = fallback;
       file = candidate;
     }
@@ -546,10 +562,10 @@ export class StaticAssets {
     const resolved = this.safeDiskPath(pathname);
     if (resolved.error) return false;
     const target = resolved.directory ? join(resolved.path, "index.html") : resolved.path;
-    if (await Bun.file(target).exists()) return true;
+    if (await this.existingFile(target)) return true;
     if (!resolved.directory) {
       const indexFile = join(resolved.path, "index.html");
-      if (await Bun.file(indexFile).exists()) return true;
+      if (await this.existingFile(indexFile)) return true;
     }
     return false;
   }
