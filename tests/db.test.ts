@@ -2369,6 +2369,62 @@ describe("database and automatic migrations", () => {
     expect(() => new MuboDatabase({ path: dir })).toThrow(/CONFIG_ERROR|Cannot open SQLite database/);
   });
 
+  test("check mode does not create metadata table when starting from empty schema", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const next = defineSchema({
+      tables: {
+        settings: {
+          columns: { id: { type: "integer", primaryKey: true }, name: { type: "text" } },
+        },
+      },
+    });
+    const checked = await db.migrate(next, { mode: "check" });
+    expect(checked.status).toBe("pending");
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_mubo_migrations'").get(),
+    ).toBeNull();
+    db.close();
+  });
+
+  test("check mode reports pending migrations and normal migrate applies them", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    await db.migrate(baseSchema);
+    const next = defineSchema({
+      tables: {
+        ...baseSchema.tables,
+        audit: { columns: { id: { type: "text", primaryKey: true } } },
+      },
+    });
+    const checked = await db.migrate(next, { mode: "check" });
+    expect(checked.status).toBe("pending");
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'audit'").get(),
+    ).toBeNull();
+    const applied = await db.migrate(next);
+    expect(applied.status).toBe("applied");
+    expect(
+      db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'audit'").get(),
+    ).not.toBeNull();
+    db.close();
+  });
+
+  test("reclaims migration file locks left behind by dead processes", async () => {
+    const dir = tempDir();
+    const lockPath = join(dir, "._mubo_migrations.lock");
+    const dead = Bun.spawn(["bun", "-e", "process.exit(0)"]);
+    await dead.exited;
+    writeFileSync(lockPath, `${dead.pid}\n${Date.now()}`);
+
+    const acquired = await acquireFileLock(join(dir, "app.sqlite"), "_mubo_migrations", {
+      attempts: 3,
+      delayMs: 5,
+    });
+    expect(acquired).toBe(lockPath);
+    expect(readFileSync(lockPath, "utf8").startsWith(`${process.pid}\n`)).toBe(true);
+    releaseFileLock(acquired);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
   test("plan() passes through safeOnly and other migration options", async () => {    const db = new MuboDatabase({ path: ":memory:" });
 
     await db.migrate(

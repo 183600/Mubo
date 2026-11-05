@@ -456,6 +456,70 @@ describe("HTTP routing and middleware", () => {
     expect(payload.checks.migrations).toBe("migration check failed");
   });
 
+test("readiness works with no schema configured", async () => {
+    const app = await startApp({
+      app: { name: "readiness-no-schema-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    const ready = await fetch(`${base(app)}/readyz`);
+    expect(ready.status).toBe(200);
+    const payload = (await ready.json()) as {
+      ok: boolean;
+      checks: { database: string; migrations: string; dataDirectory: string };
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.checks.database).toBe("ok");
+    expect(payload.checks.migrations).toBe("ok");
+    expect(payload.checks.dataDirectory).toBe("ok");
+  });
+
+  test("readiness reports pending migrations in check mode", async () => {
+    const app = await startApp({
+      app: { name: "readiness-check-mode-test", env: "test" },
+      db: { path: ":memory:" },
+      schema,
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    const ready = await fetch(`${base(app)}/readyz`);
+    expect(ready.status).toBe(200);
+
+    app.db.exec("DROP TABLE users");
+
+    const pending = await fetch(`${base(app)}/readyz`);
+    expect(pending.status).toBe(503);
+    const payload = (await pending.json()) as {
+      ok: boolean;
+      checks: { database: string; migrations: string; dataDirectory: string };
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.checks.database).toBe("ok");
+    expect(payload.checks.migrations).toContain("create table users");
+  });
+
+  test("readiness is OK when migrations mode is off", async () => {
+    const app = await startApp({
+      app: { name: "readiness-off-mode-test", env: "test" },
+      db: { path: ":memory:", migrations: { mode: "off" } },
+      schema,
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+
+    const ready = await fetch(`${base(app)}/readyz`);
+    expect(ready.status).toBe(200);
+    const payload = (await ready.json()) as {
+      ok: boolean;
+      checks: { database: string; migrations: string; dataDirectory: string };
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.checks.migrations).toBe("ok");
+  });
+
   test.skipIf(typeof process.getuid === "function" && process.getuid() === 0)(
     "readiness reports a data directory that cannot be written",
     async () => {
