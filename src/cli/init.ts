@@ -21,6 +21,35 @@ function packageName(value: string): string {
   return name || "mubo-app";
 }
 
+/**
+ * Whether the framework runs from an installed package.
+ *
+ * `bunx mubo init` and `npx mubo init` execute the CLI from a `node_modules`
+ * directory, while a source checkout runs it from the repository itself.
+ */
+export function isInstalledFramework(root: string): boolean {
+  return root.split(/[\\/]/).includes("node_modules");
+}
+
+/**
+ * Builds the dependency specifier for the generated project.
+ *
+ * A source checkout keeps pointing at the local framework so new projects
+ * use the code they were created with. An installed package depends on the
+ * published version instead: the install directory of the package manager is
+ * a cache that must not become a project dependency.
+ */
+export function muboDependencySpecifier(
+  cwd: string,
+  frameworkRoot: string,
+  version?: string,
+): string {
+  if (!isInstalledFramework(frameworkRoot)) {
+    return `file:${relative(cwd, frameworkRoot)}`;
+  }
+  return `^${version ?? MUBO_VERSION}`;
+}
+
 async function resolveMuboDependency(cwd: string): Promise<string> {
   const muboPkg = resolve(cwd, "package.json");
   try {
@@ -29,7 +58,7 @@ async function resolveMuboDependency(cwd: string): Promise<string> {
   } catch {}
   const framework = await frameworkPackage();
   if (framework.name === "mubo") {
-    return `file:${relative(cwd, FRAMEWORK_ROOT)}`;
+    return muboDependencySpecifier(cwd, FRAMEWORK_ROOT, framework.version);
   }
   return `^${framework.version ?? MUBO_VERSION}`;
 }

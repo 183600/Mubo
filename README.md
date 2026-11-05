@@ -76,6 +76,8 @@ bun run src/cli/index.ts init /tmp/my-app
 
 `mubo init` generates `package.json`, `tsconfig.json`, `mubo.config.ts`, example schema, routes, WebSocket handlers and a minimal test. Use `--force` to overwrite non-empty directories, `--install` to run `npm install` after creation.
 
+The generated project depends on the published `mubo` package when the CLI runs from an installed package (`bunx`/`npx`). A CLI that runs from a source checkout links the project to the local framework instead.
+
 ### Run the Example
 
 ```bash

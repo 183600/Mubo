@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Database } from "bun:sqlite";
 import { boolFlag, parseCliArgs, stringFlag } from "../src/cli/args.ts";
 import { devForwardedArgs } from "../src/cli/commands.ts";
-import { initProject } from "../src/cli/init.ts";
+import { initProject, muboDependencySpecifier } from "../src/cli/init.ts";
 import {
   compareVersions,
   ENTRY_CANDIDATES,
@@ -20,6 +20,7 @@ import { loadAndResolveConfig, resolveConfig } from "../src/core/config.ts";
 const tempDirs: string[] = [];
 const cli = resolve(import.meta.dir, "../src/cli/index.ts");
 const framework = resolve(import.meta.dir, "../src/index.ts");
+const frameworkRoot = resolve(import.meta.dir, "..");
 function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "mubo-cli-"));
   tempDirs.push(dir);
@@ -56,8 +57,12 @@ export default defineConfig({
 `;
 }
 
-async function runCli(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(["bun", cli, ...args], {
+async function runCli(
+  cwd: string,
+  args: string[],
+  cliPath: string = cli,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const proc = Bun.spawn(["bun", cliPath, ...args], {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
@@ -320,6 +325,30 @@ describe("CLI", () => {
       const source = readFileSync(join(dir, file), "utf8");
       expect(() => transpiler.scan(source)).not.toThrow();
     }
+  });
+
+  test("init points source checkouts at the local framework", () => {
+    expect(muboDependencySpecifier(join("/tmp", "app"), join("/tmp", "framework"), "0.1.0")).toBe(
+      "file:../framework",
+    );
+  });
+
+  test("init depends on the published package when the CLI runs from node_modules", async () => {
+    const cwd = tempDir();
+    const installed = join(cwd, "node_modules", "mubo");
+    mkdirSync(installed, { recursive: true });
+    cpSync(join(frameworkRoot, "src"), join(installed, "src"), { recursive: true });
+    cpSync(join(frameworkRoot, "package.json"), join(installed, "package.json"));
+    const installedCli = join(installed, "src", "cli", "index.ts");
+
+    const result = await runCli(cwd, ["init", "installed-app"], installedCli);
+    expect(result.code).toBe(0);
+    const pkg = JSON.parse(readFileSync(join(cwd, "installed-app", "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    // The install directory of the package manager is a cache: generated
+    // projects must depend on the published package instead.
+    expect(pkg.dependencies.mubo).toBe("^0.1.0");
   });
 
   test("init generates a project that serves HTTP, WebSocket and static assets", async () => {
