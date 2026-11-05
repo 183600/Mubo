@@ -71,6 +71,27 @@ async function runCli(cwd: string, args: string[]): Promise<{ code: number; stdo
   return { code, stdout, stderr };
 }
 
+async function freePort(): Promise<number> {
+  const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
+  const port = probe.port!;
+  await probe.stop(true);
+  return port;
+}
+
+async function waitFor(url: string, timeoutMs = 10_000): Promise<Response> {
+  const started = Date.now();
+  let lastError: unknown;
+  while (Date.now() - started < timeoutMs) {
+    try {
+      return await fetch(url);
+    } catch (error) {
+      lastError = error;
+      await Bun.sleep(100);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Server did not start");
+}
+
 describe("CLI", () => {
   test("parses commands and flags", () => {
     const parsed = parseCliArgs(["init", "my-app", "--force", "--port", "4000", "--outfile=x"]);
@@ -300,6 +321,89 @@ describe("CLI", () => {
       expect(() => transpiler.scan(source)).not.toThrow();
     }
   });
+
+  test("init generates a project that serves HTTP, WebSocket and static assets", async () => {
+    const cwd = tempDir();
+    const dir = await initProject("runnable-app", { cwd });
+    const frameworkPath = framework.split("\\").join("/");
+    for (const file of ["mubo.config.ts", "src/server/index.ts", "src/server/schema.ts"]) {
+      const path = join(dir, file);
+      writeFileSync(
+        path,
+        readFileSync(path, "utf8").replaceAll('from "mubo"', `from ${JSON.stringify(frameworkPath)}`),
+      );
+    }
+
+    const port = await freePort();
+    const dataDir = join(cwd, "data");
+    const proc = Bun.spawn(["bun", "src/server/index.ts"], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        MUBO_PORT: String(port),
+        MUBO_HOST: "127.0.0.1",
+        MUBO_DATA_DIR: dataDir,
+        MUBO_LOG_LEVEL: "error",
+      },
+    });
+    try {
+      const base = `http://127.0.0.1:${port}`;
+      const health = await waitFor(`${base}/healthz`);
+      expect(health.status).toBe(200);
+      expect(await health.json()).toMatchObject({ ok: true, app: "runnable-app" });
+
+      const ready = await waitFor(`${base}/readyz`);
+      expect(ready.status).toBe(200);
+      expect(await ready.json()).toMatchObject({ ok: true });
+
+      const hello = await fetch(`${base}/api/hello/world`);
+      expect(hello.status).toBe(200);
+      expect(await hello.json()).toMatchObject({ message: "Hello, world!" });
+
+      const index = await fetch(`${base}/`);
+      expect(index.status).toBe(200);
+      expect(await index.text()).toContain("runnable-app");
+
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+      const messages: Array<Record<string, unknown>> = [];
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("WebSocket timeout")), 5000);
+        socket.addEventListener("message", (event) => {
+          const message = JSON.parse(String(event.data)) as Record<string, unknown>;
+          messages.push(message);
+          if (message.type === "pong") {
+            clearTimeout(timer);
+            resolve();
+          } else if (message.type === "welcome") {
+            socket.send(JSON.stringify({ type: "ping", data: 1 }));
+          }
+        });
+        socket.addEventListener("error", () => {
+          clearTimeout(timer);
+          reject(new Error("WebSocket connection failed"));
+        });
+      });
+      expect(messages.some((message) => message.type === "welcome")).toBe(true);
+      expect(messages.find((message) => message.type === "pong")).toEqual({
+        type: "pong",
+        data: 1,
+      });
+      socket.close();
+
+      const dbPath = join(dataDir, "mubo.sqlite");
+      expect(existsSync(dbPath)).toBe(true);
+      const db = new Database(dbPath);
+      expect(
+        db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get(),
+      ).toBeTruthy();
+      db.close();
+    } finally {
+      proc.kill("SIGTERM");
+      await proc.exited;
+    }
+  }, 30_000);
 
   test("generated config treats empty HTTP environment values as unset", async () => {
     const cwd = tempDir();
