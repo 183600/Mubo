@@ -431,4 +431,24 @@ describe("WebSocket room hub", () => {
     expect(() => hub.reserveConnection("10.0.0.7", 1)).toThrow(/Too many connections/);
     expect(hub.getConnectionCountForIp("10.0.0.7")).toBe(1);
   });
+
+  test("add rejects a new connection once the global limit is reached", () => {
+    const hub = new WsRoomHub(logger, 1, 0);
+    const first = fakeSocket();
+    hub.add(first.ws, null, logger, "10.0.0.1");
+    const second = fakeSocket();
+    expect(() => hub.add(second.ws, null, logger, "10.0.0.2")).toThrow(MuboError);
+    try {
+      hub.add(second.ws, null, logger, "10.0.0.2");
+      throw new Error("expected add to fail");
+    } catch (error) {
+      expect((error as MuboError).code).toBe("WS_CONNECTION_LIMIT");
+    }
+    expect(hub.clientCount).toBe(1);
+
+    // Freeing the slot allows the next connection again.
+    hub.remove(first.ws);
+    expect(hub.add(second.ws, null, logger, "10.0.0.2")).toBeDefined();
+    expect(hub.clientCount).toBe(1);
+  });
 });

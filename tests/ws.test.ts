@@ -1584,6 +1584,53 @@ describe("WebSocket connection limits", () => {
     });
     expect(() => internals.handleWsOpen(broken)).not.toThrow();
   });
+
+  test("releases reserved per-IP slots when a socket closes before it opens", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-reservation-leak-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { maxConnectionsPerIp: 1, heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {});
+    await app.start();
+    apps.push(app);
+
+    const internals = app as unknown as {
+      handleWsClose(ws: ServerWebSocket<WsSocketData>, code: number, reason: string): void;
+      wsHub: { reserveConnection(ip: string, limit: number): () => void; getConnectionCountForIp(ip: string): number };
+    };
+
+    // Reserve the only slot for the IP exactly like the upgrade handler does.
+    const release = internals.wsHub.reserveConnection("10.9.9.9", 1);
+    expect(internals.wsHub.getConnectionCountForIp("10.9.9.9")).toBe(1);
+
+    // A socket that closed before its connection context existed (it never
+    // joined the hub) must release the reservation instead of leaking it.
+    const phantom = {
+      data: {
+        routePath: "/ws",
+        requestId: "req-phantom",
+        url: "ws://localhost/ws",
+        ip: "10.9.9.9",
+        user: undefined,
+        state: {},
+        releasePerIp: release,
+      },
+      close: () => {},
+    } as unknown as ServerWebSocket<WsSocketData>;
+    expect(() => internals.handleWsClose(phantom, 1006, "")).not.toThrow();
+    expect(internals.wsHub.getConnectionCountForIp("10.9.9.9")).toBe(0);
+
+    // The slot is usable again afterwards.
+    const again = internals.wsHub.reserveConnection("10.9.9.9", 1);
+    expect(internals.wsHub.getConnectionCountForIp("10.9.9.9")).toBe(1);
+    again();
+  });
 });
 
 describe("WebSocket send payload validation", () => {

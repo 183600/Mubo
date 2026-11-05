@@ -18,6 +18,15 @@ export interface WsSocketData {
   user: unknown;
   /** Additional connection-level state. */
   state: Record<string, unknown>;
+  /**
+   * Releases the per-IP connection slot that was reserved while the upgrade
+   * was processed.
+   *
+   * The hub owns the slot once the connection context is created; the field
+   * is cleared in that moment so a socket that closes before it opens (or is
+   * rejected on open) cannot leak the reservation.
+   */
+  releasePerIp?: () => void;
 }
 
 export interface MuboWsContext<App = MuboApp> {
@@ -238,6 +247,9 @@ export class WsRoomHub<App = unknown> {
   ): MuboWsContext<App> {
     const existing = this.clientsBySocket.get(ws);
     if (existing) return existing.ctx;
+    if (this.maxConnections > 0 && this.clients.size >= this.maxConnections) {
+      throw new MuboError("WS_CONNECTION_LIMIT", "Maximum WebSocket connections reached");
+    }
 
     const id = crypto.randomUUID();
     let client!: Client<App>;

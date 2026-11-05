@@ -556,6 +556,7 @@ export class MuboApp {
       ip: clientIpAddr,
       user,
       state: Object.create(null) as Record<string, unknown>,
+      releasePerIp,
     };
     const upgraded = server.upgrade(request, { data });
     if (!upgraded) {
@@ -600,7 +601,12 @@ export class MuboApp {
     let ctx: MuboWsContext;
     try {
       ctx = this.wsHub.add(ws, this, this.logger.child({ requestId: ws.data.requestId }), ws.data.ip, true);
+      // The hub owns the per-IP slot from here on; the release function would
+      // otherwise double-release the reservation when the socket closes.
+      ws.data.releasePerIp = undefined;
     } catch (error) {
+      ws.data.releasePerIp?.();
+      ws.data.releasePerIp = undefined;
       this.logger.child({ requestId: ws.data.requestId }).warn("WebSocket connection rejected", {
         path: route.path,
         error: errorMessage(error),
@@ -626,6 +632,13 @@ export class MuboApp {
   private handleWsClose(ws: ServerWebSocket<WsSocketData>, code: number, reason: string): void {
     const route = this.wsRoute(ws);
     const ctx = this.wsHub.remove(ws);
+    if (!ctx) {
+      // The socket closed before its connection context existed (it was
+      // never added to the hub). Release any per-IP slot that was still
+      // reserved while the upgrade was processed so the count cannot leak.
+      ws.data.releasePerIp?.();
+      ws.data.releasePerIp = undefined;
+    }
     if (ctx && route?.handlers.onClose) {
       this.runWsHandler(ctx, route.handlers, () => route.handlers.onClose!(ctx, code, reason));
     }
