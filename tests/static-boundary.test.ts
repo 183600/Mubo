@@ -481,3 +481,49 @@ describe("static asset boundary conditions", () => {
     expect(suffix?.headers.get("content-range")).toBe("bytes 5-9/10");
   });
 });
+
+describe("hasFile security boundaries", () => {
+  test("rejects path traversal via .. segments", async () => {
+    const dir = publicDir();
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    expect(await assets.hasFile("/etc/passwd")).toBe(false);
+    expect(await assets.hasFile("/../etc/passwd")).toBe(false);
+    expect(await assets.hasFile("/assets/../../etc/passwd")).toBe(false);
+    expect(await assets.hasFile("/assets/./../../etc/passwd")).toBe(false);
+  });
+
+  test("rejects NUL bytes and backslash traversal", async () => {
+    const dir = publicDir();
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    expect(await assets.hasFile("/assets\0/app.js")).toBe(false);
+    expect(await assets.hasFile("/assets\\..\\..\\etc\\passwd")).toBe(false);
+  });
+
+  test("rejects malformed percent-encoding", async () => {
+    const dir = publicDir();
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    expect(await assets.hasFile("/%ZZ")).toBe(false);
+    expect(await assets.hasFile("/%2")).toBe(false);
+  });
+
+  test("reports true only for files inside the static root", async () => {
+    const dir = publicDir();
+    const assets = new StaticAssets({ mode: "disk", dir }, dir);
+    expect(await assets.hasFile("/index.html")).toBe(true);
+    expect(await assets.hasFile("/assets/app.a1b2c3d4.js")).toBe(true);
+    expect(await assets.hasFile("/robots.txt")).toBe(true);
+    expect(await assets.hasFile("/missing.txt")).toBe(false);
+    expect(await assets.hasFile("/outside/../../index.html")).toBe(false);
+  });
+
+  test("embedded hasFile rejects traversal and returns false for missing assets", async () => {
+    const assets = new StaticAssets(
+      { mode: "embedded", assets: { "/app.js": "console.log(1)" } },
+      tempDir(),
+    );
+    expect(await assets.hasFile("/app.js")).toBe(true);
+    expect(await assets.hasFile("/missing.js")).toBe(false);
+    expect(await assets.hasFile("/../etc/passwd")).toBe(false);
+    expect(await assets.hasFile("/%00")).toBe(false);
+  });
+});
