@@ -339,6 +339,16 @@ describe("HTTP routing and middleware", () => {
       expect(((await response.json()) as any).ok).toBe(true);
     }
 
+    const headHealth = await fetch(`${base(app)}/healthz`, { method: "HEAD" });
+    expect(headHealth.status).toBe(200);
+    expect(await headHealth.text()).toBe("");
+    expect(headHealth.headers.get("content-type")).toBe("application/json; charset=utf-8");
+
+    const headReady = await fetch(`${base(app)}/readyz`, { method: "HEAD" });
+    expect(headReady.status).toBe(200);
+    expect(await headReady.text()).toBe("");
+    expect(headReady.headers.get("content-type")).toBe("application/json; charset=utf-8");
+
     const missing = await fetch(`${base(app)}/missing`);
     expect(missing.status).toBe(404);
     expect(((await missing.json()) as any).error.code).toBe("NOT_FOUND");
