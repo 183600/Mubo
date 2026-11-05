@@ -2120,6 +2120,84 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("supports deferred transactions with immediate: false", async () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
+    const statements: string[] = [];
+    const originalRun = db.raw.run.bind(db.raw);
+    db.raw.run = ((sql: string, ...params: unknown[]) => {
+      statements.push(String(sql));
+      return (originalRun as (sql: string, ...params: unknown[]) => unknown)(sql, ...params);
+    }) as typeof db.raw.run;
+
+    try {
+      // Deferred mode issues a plain BEGIN instead of BEGIN IMMEDIATE.
+      const deferred = await db.transaction(
+        (tx) => {
+          tx.query("INSERT INTO events (value) VALUES (?)").run(1);
+          return "deferred";
+        },
+        { immediate: false },
+      );
+      expect(deferred).toBe("deferred");
+      expect(statements).toContain("BEGIN");
+      expect(statements).not.toContain("BEGIN IMMEDIATE");
+      expect(statements).toContain("COMMIT");
+
+      // The default remains an immediate transaction.
+      statements.length = 0;
+      const immediate = await db.transaction((tx) => {
+        tx.query("INSERT INTO events (value) VALUES (?)").run(2);
+        return "immediate";
+      });
+      expect(immediate).toBe("immediate");
+      expect(statements).toContain("BEGIN IMMEDIATE");
+
+      // Rollbacks work the same way in deferred mode. Synchronous callbacks
+      // rethrow directly instead of returning a rejected promise.
+      statements.length = 0;
+      expect(() =>
+        db.transaction(
+          (tx) => {
+            tx.query("INSERT INTO events (value) VALUES (?)").run(3);
+            throw new Error("deferred failure");
+          },
+          { immediate: false },
+        ),
+      ).toThrow("deferred failure");
+      expect(statements).toContain("BEGIN");
+      expect(statements).toContain("ROLLBACK");
+      expect(db.query("SELECT value FROM events ORDER BY value").all()).toEqual([
+        { value: 1 },
+        { value: 2 },
+      ]);
+
+      // A deferred transaction queued behind an active one still commits.
+      statements.length = 0;
+      const first = db.transaction(async (tx) => {
+        tx.query("INSERT INTO events (value) VALUES (?)").run(4);
+        await Bun.sleep(10);
+      });
+      const queued = db.transaction(
+        (tx) => {
+          tx.query("INSERT INTO events (value) VALUES (?)").run(5);
+        },
+        { immediate: false },
+      );
+      await first;
+      await queued;
+      expect(db.query("SELECT value FROM events ORDER BY value").all()).toEqual([
+        { value: 1 },
+        { value: 2 },
+        { value: 4 },
+        { value: 5 },
+      ]);
+    } finally {
+      db.raw.run = originalRun;
+      db.close();
+    }
+  });
+
   test("rejects queued transactions when the database closes", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec("CREATE TABLE events (value INTEGER NOT NULL)");
