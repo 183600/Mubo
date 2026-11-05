@@ -16,6 +16,8 @@ import { findEntry, MINIMUM_BUN_VERSION, satisfiesMinimumBunVersion } from "./pr
 export interface CommandContext {
   cwd: string;
   args: CliArgs;
+  /** Overrides the process spawner; used by tests to observe the dev command. */
+  spawn?: typeof Bun.spawn;
 }
 
 async function projectConfig(context: CommandContext): Promise<ResolvedMuboConfig> {
@@ -61,7 +63,8 @@ export async function devCommand(context: CommandContext): Promise<void> {
   const entry = findEntry(context.cwd, stringFlag(context.args, "entry"));
   const forwarded = devForwardedArgs(context.args);
   console.log(`[mubo] watching ${entry}`);
-  const proc = Bun.spawn(["bun", "--watch", entry, ...forwarded], {
+  const spawn = context.spawn ?? Bun.spawn;
+  const proc = spawn(["bun", "--watch", entry, ...forwarded], {
     cwd: context.cwd,
     stdout: "inherit",
     stderr: "inherit",
@@ -73,7 +76,11 @@ export async function devCommand(context: CommandContext): Promise<void> {
 
 export async function migrateCommand(context: CommandContext): Promise<void> {
   const config = await projectConfig(context);
-  config.db.migrations.mode = boolFlag(context.args, "check") ? "check" : "apply";
+  // An explicit `mubo migrate` run applies pending migrations unless the
+  // project disabled migrations altogether; `--check` only inspects. Forcing
+  // "apply" for mode "off" would silently ignore MUBO_MIGRATIONS_MODE=off.
+  if (boolFlag(context.args, "check")) config.db.migrations.mode = "check";
+  else if (config.db.migrations.mode !== "off") config.db.migrations.mode = "apply";
   const db = new MuboDatabase({
     path: config.db.path,
     dataDir: config.dataDir,
