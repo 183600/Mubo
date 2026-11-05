@@ -183,6 +183,44 @@ describe("WebSocket payload serialization", () => {
 });
 
 describe("WebSocket route registration", () => {
+  test("matches percent-encoded connection paths against registered routes", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-encoded-path-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ path: "plain" });
+      },
+    });
+    app.ws("/café", {
+      onConnect(ctx) {
+        ctx.send({ path: "cafe" });
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    // A fully percent-encoded segment resolves to the plain route.
+    const encoded = await openSocket(`ws://127.0.0.1:${app.port}/%77s`);
+    expect(await encoded.next()).toEqual({ path: "plain" });
+    encoded.socket.close();
+
+    // A route registered with an encoded literal matches both spellings.
+    const literal = await openSocket(`ws://127.0.0.1:${app.port}/caf%C3%A9`);
+    expect(await literal.next()).toEqual({ path: "cafe" });
+    literal.socket.close();
+    const raw = await openSocket(`ws://127.0.0.1:${app.port}/café`);
+    expect(await raw.next()).toEqual({ path: "cafe" });
+    raw.socket.close();
+  });
+
   test("rejects paths with query strings or fragments", async () => {
     const app = await createMuboApp(
       {
