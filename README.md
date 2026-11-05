@@ -11,10 +11,25 @@ Mubo depends only on Bun's built-in features: HTTP/WebSocket (`Bun.serve`), SQLi
 - [Why Hyper-Monolith?](#why-hyper-monolith)
 - [Core Capabilities](#core-capabilities)
 - [Quick Start](#quick-start)
+  - [Requirements](#requirements)
+  - [Create a Project](#create-a-project)
+  - [Run the Example](#run-the-example)
+  - [Build and Run Single-File](#build-and-run-single-file)
+  - [Diagnostics and Migrations](#diagnostics-and-migrations)
+  - [CLI Reference](#cli-reference)
 - [Project Structure](#project-structure)
 - [Basic Usage](#basic-usage)
-- [Observability](#observability)
+  - [Creating an Application](#creating-an-application)
+  - [Routes and Middleware](#routes-and-middleware)
+  - [Request Context](#request-context)
+  - [HTTP Options](#http-options)
+  - [Database](#database)
+  - [Declarative Schema](#declarative-schema)
+  - [WebSocket](#websocket)
+  - [Static Assets](#static-assets)
+  - [Observability](#observability)
 - [Configuration](#configuration)
+- [Error Codes](#error-codes)
 - [Deployment](#deployment)
 - [Security & Limitations](#security--limitations)
 - [Development & Testing](#development--testing)
@@ -68,13 +83,13 @@ bun run dev
 # Default: http://localhost:3000
 ```
 
-When developing inside this repo:
+When developing inside this repository:
 
 ```bash
 bun run src/cli/index.ts init /tmp/my-app
 ```
 
-`mubo init` generates `package.json`, `tsconfig.json`, `mubo.config.ts`, example schema, routes, WebSocket handlers and a minimal test. Use `--force` to overwrite non-empty directories, `--install` to run `npm install` after creation.
+`mubo init` generates `package.json`, `tsconfig.json`, `mubo.config.ts`, an example schema, routes, WebSocket handlers and a minimal test. Use `--force` to overwrite non-empty directories and `--install` to install dependencies right after creation.
 
 The generated project depends on the published `mubo` package when the CLI runs from an installed package (`bunx`/`npx`). A CLI that runs from a source checkout links the project to the local framework instead.
 
@@ -114,6 +129,14 @@ bunx mubo migrate         # Apply migrations (auto-applied on startup)
 
 ### CLI Reference
 
+| Command | Purpose |
+| --- | --- |
+| `mubo init <dir>` | Generate a project skeleton |
+| `mubo dev` | Run the entry file with `bun --watch` |
+| `mubo build` | Compile the application into a single executable |
+| `mubo migrate` | Apply pending migrations, or inspect them with `--check` |
+| `mubo doctor` | Report environment, configuration and database diagnostics |
+
 ```bash
 mubo init <dir> [--force] [--install]
 mubo dev [--entry <file>] [--port <port>] [--host <host>] [--data-dir <dir>]
@@ -126,7 +149,7 @@ mubo doctor [--json] [--config <file>]
 mubo --version
 ```
 
-CLI flags have highest priority. Missing flag values, invalid booleans or invalid log levels throw errors rather than silently ignoring. `--static-dir` affects the embedded static assets in the build output. `mubo dev` forwards the runtime flags (`--port`, `--host`, `--data-dir`, `--db`, `--static-dir`, `--log-level`, `--request-timeout`, `--config`, `--no-static`, `--no-ws`) to the server it starts.
+CLI flags have the highest priority. Missing flag values, invalid booleans or invalid log levels throw errors rather than being silently ignored. `--static-dir` affects the embedded static assets in the build output. `mubo dev` forwards the runtime flags (`--port`, `--host`, `--data-dir`, `--db`, `--static-dir`, `--log-level`, `--request-timeout`, `--config`, `--no-static`, `--no-ws`) to the server it starts.
 
 ## Project Structure
 
@@ -173,10 +196,12 @@ const app = await createMuboApp({
   schema,
 });
 
-app.get("/healthz", () => Response.json({ ok: true }));
+app.get("/api/notes", (ctx) => ctx.json(ctx.db.query("SELECT * FROM notes").all()));
 
 await app.start();
 ```
+
+The framework serves `/healthz` and `/readyz` on its own, so an application only registers the routes it actually needs.
 
 `app.start()` is idempotent while the app is running: concurrent calls share a single server. `app.stop()` stops the HTTP server, closes WebSocket connections and the database. A stopped application cannot be restarted; create a new one instead.
 
@@ -209,17 +234,37 @@ app.use(async (ctx, next) => {
 });
 ```
 
-Routes support static paths (`/healthz`), parameter paths (`:id`), and trailing wildcards (`*`). `HEAD` requests automatically fall back to matching `GET` routes.
+Routes support static paths (`/healthz`), parameter paths (`:id`) and trailing wildcards (`*`). `HEAD` requests automatically fall back to matching `GET` routes.
 
 Route paths, middleware functions and WebSocket handlers are validated when they are registered. Invalid registrations throw `CONFIG_ERROR` immediately instead of failing on the first request.
 
 ### Request Context
 
-Properties: `ctx.req`, `ctx.url`, `ctx.method`, `ctx.params`, `ctx.query`, `ctx.requestId`, `ctx.ip`, `ctx.state`, `ctx.db`, `ctx.log`, `ctx.app`, `ctx.set/get`, `ctx.body()`, `ctx.text()`, `ctx.formData()` (alias `ctx.form()`), `ctx.json()`, `ctx.textResponse()`, `ctx.ok()`, `ctx.fail()`.
+| Member | Description |
+| --- | --- |
+| `ctx.req` | The incoming `Request` object |
+| `ctx.url` | Parsed request URL |
+| `ctx.method` | Upper-case HTTP method |
+| `ctx.params` | Route parameters, for example `{ id: "42" }` |
+| `ctx.query` | Query parameters as `URLSearchParams` |
+| `ctx.requestId` | Request identifier, also sent as `x-request-id` |
+| `ctx.ip` | Resolved client address, honours `http.trustProxy` |
+| `ctx.state` | Mutable per-request state |
+| `ctx.set(key, value)` / `ctx.get(key)` | Read and write request state |
+| `ctx.db` | Database instance of the running app |
+| `ctx.log` | Request-scoped logger |
+| `ctx.app` | The running application instance |
+| `ctx.body()` | Parsed request body (JSON, form, text or bytes) |
+| `ctx.text()` | Raw request body as text |
+| `ctx.formData()` / `ctx.form()` | Parsed form data |
+| `ctx.json(data, init)` | JSON response |
+| `ctx.textResponse(text, init)` | Plain text response |
+| `ctx.ok(data, init)` | JSON response with a success status |
+| `ctx.fail(code, message, status?, details?)` | JSON error response |
 
 `ctx.app` is the running application instance, so handlers can reach framework services such as `ctx.app.wsHub` or `ctx.app.config` without capturing the app in a closure.
 
-Request body is read only once and cached. If business code consumes the stream directly before calling `ctx.body()` / `ctx.text()`, those methods return a clear `BAD_REQUEST` error. Unhandled `MuboError` exceptions produce JSON:
+The request body is read only once and cached. If business code consumes the stream directly before calling `ctx.body()` / `ctx.text()`, those methods return a clear `BAD_REQUEST` error. Unhandled `MuboError` exceptions produce JSON:
 
 ```json
 {
@@ -228,7 +273,7 @@ Request body is read only once and cached. If business code consumes the stream 
 }
 ```
 
-Response includes `x-request-id` header.
+Responses include the `x-request-id` header.
 
 ### HTTP Options
 
@@ -264,7 +309,7 @@ app.db.transaction((db) => {
 });
 ```
 
-Transaction callbacks are sync when given sync functions, return `Promise` for async. Nested transactions use `SAVEPOINT`. Transactions acquire the SQLite write lock with `BEGIN IMMEDIATE` by default; pass `{ immediate: false }` to use a deferred `BEGIN` instead. Queries use cached prepared statements; migration failures roll back and throw `MIGRATION_ERROR`.
+Transaction callbacks are sync when given sync functions, and return a `Promise` for async callbacks. Nested transactions use `SAVEPOINT`. Transactions acquire the SQLite write lock with `BEGIN IMMEDIATE` by default; pass `{ immediate: false }` to use a deferred `BEGIN` instead. Queries use cached prepared statements; migration failures roll back and throw `MIGRATION_ERROR`.
 
 SQLite failures are reported as `MuboError` with the code `DB_ERROR`; the failing statement is attached to `error.details.sql` and the original SQLite error is kept as `error.cause`. Using a database that was already closed throws `DB_CLOSED` (`503`).
 
@@ -331,13 +376,13 @@ app.ws("/ws", {
 });
 ```
 
-WebSocket context: `ctx.id`, `ctx.ip`, `ctx.url`, `ctx.user`, `ctx.state`, `ctx.rooms`, `ctx.app`, `ctx.send()`, `ctx.emit()`, `ctx.publish()`, `ctx.broadcast()`, `ctx.subscribe()`, `ctx.unsubscribe()`, `ctx.close()`. The `emit()` protocol uses `{ t: "event", e, d, id? }`. Both `publish()` and `broadcast()` accept `{ except: connectionId }` to skip a single connection.
+The WebSocket context provides `ctx.id`, `ctx.ip`, `ctx.url`, `ctx.user`, `ctx.state`, `ctx.rooms`, `ctx.app`, `ctx.send()`, `ctx.emit()`, `ctx.publish()`, `ctx.broadcast()`, `ctx.subscribe()`, `ctx.unsubscribe()` and `ctx.close()`. The `emit()` protocol uses `{ t: "event", e, d, id? }`. Both `publish()` and `broadcast()` accept `{ except: connectionId }` to skip a single connection.
 
 WebSocket routes are matched by their exact path, so parameter and wildcard paths are rejected with `CONFIG_ERROR` when they are registered.
 
-Room names must contain non-whitespace. Duplicate subscriptions are idempotent. `ctx.rooms` is a read-only live view of the current subscriptions; use `ctx.subscribe()` / `ctx.unsubscribe()` to change them. `publish()` / `broadcast()` return successful connection count. Failed sends are logged but not counted.
+Room names must not contain whitespace. Duplicate subscriptions are idempotent. `ctx.rooms` is a read-only live view of the current subscriptions; use `ctx.subscribe()` / `ctx.unsubscribe()` to change them. `publish()` / `broadcast()` return the number of successful connections. Failed sends are logged but not counted.
 
-With `http.trustProxy`, HTTP logs and WebSocket `ctx.ip` prefer `x-forwarded-for` (first address) or `x-real-ip`.
+With `http.trustProxy`, HTTP logs and the WebSocket `ctx.ip` prefer `x-forwarded-for` (first address) or `x-real-ip`.
 
 ### Static Assets
 
@@ -352,7 +397,7 @@ app.static({
 
 - Use `disk` mode for development or when proxying an external dev server
 - Use `embedded` mode to bundle frontend builds into the binary
-- `/docs` and `/docs/` attempt `docs/index.html`
+- Directory paths attempt `<directory>/index.html`
 - HTML defaults to `no-cache`; content-hashed assets default to 1-year `immutable`
 - Supports `ETag` / `If-None-Match` / `304` and `HEAD`
 - Supports single byte ranges (`Range: bytes=0-1023`) with `206` / `Content-Range`
@@ -377,7 +422,22 @@ Priority order (highest to lowest):
 3. `mubo.config.ts` / `mubo.config.js` / `mubo.config.mjs`
 4. Default values
 
-Specify config file with `--config <file>`. Common environment variables:
+Specify the config file with `--config <file>`.
+
+### Configuration File Options
+
+| Section | Keys |
+| --- | --- |
+| `app` | `name`, `env` (`development` / `production` / `test`) |
+| `http` | `host`, `port`, `trustProxy`, `cors`, `bodyLimit`, `requestTimeoutMs`, `rateLimit` |
+| `db` | `path`, `wal`, `busyTimeoutMs`, `foreignKeys`, `slowQueryMs`, `migrations` |
+| `db.migrations` | `mode` (`apply` / `check` / `off`), `safeOnly`, `table`, `lock` (`file` / `sqlite`) |
+| `static` | `mode` (`embedded` / `disk` / `off`), `dir`, `spaFallback`, `assets`, `cache` |
+| `static.cache` | `immutableExtensions`, `defaultMaxAgeSeconds` |
+| `ws` | `enabled`, `maxPayloadBytes`, `heartbeat`, `maxConnections`, `maxConnectionsPerIp` |
+| `log` | `level`, `json` |
+
+### Environment Variables
 
 | Variable | Description | Default |
 | --- | --- | --- |
@@ -415,7 +475,7 @@ Default data directory:
 - macOS/Linux: `$HOME/.mubo/<appName>/`
 - Windows: `%APPDATA%\Mubo\<appName>\`
 
-Numeric configs (port, body limits, timeouts, caches) are validated at startup. Invalid values fail with `CONFIG_ERROR`. Timeouts must be non-negative integers, and WebSocket heartbeat timeout must be greater than interval. App names are sanitized and truncated to 64 characters. Empty `MUBO_ENV` triggers validation error; invalid `NODE_ENV` is ignored and falls back to `development`.
+Numeric configs (port, body limits, timeouts, caches) are validated at startup. Invalid values fail with `CONFIG_ERROR`. Timeouts must be non-negative integers, and the WebSocket heartbeat timeout must be greater than the interval. App names are sanitized and truncated to 64 characters. An empty `MUBO_ENV` triggers a validation error; an invalid `NODE_ENV` is ignored and falls back to `development`.
 
 ### Configuration File Example
 
@@ -433,13 +493,40 @@ export default defineConfig({
 });
 ```
 
+## Error Codes
+
+Every framework error is a `MuboError` with a stable `code`, an HTTP `status` and optional `details`.
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `BAD_REQUEST` | 400 | Malformed request, for example an invalid URL |
+| `UNAUTHORIZED` | 401 | WebSocket authorization rejected the connection |
+| `FORBIDDEN` | 403 | Operation not allowed, for example a WebSocket upgrade while `ws.enabled` is `false` |
+| `NOT_FOUND` | 404 | No route or asset matched the request |
+| `METHOD_NOT_ALLOWED` | 405 | The path exists, but not for this method |
+| `PAYLOAD_TOO_LARGE` | 413 | Request body exceeds `http.bodyLimit` |
+| `VALIDATION_ERROR` | 422 | Invalid payload or invalid WebSocket message |
+| `RATE_LIMITED` | 429 | Rate limit exceeded |
+| `WS_CONNECTION_LIMIT` | 429 | Global WebSocket connection limit reached |
+| `WS_CONNECTION_LIMIT_PER_IP` | 429 | Per-IP WebSocket connection limit reached |
+| `CONFIG_ERROR` | 500 | Invalid configuration or registration |
+| `MIGRATION_ERROR` | 500 | Migration could not be planned or applied |
+| `DB_ERROR` | 500 | SQLite reported an error |
+| `INTERNAL_ERROR` | 500 | Unexpected framework error |
+| `REQUEST_TIMEOUT` | 504 | Handler exceeded `http.requestTimeoutMs` |
+| `DB_CLOSED` | 503 | The database was already closed |
+| `APP_STOPPED` | 503 | The application was stopped and cannot be restarted |
+| `MIGRATION_REQUIRED` | 503 | Pending migrations block the startup |
+
+In production, messages and details of 5xx errors are not exposed to clients; the `requestId` still links a response to the server log.
+
 ## Deployment
 
 ### Private Single-Node
 
 - Copy the compiled single-file to the target machine
 - Run directly or register as a system service
-- Data defaults to user directory, configurable via `--data-dir` / `MUBO_DATA_DIR`
+- Data defaults to the user directory, configurable via `--data-dir` / `MUBO_DATA_DIR`
 - Databases and migrations auto-create on first run; upgrades are binary swaps
 
 ### Edge Environments
@@ -470,11 +557,11 @@ WantedBy=multi-user.target
 
 ## Security & Limitations
 
-- Production binds to `127.0.0.1` by default; use reverse proxy for external access
+- Production binds to `127.0.0.1` by default; use a reverse proxy for external access
 - WebSocket connections should enable authorization (token/session)
 - Consider rate limiting on public APIs
 - SQLite suits medium-scale workloads; evaluate for extreme concurrent writes
-- Requires Bun runtime for development and building
+- Requires the Bun runtime for development and building
 
 ## Development & Testing
 

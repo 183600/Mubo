@@ -95,8 +95,8 @@ function serializeBigint(_key: string, value: unknown): unknown {
   return value;
 }
 
+/** Serializes a payload for WebSocket transmission. */
 export function serializePayload(data: unknown): string | ArrayBuffer | ArrayBufferView | Blob {
-  /** Serializes a payload for WebSocket transmission. */
   if (isRawPayload(data)) return data;
   if (typeof data === "bigint") return data.toString();
   let json: string | undefined;
@@ -164,6 +164,11 @@ export function createReadonlySetView<T>(source: Set<T>): ReadonlySet<T> {
   });
 }
 
+/** Reports a failed WebSocket send without interrupting the caller. */
+function reportSendFailure(logger: Logger | undefined, error: unknown): void {
+  logger?.warn("WebSocket send failed", { error: errorMessage(error) });
+}
+
 function sendStatus(
   ws: ServerWebSocket<WsSocketData>,
   payload: string | ArrayBuffer | ArrayBufferView | Blob,
@@ -181,7 +186,7 @@ function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Log
   try {
     return sendStatus(ws, serializePayload(data), logger);
   } catch (error) {
-    logger?.warn("WebSocket send failed", { error: errorMessage(error) });
+    reportSendFailure(logger, error);
     return false;
   }
 }
@@ -191,7 +196,7 @@ function sendDirect(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: L
   try {
     sendStatus(ws, payload, logger);
   } catch (error) {
-    logger?.warn("WebSocket send failed", { error: errorMessage(error) });
+    reportSendFailure(logger, error);
   }
 }
 
@@ -231,11 +236,14 @@ export class WsRoomHub<App = unknown> {
       throw new MuboError("WS_CONNECTION_LIMIT_PER_IP", "Too many connections from this IP");
     }
     this.connectionsPerIp.set(ip, ipCount + 1);
-    return () => {
-      const current = this.connectionsPerIp.get(ip) ?? 0;
-      if (current <= 1) this.connectionsPerIp.delete(ip);
-      else this.connectionsPerIp.set(ip, current - 1);
-    };
+    return () => this.releaseConnectionSlot(ip);
+  }
+
+  /** Releases a connection slot of the given IP. */
+  private releaseConnectionSlot(ip: string): void {
+    const ipCount = this.connectionsPerIp.get(ip) ?? 0;
+    if (ipCount <= 1) this.connectionsPerIp.delete(ip);
+    else this.connectionsPerIp.set(ip, ipCount - 1);
   }
 
   add(
@@ -300,10 +308,7 @@ export class WsRoomHub<App = unknown> {
     this.clients.delete(client.ctx.id);
     this.clientsBySocket.delete(ws);
     if (this.maxConnectionsPerIp > 0) {
-      const ip = client.ctx.ip;
-      const ipCount = this.connectionsPerIp.get(ip) ?? 0;
-      if (ipCount <= 1) this.connectionsPerIp.delete(ip);
-      else this.connectionsPerIp.set(ip, ipCount - 1);
+      this.releaseConnectionSlot(client.ctx.ip);
     }
     return client.ctx;
   }

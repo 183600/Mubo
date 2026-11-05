@@ -18,8 +18,12 @@ const BOOLEAN_FLAGS = new Set([
   "version",
 ]);
 
-/** Parses command-line arguments into a structured CliArgs object. */
-/** Commands: init, dev, build, migrate, doctor. Positional args are command-specific. */
+/**
+ * Parses command-line arguments into a structured CliArgs object.
+ *
+ * Commands are init, dev, build, migrate and doctor; positional arguments are
+ * command-specific.
+ */
 export function parseCliArgs(argv: string[]): CliArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | boolean>();
@@ -60,9 +64,6 @@ export function parseCliArgs(argv: string[]): CliArgs {
  * Commands resolve their configuration from the tokens they were invoked with,
  * so the parsed flags have to be turned back into argv form.
  */
-/** Rebuilds an argv list from parsed CliArgs, reversing the parsing process.
- *  Commands resolve their configuration from the tokens they were invoked with,
- *  so the parsed flags have to be turned back into argv form. */
 export function cliArgsToArgv(args: CliArgs): string[] {
   const argv: string[] = [];
   if (args.command !== undefined) argv.push(args.command);

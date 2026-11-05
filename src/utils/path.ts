@@ -1,5 +1,64 @@
 import { MuboError } from "../core/errors.ts";
 
+/** The three kinds of segments a compiled route path can contain. */
+export type RouteSegmentKind = "literal" | "param" | "wildcard";
+
+/** A single compiled segment of a route path. */
+export interface RouteSegment {
+  kind: RouteSegmentKind;
+  value: string;
+}
+
+/** A route that can be matched against the segments of a request path. */
+export interface MatchableRoute {
+  method: string;
+  path: string;
+  segments: RouteSegment[];
+  handler: unknown;
+}
+
+/** Rejects route paths that are not usable as a route. */
+function assertRoutePathValue(path: string): void {
+  if (typeof path !== "string" || path.trim().length === 0) {
+    throw new MuboError("CONFIG_ERROR", `Route path must be a non-empty string: ${String(path)}`);
+  }
+}
+
+/** Rejects route paths that carry a query string or a fragment. */
+function assertRoutePathHasNoQuery(path: string): void {
+  if (path.includes("?") || path.includes("#")) {
+    throw new MuboError("CONFIG_ERROR", `must not contain a query or fragment: ${path}`);
+  }
+}
+
+/** Rejects route paths that contain control characters. */
+function assertRoutePathHasNoControlCharacters(path: string): void {
+  if (path.includes("\0") || /[\x01-\x1F\x7F]/.test(path)) {
+    throw new MuboError("CONFIG_ERROR", `Route path contains invalid control characters: ${path}`);
+  }
+}
+
+/** Applies the shared route path syntax rules. */
+function assertRoutePathSyntax(path: string): void {
+  assertRoutePathHasNoQuery(path);
+  assertRoutePathHasNoControlCharacters(path);
+}
+
+/** Splits a path into segments, dropping leading and trailing slashes. */
+function splitSegments(path: string): string[] {
+  const trimmed = path.replace(/^\/+|\/+$/g, "");
+  return trimmed === "" ? [] : trimmed.split("/");
+}
+
+/** Decodes a percent-encoded value, returning the raw value when it is malformed. */
+function decodeLiteral(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /** Collapses multiple slashes and trims leading/trailing slashes from a path. */
 /** Returns "/" for empty or whitespace-only paths. */
 export function normalizePath(path: string): string {
@@ -10,15 +69,8 @@ export function normalizePath(path: string): string {
 
 /** Validates and normalizes a route path, rejecting queries, fragments, and control characters. */
 export function normalizeRoutePath(path: string): string {
-  if (typeof path !== "string" || path.trim().length === 0) {
-    throw new MuboError("CONFIG_ERROR", `Route path must be a non-empty string: ${String(path)}`);
-  }
-  if (path.includes("?") || path.includes("#")) {
-    throw new MuboError("CONFIG_ERROR", `must not contain a query or fragment: ${path}`);
-  }
-  if (path.includes("\0") || /[\x01-\x1F\x7F]/.test(path)) {
-    throw new MuboError("CONFIG_ERROR", `Route path contains invalid control characters: ${path}`);
-  }
+  assertRoutePathValue(path);
+  assertRoutePathSyntax(path);
   return normalizePath(path);
 }
 
@@ -54,21 +106,13 @@ export function routeIdentity(path: string): string {
 }
 
 /** Compiles a route path into an array of segments, validating parameter names and wildcard placement. */
-export function compileRouteSegments(path: string): { kind: "literal" | "param" | "wildcard"; value: string }[] {
-  if (typeof path !== "string" || path.trim().length === 0) {
-    throw new MuboError("CONFIG_ERROR", `Route path must be a non-empty string: ${String(path)}`);
-  }
+export function compileRouteSegments(path: string): RouteSegment[] {
+  assertRoutePathValue(path);
   if (!path.startsWith("/")) {
     throw new MuboError("CONFIG_ERROR", `Route path must start with "/": ${path}`);
   }
-  if (path.includes("?") || path.includes("#")) {
-    throw new MuboError("CONFIG_ERROR", `Route path must not contain a query or fragment: ${path}`);
-  }
-  if (path.includes("\0") || /[\x01-\x1F\x7F]/.test(path)) {
-    throw new MuboError("CONFIG_ERROR", `Route path contains invalid control characters: ${path}`);
-  }
-  const trimmed = path.replace(/^\/+|\/+$/g, "");
-  const raw = trimmed === "" ? [] : trimmed.split("/");
+  assertRoutePathSyntax(path);
+  const raw = splitSegments(path);
   const parameters = new Set<string>();
   return raw.map((part, index) => {
     if (part === "*") {
@@ -95,11 +139,10 @@ export function compileRouteSegments(path: string): { kind: "literal" | "param" 
   });
 }
 
+/** Creates the lookup key of a route path, distinguishing literals, parameters and wildcards. */
 export function routeKey(path: string): string {
-  const trimmed = path.replace(/^\/+|\/+$/g, "");
-  const segments = trimmed === "" ? [] : trimmed.split("/");
   return JSON.stringify(
-    segments.map((segment) => {
+    splitSegments(path).map((segment) => {
       if (segment === "*") return ["wildcard", segment];
       if (segment.startsWith(":")) return ["param", segment];
       return ["literal", decodeLiteral(segment)];
@@ -107,40 +150,27 @@ export function routeKey(path: string): string {
   );
 }
 
-function decodeLiteral(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
+/** Decodes a URL path component, throwing on malformed percent-encoding. */
 export function decode(value: string): string {
-  /** Decodes a URL path component, throwing on malformed percent-encoding. */
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    throw new MuboError("BAD_REQUEST", `Malformed percent-encoding in URL: ${value}`);
-  }
+  return decodeRoutePath(value);
 }
 
+/** Compares two route path segments, supporting both decoded and literal matching. */
 export function literalMatches(part: string, expected: string): boolean {
-  /** Compares two route path segments, supporting both decoded and literal matching. */
   const decoded = decode(part);
   return decoded === expected || decodeLiteral(expected) === decoded;
 }
 
 /** Splits a pathname into segments, removing leading/trailing slashes. */
 export function pathSegments(pathname: string): string[] {
-  const trimmed = pathname.replace(/^\/+|\/+$/g, "");
-  return trimmed === "" ? [] : trimmed.split("/");
+  return splitSegments(pathname);
 }
 
+/** Matches route segments against URL path parts, collecting parameter values. */
 export function matchSegments(
-  route: { segments: { kind: "literal" | "param" | "wildcard"; value: string }[] },
+  route: { segments: RouteSegment[] },
   parts: string[],
 ): Record<string, string> | null {
-  /** Matches route segments against URL path parts, collecting parameter values. */
   const params = Object.create(null) as Record<string, string>;
   for (let index = 0; index < route.segments.length; index++) {
     const segment = route.segments[index]!;
@@ -160,7 +190,7 @@ export function matchSegments(
 }
 
 /** Returns a numeric specificity weight for a route segment: literal=3, param=2, wildcard=1. */
-export function segmentSpecificity(segment: { kind: "literal" | "param" | "wildcard" } | undefined): number {
+export function segmentSpecificity(segment: { kind: RouteSegmentKind } | undefined): number {
   if (!segment) return 4;
   if (segment.kind === "literal") return 3;
   if (segment.kind === "param") return 2;
@@ -169,8 +199,8 @@ export function segmentSpecificity(segment: { kind: "literal" | "param" | "wildc
 
 /** Compares two routes' segment specificity, returning true if the first is more specific. */
 export function isMoreSpecific(
-  route: { segments: { kind: "literal" | "param" | "wildcard" }[] },
-  than: { segments: { kind: "literal" | "param" | "wildcard" }[] },
+  route: { segments: RouteSegment[] },
+  than: { segments: RouteSegment[] },
 ): boolean {
   const length = Math.max(route.segments.length, than.segments.length);
   for (let index = 0; index < length; index++) {
@@ -182,12 +212,12 @@ export function isMoreSpecific(
 }
 
 /** Finds the best matching route from a list, prioritizing more specific paths. */
-export function findBestMatch(
-  routes: readonly { method: string; path: string; segments: { kind: "literal" | "param" | "wildcard"; value: string }[]; handler: unknown }[],
+export function findBestMatch<Route extends MatchableRoute>(
+  routes: readonly Route[],
   method: string,
   parts: string[],
-): { route: typeof routes[0]; params: Record<string, string> } | undefined {
-  let best: { route: typeof routes[0]; params: Record<string, string> } | undefined;
+): { route: Route; params: Record<string, string> } | undefined {
+  let best: { route: Route; params: Record<string, string> } | undefined;
   for (const route of routes) {
     if (route.method !== method) continue;
     const params = matchSegments(route, parts);

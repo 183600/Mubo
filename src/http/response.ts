@@ -19,22 +19,27 @@ function serializeJsonPayload(data: unknown): string {
   return JSON.stringify(data, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
 }
 
-export function jsonResponse(data: unknown, init: JsonInit = {}): Response {
+/** Builds a response with a default content type. */
+function typedResponse(
+  body: ConstructorParameters<typeof Response>[0],
+  contentType: string,
+  init: ResponseInit,
+): Response {
   const headers = makeHeaders(init.headers);
-  if (!headers.has("content-type")) headers.set("content-type", "application/json; charset=utf-8");
-  return new Response(serializeJsonPayload(data), { status: init.status, statusText: init.statusText, headers });
+  if (!headers.has("content-type")) headers.set("content-type", contentType);
+  return new Response(body, { status: init.status, statusText: init.statusText, headers });
+}
+
+export function jsonResponse(data: unknown, init: JsonInit = {}): Response {
+  return typedResponse(serializeJsonPayload(data), "application/json; charset=utf-8", init);
 }
 
 export function textResponse(text: string, init: ResponseInit = {}): Response {
-  const headers = makeHeaders(init.headers);
-  if (!headers.has("content-type")) headers.set("content-type", "text/plain; charset=utf-8");
-  return new Response(text, { status: init.status, statusText: init.statusText, headers });
+  return typedResponse(text, "text/plain; charset=utf-8", init);
 }
 
 export function htmlResponse(html: string, init: ResponseInit = {}): Response {
-  const headers = makeHeaders(init.headers);
-  if (!headers.has("content-type")) headers.set("content-type", "text/html; charset=utf-8");
-  return new Response(html, { status: init.status, statusText: init.statusText, headers });
+  return typedResponse(html, "text/html; charset=utf-8", init);
 }
 
 export interface ErrorPayload {

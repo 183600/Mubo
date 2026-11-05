@@ -192,6 +192,16 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+/** Normalizes a file extension for cache lookups: trimmed, without dots, lowercase. */
+export function normalizeExtension(extension: string): string {
+  return extension.trim().replace(/^\.+/, "").toLowerCase();
+}
+
+/** Checks whether a value is a file extension that can be used for cache rules. */
+export function isValidExtension(value: unknown): value is string {
+  return typeof value === "string" && normalizeExtension(value).length > 0;
+}
+
 /** Validates that a configuration section exists and is a plain object. */
 function requireSection(value: unknown, name: string): Record<string, unknown> {
   if (!isPlainObject(value)) {
@@ -298,6 +308,32 @@ function resolveEnvironment(env: Record<string, string | undefined>): string | u
   return undefined;
 }
 
+/** The value of a command line flag together with the index of the next token. */
+interface FlagValue {
+  value: string;
+  /** Index of the token that follows the consumed flag value. */
+  next: number;
+}
+
+/**
+ * Reads the value of a command line flag.
+ *
+ * Both `--flag=value` and `--flag value` are supported; a missing value is
+ * rejected instead of being silently ignored.
+ */
+function readFlagValue(
+  argv: string[],
+  index: number,
+  name: string,
+  inline: string | undefined,
+): FlagValue {
+  const value = inline !== undefined ? inline : argv[index + 1];
+  if (value === undefined || value === "" || value.startsWith("-")) {
+    throw new MuboError("CONFIG_ERROR", `Missing value for --${name}`);
+  }
+  return { value, next: inline === undefined ? index + 1 : index };
+}
+
 /** Parses CLI argv into a partial MuboConfig, throwing on missing or invalid values. */
 function argvOverrides(argv: string[]): MuboConfig {
   const result: MuboConfig = {};
@@ -309,11 +345,8 @@ function argvOverrides(argv: string[]): MuboConfig {
     const name = equal === -1 ? token.slice(2) : token.slice(2, equal);
     const inline = equal === -1 ? undefined : token.slice(equal + 1);
     const next = (flagName: string): string => {
-      const value = inline !== undefined ? inline : argv[i + 1];
-      if (value === undefined || value === "" || value.startsWith("-")) {
-        throw new MuboError("CONFIG_ERROR", `Missing value for --${flagName}`);
-      }
-      if (inline === undefined) i++;
+      const { value, next: nextIndex } = readFlagValue(argv, i, flagName, inline);
+      i = nextIndex;
       return value;
     };
     switch (name) {
@@ -559,18 +592,12 @@ export async function loadConfigFile(
   return { config: {} };
 }
 
-/** Merges defaults, file config, env vars, and CLI args into a fully validated ResolvedMuboConfig. */
-export function resolveConfig(
-  overrides: MuboConfig = {},
-  options: ResolveConfigOptions & { fileConfig?: MuboConfig } = {},
+/** Builds the default configuration of an application. */
+function defaultConfig(
+  cwd: string,
+  appEnv: ResolvedMuboConfig["app"]["env"],
 ): ResolvedMuboConfig {
-  const cwd = resolve(options.cwd ?? process.cwd());
-  const env = options.env ?? process.env;
-  const envName = resolveEnvironment(env);
-  const appEnv: "development" | "production" | "test" =
-    envName === "production" || envName === "test" ? envName : "development";
-
-  const defaults: ResolvedMuboConfig = {
+  return {
     app: { name: "mubo-app", env: appEnv },
     dataDir: "",
     http: {
@@ -605,6 +632,195 @@ export function resolveConfig(
     },
     log: { level: "info", json: appEnv === "production" },
   };
+}
+
+/** Validates that every configuration section exists and is a plain object. */
+function validateSections(config: ResolvedMuboConfig): void {
+  requireSection(config.app, "app");
+  requireSection(config.http, "HTTP");
+  requireSection(config.db, "database");
+  requireSection(config.db.migrations, "migrations");
+  requireSection(config.static, "static");
+  requireSection(config.static.cache, "static cache");
+  requireSection(config.ws, "WebSocket");
+  requireSection(config.ws.heartbeat, "WebSocket heartbeat");
+  requireSection(config.log, "log");
+}
+
+/** Validates the boolean settings of the configuration. */
+function validateBooleans(config: ResolvedMuboConfig): void {
+  requireBoolean("trust proxy", config.http.trustProxy);
+  requireBoolean("database WAL", config.db.wal);
+  requireBoolean("database foreign keys", config.db.foreignKeys);
+  requireBoolean("safeOnly migrations", config.db.migrations.safeOnly);
+  requireBoolean("static SPA fallback", config.static.spaFallback);
+  requireBoolean("WebSocket enabled", config.ws.enabled);
+  requireBoolean("JSON logging", config.log.json);
+}
+
+/** Validates the string settings of the configuration. */
+function validateStrings(config: ResolvedMuboConfig): void {
+  requireString("app name", config.app.name);
+  requireString("data directory", config.dataDir);
+  requireString("database path", config.db.path);
+  requireString("migrations table", config.db.migrations.table);
+  requireString("static directory", config.static.dir);
+}
+
+/** Trims the configured paths. */
+function trimPaths(config: ResolvedMuboConfig): void {
+  config.dataDir = config.dataDir.trim();
+  config.db.path = config.db.path.trim();
+  config.db.migrations.table = config.db.migrations.table.trim();
+  config.static.dir = config.static.dir.trim();
+}
+
+/** Validates and normalizes the extensions that receive an immutable cache header. */
+function normalizeImmutableExtensions(config: ResolvedMuboConfig): void {
+  const immutableExtensions = config.static.cache.immutableExtensions;
+  if (!Array.isArray(immutableExtensions) || immutableExtensions.some((extension) => !isValidExtension(extension))) {
+    throw new MuboError("CONFIG_ERROR", "Invalid immutable extensions setting");
+  }
+  config.static.cache.immutableExtensions = immutableExtensions.map(normalizeExtension);
+}
+
+/** Validates the enum settings of the configuration. */
+function validateChoices(config: ResolvedMuboConfig): void {
+  requireChoice("app environment", config.app.env, APP_ENVIRONMENTS);
+  requireChoice("log level", config.log.level, ["debug", "info", "warn", "error"]);
+  requireChoice("migrations mode", config.db.migrations.mode, MIGRATION_MODES);
+  requireChoice("migrations lock", config.db.migrations.lock, ["file", "sqlite"]);
+  requireChoice("static mode", config.static.mode, STATIC_MODES);
+}
+
+/** Validates the CORS settings and normalizes the configured origins. */
+function normalizeCors(config: ResolvedMuboConfig): void {
+  if (config.http.cors === false) return;
+  const cors = config.http.cors as unknown;
+  if (typeof cors !== "object" || cors === null || Array.isArray(cors)) {
+    throw new MuboError("CONFIG_ERROR", "Invalid CORS configuration");
+  }
+  const origin = (cors as { origin?: unknown }).origin;
+  if (
+    origin !== "*" &&
+    (!Array.isArray(origin) ||
+      origin.length === 0 ||
+      origin.some((value) => typeof value !== "string" || value.trim().length === 0))
+  ) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      'Invalid CORS origin: expected "*" or a non-empty array of strings',
+    );
+  }
+  const credentials = (cors as { credentials?: unknown }).credentials;
+  if (credentials !== undefined && typeof credentials !== "boolean") {
+    throw new MuboError("CONFIG_ERROR", "Invalid CORS credentials setting");
+  }
+  if (origin === "*" && credentials === true) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      'Invalid CORS configuration: credentials cannot be combined with the "*" origin',
+    );
+  }
+  if (Array.isArray(origin)) {
+    config.http.cors = {
+      ...(config.http.cors as CorsConfig),
+      origin: origin.map((value) => (value as string).trim()),
+    };
+  }
+}
+
+/** Sanitizes the application name and resolves the configured paths. */
+function resolvePaths(
+  config: ResolvedMuboConfig,
+  cwd: string,
+  env: Record<string, string | undefined>,
+): void {
+  config.app.name = sanitizeAppName(config.app.name);
+  config.dataDir = resolve(cwd, config.dataDir || defaultDataDir(config.app.name, env));
+  if (!config.db.path) config.db.path = join(config.dataDir, "mubo.sqlite");
+  else if (config.db.path !== ":memory:" && !isAbsolute(config.db.path)) {
+    config.db.path = resolve(cwd, config.db.path);
+  }
+  if (!config.static.dir) config.static.dir = join(cwd, "public");
+  else if (!isAbsolute(config.static.dir)) config.static.dir = resolve(cwd, config.static.dir);
+}
+
+/** Validates the HTTP settings of the configuration. */
+function validateHttp(config: ResolvedMuboConfig): void {
+  if (typeof config.http.host !== "string" || config.http.host.trim().length === 0) {
+    throw new MuboError("CONFIG_ERROR", `Invalid HTTP host: ${String(config.http.host)}`);
+  }
+  config.http.host = config.http.host.trim();
+  if (!Number.isInteger(config.http.port) || config.http.port < 0 || config.http.port > 65535) {
+    throw new MuboError("CONFIG_ERROR", `Invalid HTTP port: ${config.http.port}`);
+  }
+  if (!Number.isInteger(config.http.bodyLimit) || config.http.bodyLimit <= 0) {
+    throw new MuboError("CONFIG_ERROR", `Invalid body limit: ${config.http.bodyLimit}`);
+  }
+  if (!Number.isInteger(config.http.requestTimeoutMs) || config.http.requestTimeoutMs < 0) {
+    throw new MuboError("CONFIG_ERROR", `Invalid request timeout: ${config.http.requestTimeoutMs}`);
+  }
+  if (config.http.rateLimit !== false) {
+    if (!config.http.rateLimit || typeof config.http.rateLimit !== "object") {
+      throw new MuboError("CONFIG_ERROR", "Invalid rate limit configuration");
+    }
+    if (!Number.isInteger(config.http.rateLimit.maxRequests) || config.http.rateLimit.maxRequests <= 0) {
+      throw new MuboError("CONFIG_ERROR", "Invalid rate limit maxRequests");
+    }
+    if (!Number.isInteger(config.http.rateLimit.windowMs) || config.http.rateLimit.windowMs <= 0) {
+      throw new MuboError("CONFIG_ERROR", "Invalid rate limit windowMs");
+    }
+    if (config.http.rateLimit.key === undefined) {
+      config.http.rateLimit.key = defaultRateLimitKey;
+    } else if (typeof config.http.rateLimit.key !== "function") {
+      throw new MuboError("CONFIG_ERROR", "Invalid rate limit key function");
+    }
+  }
+  if (config.http.cors && config.http.cors.maxAgeSeconds !== undefined) {
+    requireInteger("CORS max age", config.http.cors.maxAgeSeconds, { min: 0 });
+  }
+}
+
+/** Validates the database settings of the configuration. */
+function validateDatabase(config: ResolvedMuboConfig): void {
+  requireInteger("busy timeout", config.db.busyTimeoutMs, { min: 0 });
+  requireInteger("slow query threshold", config.db.slowQueryMs, { min: 0 });
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.db.migrations.table)) {
+    throw new MuboError("CONFIG_ERROR", `Invalid migrations table name: ${config.db.migrations.table}`);
+  }
+}
+
+/** Validates the static asset settings of the configuration. */
+function validateStatic(config: ResolvedMuboConfig): void {
+  requireInteger("static max age", config.static.cache.defaultMaxAgeSeconds, { min: 0, max: 31536000 });
+}
+
+/** Validates the WebSocket settings of the configuration. */
+function validateWebSocket(config: ResolvedMuboConfig): void {
+  requireInteger("WebSocket max payload", config.ws.maxPayloadBytes, { exclusiveMin: 0 });
+  requireInteger("WebSocket heartbeat interval", config.ws.heartbeat.intervalMs, { min: 0 });
+  requireInteger("WebSocket heartbeat timeout", config.ws.heartbeat.timeoutMs, { exclusiveMin: 0 });
+  if (config.ws.heartbeat.timeoutMs <= config.ws.heartbeat.intervalMs) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      `WebSocket heartbeat timeout (${config.ws.heartbeat.timeoutMs}ms) must be greater than interval (${config.ws.heartbeat.intervalMs}ms)`,
+    );
+  }
+  requireInteger("WebSocket max connections", config.ws.maxConnections, { min: 0 });
+  requireInteger("WebSocket max connections per IP", config.ws.maxConnectionsPerIp, { min: 0 });
+}
+
+/** Merges defaults, file config, env vars, and CLI args into a fully validated ResolvedMuboConfig. */
+export function resolveConfig(
+  overrides: MuboConfig = {},
+  options: ResolveConfigOptions & { fileConfig?: MuboConfig } = {},
+): ResolvedMuboConfig {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const env = options.env ?? process.env;
+  const envName = resolveEnvironment(env);
+  const appEnv: "development" | "production" | "test" =
+    envName === "production" || envName === "test" ? envName : "development";
 
   const rawLogJson = env.MUBO_LOG_JSON?.trim();
   const logJsonConfigured =
@@ -612,163 +828,26 @@ export function resolveConfig(
     overrides.log?.json !== undefined ||
     (rawLogJson !== undefined && rawLogJson !== "");
   const merged = mergeConfig(
-    mergeConfig(mergeConfig(defaults as unknown, options.fileConfig ?? {}), overrides as unknown),
+    mergeConfig(
+      mergeConfig(defaultConfig(cwd, appEnv) as unknown, options.fileConfig ?? {}),
+      overrides as unknown,
+    ),
     mergeConfig(envOverrides(env) as unknown, argvOverrides(options.argv ?? process.argv.slice(2)) as unknown),
   ) as ResolvedMuboConfig;
 
-// Validate required sections exist and are plain objects
-  requireSection(merged.app, "app");
-  requireSection(merged.http, "HTTP");
-  requireSection(merged.db, "database");
-  requireSection(merged.db.migrations, "migrations");
-  requireSection(merged.static, "static");
-  requireSection(merged.static.cache, "static cache");
-  requireSection(merged.ws, "WebSocket");
-  requireSection(merged.ws.heartbeat, "WebSocket heartbeat");
-  requireSection(merged.log, "log");
-
-// Validate boolean fields
-  requireBoolean("trust proxy", merged.http.trustProxy);
-  requireBoolean("database WAL", merged.db.wal);
-  requireBoolean("database foreign keys", merged.db.foreignKeys);
-  requireBoolean("safeOnly migrations", merged.db.migrations.safeOnly);
-  requireBoolean("static SPA fallback", merged.static.spaFallback);
-  requireBoolean("WebSocket enabled", merged.ws.enabled);
-  requireBoolean("JSON logging", merged.log.json);
-
-// Validate required string fields
-  requireString("app name", merged.app.name);
-  requireString("data directory", merged.dataDir);
-  requireString("database path", merged.db.path);
-  requireString("migrations table", merged.db.migrations.table);
-  requireString("static directory", merged.static.dir);
-
-// Trim resolved paths
-  merged.dataDir = merged.dataDir.trim();
-  merged.db.path = merged.db.path.trim();
-  merged.db.migrations.table = merged.db.migrations.table.trim();
-  merged.static.dir = merged.static.dir.trim();
-
-// Normalize immutable extensions: trim, remove leading dots, lowercase
-  const immutableExtensions = merged.static.cache.immutableExtensions;
-  if (
-    !Array.isArray(immutableExtensions) ||
-    immutableExtensions.some(
-      (extension) =>
-        typeof extension !== "string" ||
-        extension.trim().replace(/^\.+/, "").length === 0,
-    )
-  ) {
-    throw new MuboError("CONFIG_ERROR", "Invalid immutable extensions setting");
-  }
-  merged.static.cache.immutableExtensions = immutableExtensions.map((extension) =>
-    extension.trim().replace(/^\.+/, "").toLowerCase(),
-  );
-
-// Configure log JSON mode: default to production if not explicitly set
+  validateSections(merged);
+  validateBooleans(merged);
+  validateStrings(merged);
+  trimPaths(merged);
+  normalizeImmutableExtensions(merged);
   if (!logJsonConfigured) merged.log.json = merged.app.env === "production";
-
-// Validate enum fields
-  requireChoice("app environment", merged.app.env, APP_ENVIRONMENTS);
-  requireChoice("log level", merged.log.level, ["debug", "info", "warn", "error"]);
-  requireChoice("migrations mode", merged.db.migrations.mode, MIGRATION_MODES);
-  requireChoice("migrations lock", merged.db.migrations.lock, ["file", "sqlite"]);
-  requireChoice("static mode", merged.static.mode, STATIC_MODES);
-
-// Validate CORS configuration
-  if (merged.http.cors !== false) {
-    const cors = merged.http.cors as unknown;
-    if (typeof cors !== "object" || cors === null || Array.isArray(cors)) {
-      throw new MuboError("CONFIG_ERROR", "Invalid CORS configuration");
-    }
-    const origin = (cors as { origin?: unknown }).origin;
-    if (
-      origin !== "*" &&
-      (!Array.isArray(origin) ||
-        origin.length === 0 ||
-        origin.some((value) => typeof value !== "string" || value.trim().length === 0))
-    ) {
-      throw new MuboError(
-        "CONFIG_ERROR",
-        'Invalid CORS origin: expected "*" or a non-empty array of strings',
-      );
-    }
-    if (
-      (cors as { credentials?: unknown }).credentials !== undefined &&
-      typeof (cors as { credentials?: unknown }).credentials !== "boolean"
-    ) {
-      throw new MuboError("CONFIG_ERROR", "Invalid CORS credentials setting");
-    }
-    if (origin === "*" && (cors as { credentials?: unknown }).credentials === true) {
-      throw new MuboError(
-        "CONFIG_ERROR",
-        'Invalid CORS configuration: credentials cannot be combined with the "*" origin',
-      );
-    }
-    if (Array.isArray(origin)) {
-      merged.http.cors = {
-        ...(merged.http.cors as CorsConfig),
-        origin: origin.map((value) => (value as string).trim()),
-      };
-    }
-  }
-  merged.app.name = sanitizeAppName(merged.app.name);
-  merged.dataDir = resolve(cwd, merged.dataDir || defaultDataDir(merged.app.name, env));
-  if (!merged.db.path) merged.db.path = join(merged.dataDir, "mubo.sqlite");
-  else if (merged.db.path !== ":memory:" && !isAbsolute(merged.db.path)) {
-    merged.db.path = resolve(cwd, merged.db.path);
-  }
-  if (!merged.static.dir) merged.static.dir = join(cwd, "public");
-  else if (!isAbsolute(merged.static.dir)) merged.static.dir = resolve(cwd, merged.static.dir);
-  if (typeof merged.http.host !== "string" || merged.http.host.trim().length === 0) {
-    throw new MuboError("CONFIG_ERROR", `Invalid HTTP host: ${String(merged.http.host)}`);
-  }
-  merged.http.host = merged.http.host.trim();
-  if (!Number.isInteger(merged.http.port) || merged.http.port < 0 || merged.http.port > 65535) {
-    throw new MuboError("CONFIG_ERROR", `Invalid HTTP port: ${merged.http.port}`);
-  }
-  if (!Number.isInteger(merged.http.bodyLimit) || merged.http.bodyLimit <= 0) {
-    throw new MuboError("CONFIG_ERROR", `Invalid body limit: ${merged.http.bodyLimit}`);
-  }
-  if (!Number.isInteger(merged.http.requestTimeoutMs) || merged.http.requestTimeoutMs < 0) {
-    throw new MuboError("CONFIG_ERROR", `Invalid request timeout: ${merged.http.requestTimeoutMs}`);
-  }
-  if (merged.http.rateLimit !== false) {
-    if (!merged.http.rateLimit || typeof merged.http.rateLimit !== "object") {
-      throw new MuboError("CONFIG_ERROR", "Invalid rate limit configuration");
-    }
-    if (!Number.isInteger(merged.http.rateLimit.maxRequests) || merged.http.rateLimit.maxRequests <= 0) {
-      throw new MuboError("CONFIG_ERROR", "Invalid rate limit maxRequests");
-    }
-    if (!Number.isInteger(merged.http.rateLimit.windowMs) || merged.http.rateLimit.windowMs <= 0) {
-      throw new MuboError("CONFIG_ERROR", "Invalid rate limit windowMs");
-    }
-    if (merged.http.rateLimit.key === undefined) {
-      merged.http.rateLimit.key = defaultRateLimitKey;
-    } else if (typeof merged.http.rateLimit.key !== "function") {
-      throw new MuboError("CONFIG_ERROR", "Invalid rate limit key function");
-    }
-  }
-  if (merged.http.cors && merged.http.cors.maxAgeSeconds !== undefined) {
-    requireInteger("CORS max age", merged.http.cors.maxAgeSeconds, { min: 0 });
-  }
-  requireInteger("busy timeout", merged.db.busyTimeoutMs, { min: 0 });
-  requireInteger("slow query threshold", merged.db.slowQueryMs, { min: 0 });
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(merged.db.migrations.table)) {
-    throw new MuboError("CONFIG_ERROR", `Invalid migrations table name: ${merged.db.migrations.table}`);
-  }
-  requireInteger("static max age", merged.static.cache.defaultMaxAgeSeconds, { min: 0, max: 31536000 });
-  requireInteger("WebSocket max payload", merged.ws.maxPayloadBytes, { exclusiveMin: 0 });
-  requireInteger("WebSocket heartbeat interval", merged.ws.heartbeat.intervalMs, { min: 0 });
-  requireInteger("WebSocket heartbeat timeout", merged.ws.heartbeat.timeoutMs, { exclusiveMin: 0 });
-  if (merged.ws.heartbeat.timeoutMs <= merged.ws.heartbeat.intervalMs) {
-    throw new MuboError(
-      "CONFIG_ERROR",
-      `WebSocket heartbeat timeout (${merged.ws.heartbeat.timeoutMs}ms) must be greater than interval (${merged.ws.heartbeat.intervalMs}ms)`,
-    );
-  }
-  requireInteger("WebSocket max connections", merged.ws.maxConnections, { min: 0 });
-  requireInteger("WebSocket max connections per IP", merged.ws.maxConnectionsPerIp, { min: 0 });
+  validateChoices(merged);
+  normalizeCors(merged);
+  resolvePaths(merged, cwd, env);
+  validateHttp(merged);
+  validateDatabase(merged);
+  validateStatic(merged);
+  validateWebSocket(merged);
   return merged;
 }
 
@@ -779,16 +858,11 @@ function configFileFromArgv(argv: string[]): string | undefined {
     if (token === undefined) continue;
     if (token === "--") break;
     if (token === "--config") {
-      const value = argv[index + 1];
-      if (value === undefined || value === "" || value.startsWith("-")) {
-        throw new MuboError("CONFIG_ERROR", "Missing value for --config");
-      }
+      const { value, next } = readFlagValue(argv, index, "config", undefined);
       result = value;
-      index++;
+      index = next;
     } else if (token.startsWith("--config=")) {
-      const value = token.slice("--config=".length);
-      if (!value) throw new MuboError("CONFIG_ERROR", "Missing value for --config");
-      result = value;
+      result = readFlagValue(argv, index, "config", token.slice("--config=".length)).value;
     }
   }
   return result;

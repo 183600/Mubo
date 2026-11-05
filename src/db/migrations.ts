@@ -687,6 +687,204 @@ export function validateSchema(schema: MuboSchema): void {
   }
 }
 
+/** Plans the changes of a single column of an existing table. */
+function planColumn(
+  db: MuboDatabase,
+  tableName: string,
+  columnName: string,
+  column: ColumnDefinition,
+  existing: ExistingTable,
+  safeOnly: boolean,
+  statements: string[],
+  changes: string[],
+): void {
+  const current = findCaseInsensitive(existing.columns, columnName);
+  if (!current) {
+    if (column.primaryKey || column.autoIncrement || column.unique) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Cannot automatically add primary-key, auto-increment or UNIQUE column ${tableName}.${columnName}; use a manual migration`,
+      );
+    }
+    const defaultExpression = column.sqlDefault === undefined ? defaultSql(column) : column.sqlDefault;
+    const fallback = normalizeDefault(defaultExpression);
+    if (column.notNull && fallback === null && safeOnly) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Cannot automatically add NOT NULL column ${tableName}.${columnName} without a default value`,
+      );
+    }
+    if (
+      safeOnly &&
+      defaultExpression !== null &&
+      !isConstantAddColumnDefault(defaultExpression) &&
+      tableHasRows(db, tableName)
+    ) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Cannot automatically add column ${tableName}.${columnName} with a non-constant default to a non-empty table; use a manual migration`,
+      );
+    }
+    statements.push(`ALTER TABLE ${quoteIdentifier(tableName)} ADD COLUMN ${columnSql(columnName, column, false)}`);
+    changes.push(`add column ${tableName}.${columnName}`);
+    return;
+  }
+  if (normalizeType(current.type) !== normalizeType(String(column.type))) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Column type change for ${tableName}.${columnName} (${current.type} -> ${column.type}) requires a manual migration`,
+    );
+  }
+  if (current.primaryKey !== Boolean(column.primaryKey)) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Primary-key change for ${tableName}.${columnName} requires a manual migration`,
+    );
+  }
+  if (column.primaryKey && Boolean(column.autoIncrement) !== existing.autoIncrement) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Auto-increment change for ${tableName}.${columnName} requires a manual migration`,
+    );
+  }
+  const references = column.references;
+  const currentReferences = findCaseInsensitive(existing.foreignKeys, columnName) ?? [];
+  if (references) {
+    const expectedColumn = references.column ?? "id";
+    const expectedDelete = references.onDelete ?? "NO ACTION";
+    const expectedUpdate = references.onUpdate ?? "NO ACTION";
+    const sameReference = currentReferences.some(
+      (reference) =>
+        reference.table.toLowerCase() === references.table.toLowerCase() &&
+        reference.column.toLowerCase() === expectedColumn.toLowerCase() &&
+        reference.onDelete === expectedDelete &&
+        reference.onUpdate === expectedUpdate,
+    );
+    if (!sameReference) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Foreign-key change for ${tableName}.${columnName} requires a manual migration`,
+      );
+    }
+  } else if (currentReferences.length > 0) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Foreign-key change for ${tableName}.${columnName} requires a manual migration`,
+    );
+  }
+  const expectedDefault = normalizeDefault(
+    column.sqlDefault === undefined ? defaultSql(column) : column.sqlDefault,
+  );
+  if (expectedDefault !== normalizeDefault(current.defaultValue)) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Default value change for ${tableName}.${columnName} requires a manual migration`,
+    );
+  }
+  if (current.notNull !== Boolean(column.notNull)) {
+    const detail = safeOnly
+      ? "safeOnly is enabled"
+      : "automatic destructive migrations are not supported";
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Column nullability change for ${tableName}.${columnName} requires a manual migration (${detail})`,
+    );
+  }
+  const wantsUnique = Boolean(column.unique) && !column.primaryKey;
+  if (wantsUnique !== current.unique) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `UNIQUE constraint change for ${tableName}.${columnName} requires a manual migration`,
+    );
+  }
+}
+
+/** Plans the changes of a single index of an existing table. */
+function planIndex(
+  db: MuboDatabase,
+  tableName: string,
+  index: IndexDefinition,
+  existing: ExistingTable,
+  statements: string[],
+  changes: string[],
+): void {
+  const current = findCaseInsensitive(existing.indexes, index.name);
+  if (!current) {
+    appendIndexPlan(statements, changes, db, tableName, index);
+    return;
+  }
+  const sameColumns =
+    current.columns.length === index.columns.length &&
+    current.columns.every(
+      (column, position) => column.toLowerCase() === index.columns[position]!.toLowerCase(),
+    );
+  const sameWhere = normalizeWhere(current.where) === normalizeWhere(index.where);
+  if (
+    !sameColumns ||
+    current.descending ||
+    current.customCollation ||
+    current.unique !== Boolean(index.unique) ||
+    current.partial !== Boolean(index.where) ||
+    !sameWhere
+  ) {
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Index ${index.name} on ${tableName} already exists with a different definition; use a manual migration`,
+    );
+  }
+}
+
+/** Plans the changes of a single table of the schema. */
+function planTable(
+  db: MuboDatabase,
+  tableName: string,
+  table: TableDefinition,
+  safeOnly: boolean,
+  statements: string[],
+  changes: string[],
+): void {
+  if (!tableExists(db, tableName)) {
+    const existingIndex = indexOwner(db, tableName);
+    if (existingIndex !== undefined) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Table ${tableName} conflicts with an existing index on table ${existingIndex}; use a different name or a manual migration`,
+      );
+    }
+    if (viewExists(db, tableName)) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Table ${tableName} conflicts with an existing view; use a different name or a manual migration`,
+      );
+    }
+    statements.push(createTableSql(tableName, table));
+    changes.push(`create table ${tableName}`);
+    for (const index of table.indexes ?? []) {
+      appendIndexPlan(statements, changes, db, tableName, index);
+    }
+    return;
+  }
+
+  const existing = introspectTable(db, tableName);
+  const declaredColumns = new Set(
+    Object.keys(table.columns).map((columnName) => columnName.toLowerCase()),
+  );
+  for (const existingColumn of existing.columns.keys()) {
+    if (!declaredColumns.has(existingColumn.toLowerCase())) {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Dropping column ${tableName}.${existingColumn} requires a manual migration`,
+      );
+    }
+  }
+  for (const [columnName, column] of Object.entries(table.columns)) {
+    planColumn(db, tableName, columnName, column, existing, safeOnly, statements, changes);
+  }
+  for (const index of table.indexes ?? []) {
+    planIndex(db, tableName, index, existing, statements, changes);
+  }
+}
+
 function planForSchema(
   db: MuboDatabase,
   schema: MuboSchema,
@@ -696,168 +894,7 @@ function planForSchema(
   const changes: string[] = [];
   validateSchema(schema);
   for (const [tableName, table] of Object.entries(schema.tables)) {
-    if (!tableExists(db, tableName)) {
-      const existingIndex = indexOwner(db, tableName);
-      if (existingIndex !== undefined) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Table ${tableName} conflicts with an existing index on table ${existingIndex}; use a different name or a manual migration`,
-        );
-      }
-      if (viewExists(db, tableName)) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Table ${tableName} conflicts with an existing view; use a different name or a manual migration`,
-        );
-      }
-      statements.push(createTableSql(tableName, table));
-      changes.push(`create table ${tableName}`);
-      for (const index of table.indexes ?? []) {
-        appendIndexPlan(statements, changes, db, tableName, index);
-      }
-      continue;
-    }
-
-    const existing = introspectTable(db, tableName);
-    const declaredColumns = new Set(
-      Object.keys(table.columns).map((columnName) => columnName.toLowerCase()),
-    );
-    for (const existingColumn of existing.columns.keys()) {
-      if (!declaredColumns.has(existingColumn.toLowerCase())) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Dropping column ${tableName}.${existingColumn} requires a manual migration`,
-        );
-      }
-    }
-    for (const [columnName, column] of Object.entries(table.columns)) {
-      const current = findCaseInsensitive(existing.columns, columnName);
-      if (!current) {
-        if (column.primaryKey || column.autoIncrement || column.unique) {
-          throw new MuboError(
-            "MIGRATION_ERROR",
-            `Cannot automatically add primary-key, auto-increment or UNIQUE column ${tableName}.${columnName}; use a manual migration`,
-          );
-        }
-        const defaultExpression = column.sqlDefault === undefined ? defaultSql(column) : column.sqlDefault;
-        const fallback = normalizeDefault(defaultExpression);
-        if (column.notNull && fallback === null && safeOnly) {
-          throw new MuboError(
-            "MIGRATION_ERROR",
-            `Cannot automatically add NOT NULL column ${tableName}.${columnName} without a default value`,
-          );
-        }
-        if (
-          safeOnly &&
-          defaultExpression !== null &&
-          !isConstantAddColumnDefault(defaultExpression) &&
-          tableHasRows(db, tableName)
-        ) {
-          throw new MuboError(
-            "MIGRATION_ERROR",
-            `Cannot automatically add column ${tableName}.${columnName} with a non-constant default to a non-empty table; use a manual migration`,
-          );
-        }
-        statements.push(`ALTER TABLE ${quoteIdentifier(tableName)} ADD COLUMN ${columnSql(columnName, column, false)}`);
-        changes.push(`add column ${tableName}.${columnName}`);
-        continue;
-      }
-      if (normalizeType(current.type) !== normalizeType(String(column.type))) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Column type change for ${tableName}.${columnName} (${current.type} -> ${column.type}) requires a manual migration`,
-        );
-      }
-      if (current.primaryKey !== Boolean(column.primaryKey)) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Primary-key change for ${tableName}.${columnName} requires a manual migration`,
-        );
-      }
-      if (column.primaryKey && Boolean(column.autoIncrement) !== existing.autoIncrement) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Auto-increment change for ${tableName}.${columnName} requires a manual migration`,
-        );
-      }
-      const references = column.references;
-      const currentReferences = findCaseInsensitive(existing.foreignKeys, columnName) ?? [];
-      if (references) {
-        const expectedColumn = references.column ?? "id";
-        const expectedDelete = references.onDelete ?? "NO ACTION";
-        const expectedUpdate = references.onUpdate ?? "NO ACTION";
-        const sameReference = currentReferences.some(
-          (reference) =>
-            reference.table.toLowerCase() === references.table.toLowerCase() &&
-            reference.column.toLowerCase() === expectedColumn.toLowerCase() &&
-            reference.onDelete === expectedDelete &&
-            reference.onUpdate === expectedUpdate,
-        );
-        if (!sameReference) {
-          throw new MuboError(
-            "MIGRATION_ERROR",
-            `Foreign-key change for ${tableName}.${columnName} requires a manual migration`,
-          );
-        }
-      } else if (currentReferences.length > 0) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Foreign-key change for ${tableName}.${columnName} requires a manual migration`,
-        );
-      }
-      const expectedDefault = normalizeDefault(
-        column.sqlDefault === undefined ? defaultSql(column) : column.sqlDefault,
-      );
-      if (expectedDefault !== normalizeDefault(current.defaultValue)) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Default value change for ${tableName}.${columnName} requires a manual migration`,
-        );
-      }
-      if (current.notNull !== Boolean(column.notNull)) {
-        const detail = safeOnly
-          ? "safeOnly is enabled"
-          : "automatic destructive migrations are not supported";
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Column nullability change for ${tableName}.${columnName} requires a manual migration (${detail})`,
-        );
-      }
-      const wantsUnique = Boolean(column.unique) && !column.primaryKey;
-      if (wantsUnique !== current.unique) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `UNIQUE constraint change for ${tableName}.${columnName} requires a manual migration`,
-        );
-      }
-    }
-
-    for (const index of table.indexes ?? []) {
-      const current = findCaseInsensitive(existing.indexes, index.name);
-      if (!current) {
-        appendIndexPlan(statements, changes, db, tableName, index);
-        continue;
-      }
-      const sameColumns =
-        current.columns.length === index.columns.length &&
-        current.columns.every(
-          (column, position) => column.toLowerCase() === index.columns[position]!.toLowerCase(),
-        );
-      const sameWhere = normalizeWhere(current.where) === normalizeWhere(index.where);
-      if (
-        !sameColumns ||
-        current.descending ||
-        current.customCollation ||
-        current.unique !== Boolean(index.unique) ||
-        current.partial !== Boolean(index.where) ||
-        !sameWhere
-      ) {
-        throw new MuboError(
-          "MIGRATION_ERROR",
-          `Index ${index.name} on ${tableName} already exists with a different definition; use a manual migration`,
-        );
-      }
-    }
+    planTable(db, tableName, table, safeOnly, statements, changes);
   }
   return { statements, changes };
 }
@@ -991,29 +1028,82 @@ export function releaseFileLock(lockPath: string): void {
   }
 }
 
+/**
+ * Plans migrations by comparing the declared schema against the current database state.
+ *
+ * Returns the SQL statements and change descriptions needed to bring the
+ * database up to date.
+ */
 export function planMigrations(
   db: MuboDatabase,
   schema: MuboSchema,
   options: MigrationOptions = {},
 ): MigrationPlan {
-  /** Plans migrations by comparing the declared schema against the current database state.
-   *  Returns the SQL statements and change descriptions needed to bring the database up to date.
-   */
   const { safeOnly } = normalizeMigrationOptions(options);
   const { statements, changes } = planForSchema(db, schema, safeOnly);
   if (statements.length === 0) return { id: null, statements: [], changes: [] };
   return { id: migrationId(statements), statements, changes };
 }
 
+/** Executes the statements of a migration plan inside the migration transaction. */
+function executeStatements(db: MuboDatabase, statements: string[]): void {
+  for (const statement of statements) {
+    try {
+      db.exec(statement);
+    } catch (error) {
+      if (isMuboError(error) && error.code !== "DB_ERROR") throw error;
+      const summary = statement.replace(/\s+/g, " ").slice(0, 200);
+      throw new MuboError("MIGRATION_ERROR", `Failed to apply migration statement: ${summary}`, {
+        cause: error,
+        details: { statement },
+      });
+    }
+  }
+}
+
+/** Writes an applied migration into the migration history table. */
+function recordMigration(
+  db: MuboDatabase,
+  table: string,
+  migration: { id: string; statements: string[]; changes: string[] },
+): void {
+  const appliedAt = Date.now();
+  const meta = JSON.stringify({ statements: migration.statements, changes: migration.changes });
+  try {
+    const alreadyApplied = db
+      .query<{ id: string }>(`SELECT id FROM ${quoteIdentifier(table)} WHERE id = ?`)
+      .get(migration.id);
+    if (alreadyApplied) {
+      db.query(
+        `UPDATE ${quoteIdentifier(table)} SET applied_at = ?, checksum = ?, meta = ? WHERE id = ?`,
+      ).run(appliedAt, migration.id, meta, migration.id);
+    } else {
+      db.query(
+        `INSERT INTO ${quoteIdentifier(table)} (id, applied_at, checksum, meta) VALUES (?, ?, ?, ?)`,
+      ).run(migration.id, appliedAt, migration.id, meta);
+    }
+  } catch (error) {
+    if (isMuboError(error) && error.code !== "DB_ERROR") throw error;
+    throw new MuboError(
+      "MIGRATION_ERROR",
+      `Failed to record migration history for ${migration.id}`,
+      { cause: error, details: { migration: migration.id } },
+    );
+  }
+}
+
+/**
+ * Applies planned migrations to the database.
+ *
+ * Mode "apply" runs pending migrations, "check" only checks for pending ones,
+ * "off" does nothing. When safeOnly is enabled, destructive changes are
+ * rejected.
+ */
 export async function applyMigrations(
   db: MuboDatabase,
   schema: MuboSchema,
   options: MigrationOptions = {},
 ): Promise<MigrationResult> {
-  /** Applies planned migrations to the database. 
-   *  Mode "apply" runs pending migrations, "check" only checks for pending ones, "off" does nothing.
-   *  When safeOnly is enabled, destructive changes are rejected.
-   */
   const { mode, table, safeOnly, lock } = normalizeMigrationOptions(options);
   if (mode === "off") {
     return { status: "off", id: null, statements: [], changes: [] };
@@ -1051,41 +1141,12 @@ export async function applyMigrations(
       () => {
         const fresh = planMigrations(db, schema, { table, safeOnly });
         if (fresh.statements.length === 0 || fresh.id === null) return;
-        for (const statement of fresh.statements) {
-          try {
-            db.exec(statement);
-          } catch (error) {
-            if (isMuboError(error) && error.code !== "DB_ERROR") throw error;
-            const summary = statement.replace(/\s+/g, " ").slice(0, 200);
-            throw new MuboError("MIGRATION_ERROR", `Failed to apply migration statement: ${summary}`, {
-              cause: error,
-              details: { statement },
-            });
-          }
-        }
-        const appliedAt = Date.now();
-        const meta = JSON.stringify({ statements: fresh.statements, changes: fresh.changes });
-        try {
-          const alreadyApplied = db
-            .query<{ id: string }>(`SELECT id FROM ${quoteIdentifier(table)} WHERE id = ?`)
-            .get(fresh.id);
-          if (alreadyApplied) {
-            db.query(
-              `UPDATE ${quoteIdentifier(table)} SET applied_at = ?, checksum = ?, meta = ? WHERE id = ?`,
-            ).run(appliedAt, fresh.id, meta, fresh.id);
-          } else {
-            db.query(
-              `INSERT INTO ${quoteIdentifier(table)} (id, applied_at, checksum, meta) VALUES (?, ?, ?, ?)`,
-            ).run(fresh.id, appliedAt, fresh.id, meta);
-          }
-        } catch (error) {
-          if (isMuboError(error) && error.code !== "DB_ERROR") throw error;
-          throw new MuboError(
-            "MIGRATION_ERROR",
-            `Failed to record migration history for ${fresh.id}`,
-            { cause: error, details: { migration: fresh.id } },
-          );
-        }
+        executeStatements(db, fresh.statements);
+        recordMigration(db, table, {
+          id: fresh.id,
+          statements: fresh.statements,
+          changes: fresh.changes,
+        });
         applied = fresh;
       },
       { immediate: true },

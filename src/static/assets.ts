@@ -1,6 +1,8 @@
 import { extname, join, resolve, sep } from "node:path";
 import {
   DEFAULT_IMMUTABLE_EXTENSIONS,
+  isValidExtension,
+  normalizeExtension,
   type EmbeddedAsset,
   type EmbeddedAssets,
 } from "../core/config.ts";
@@ -186,10 +188,7 @@ export function validateStaticAssetsOptions(options: StaticAssetsOptions = {}): 
   if (cache.immutableExtensions !== undefined) {
     if (
       !Array.isArray(cache.immutableExtensions) ||
-      cache.immutableExtensions.some(
-        (extension) =>
-          typeof extension !== "string" || extension.trim().replace(/^\.+/, "").length === 0,
-      )
+      cache.immutableExtensions.some((extension) => !isValidExtension(extension))
     ) {
       throw new MuboError("CONFIG_ERROR", "Invalid immutable extensions setting");
     }
@@ -274,10 +273,6 @@ export function mimeTypeForExtension(extension: string): string | undefined {
 
 function contentTypeFor(path: string): string {
   return mimeTypeForExtension(extname(path).slice(1)) ?? "application/octet-stream";
-}
-
-function normalizeExtension(extension: string): string {
-  return extension.trim().replace(/^\.+/, "").toLowerCase();
 }
 
 function looksLikeContentHash(token: string): boolean {

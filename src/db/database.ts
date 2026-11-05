@@ -48,11 +48,19 @@ interface TransactionContext {
   parent?: TransactionContext;
 }
 
-/** Normalizes query parameters into a format suitable for SQLite statements. */
-/** Accepts either individual values or an array of values. */
+/**
+ * Normalizes query parameters into a format suitable for SQLite statements.
+ *
+ * Accepts either individual values or an array of values.
+ */
 function normalizeParams(params: unknown[]): QueryArgument[] {
   if (params.length === 1 && Array.isArray(params[0])) return params[0] as QueryArgument[];
   return params as QueryArgument[];
+}
+
+/** Shortens a statement to a single line so it fits into logs and error details. */
+function summarizeSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").slice(0, 500);
 }
 
 /**
@@ -66,7 +74,7 @@ function translateSqliteError(error: unknown, sql: string): unknown {
   const message = error instanceof Error ? error.message : String(error);
   return new MuboError("DB_ERROR", message, {
     cause: error,
-    details: { sql: sql.replace(/\s+/g, " ").slice(0, 500) },
+    details: { sql: summarizeSql(sql) },
   });
 }
 
@@ -153,13 +161,27 @@ export class MuboDatabase {
   }
 
   private assertTransactionActive(): void {
-    let context = this.transactionContext.getStore();
-    while (context) {
-      if (!context.active) {
+    this.assertContextActive(this.transactionContext.getStore());
+  }
+
+  /** Throws when the transaction chain contains a context that is no longer active. */
+  private assertContextActive(context: TransactionContext | undefined): void {
+    let current = context;
+    while (current) {
+      if (!current.active) {
         throw new MuboError("INTERNAL_ERROR", "Transaction is no longer active");
       }
-      context = context.parent;
+      current = current.parent;
     }
+  }
+
+  /** Logs a warning when a statement exceeded the slow query threshold. */
+  private warnSlowQuery(sql: string, duration: number): void {
+    if (duration < this.slowQueryMs) return;
+    this.logger?.warn("Slow SQL query", {
+      durationMs: Math.round(duration * 100) / 100,
+      sql: summarizeSql(sql),
+    });
   }
 
   private timed<T>(sql: string, operation: () => T): T {
@@ -171,13 +193,7 @@ export class MuboDatabase {
     } catch (error) {
       throw translateSqliteError(error, sql);
     } finally {
-      const duration = performance.now() - start;
-      if (duration >= this.slowQueryMs) {
-        this.logger?.warn("Slow SQL query", {
-          durationMs: Math.round(duration * 100) / 100,
-          sql: sql.replace(/\s+/g, " ").slice(0, 500),
-        });
-      }
+      this.warnSlowQuery(sql, performance.now() - start);
     }
   }
 
@@ -199,8 +215,6 @@ export class MuboDatabase {
         this.assertOpen();
         this.assertTransactionActive();
         const context = this.transactionContext.getStore();
-        const slowQueryMs = this.slowQueryMs;
-        const logger = this.logger;
         let iterator: IterableIterator<Row>;
         try {
           iterator = this.raw.query<Row, QueryArgument[]>(sql).iterate(...normalizeParams(params));
@@ -209,27 +223,16 @@ export class MuboDatabase {
         }
         const assertIteratorActive = () => {
           this.assertOpen();
-          let current = context;
-          while (current) {
-            if (!current.active) {
-              throw new MuboError("INTERNAL_ERROR", "Transaction is no longer active");
-            }
-            current = current.parent;
-          }
+          this.assertContextActive(context);
         };
+        const warnSlowQuery = (duration: number) => this.warnSlowQuery(sql, duration);
         return (function* () {
           try {
             while (true) {
               assertIteratorActive();
               const start = performance.now();
               const next = iterator.next();
-              const duration = performance.now() - start;
-              if (duration >= slowQueryMs) {
-                logger?.warn("Slow SQL query", {
-                  durationMs: Math.round(duration * 100) / 100,
-                  sql: sql.replace(/\s+/g, " ").slice(0, 500),
-                });
-              }
+              warnSlowQuery(performance.now() - start);
               if (next.done) return;
               yield next.value;
             }
@@ -281,12 +284,12 @@ export class MuboDatabase {
     }
   }
 
+  /** Runs a nested transaction, queueing it while a child transaction is active. */
   private runNestedTransaction<T>(
     parent: TransactionContext,
     fn: (db: MuboDatabase) => T | Promise<T>,
     immediate: boolean,
   ): T | Promise<T> {
-    /** If a child transaction is already active, queue the new transaction. */
     if (parent.childActive) {
       return new Promise<T>((resolve, reject) => {
         parent.childQueue.push({
@@ -352,13 +355,14 @@ export class MuboDatabase {
     next.run();
   }
 
+  /** Executes a transaction on the current connection or inside a savepoint. */
   private executeTransaction<T>(
     fn: (db: MuboDatabase) => T | Promise<T>,
     parentDepth: number,
     immediate: boolean,
     parentContext?: TransactionContext,
   ): T | Promise<T> {
-    /** Transaction context tracking depth, activity, and child transactions. */
+    // The context tracks the depth, the activity and the queued child transactions.
     const context: TransactionContext = {
       depth: parentDepth + 1,
       active: true,
@@ -446,11 +450,11 @@ export class MuboDatabase {
     }
   }
 
+  /** Queues a transaction for sequential execution, avoiding concurrent commits. */
   private enqueueTransaction<T>(
     fn: (db: MuboDatabase) => T | Promise<T>,
     immediate: boolean,
   ): Promise<T> {
-    /** Queues a transaction for sequential execution, avoiding concurrent commits. */
     return new Promise<T>((resolve, reject) => {
       this.transactionQueue.push({
         run: () => {
@@ -493,8 +497,8 @@ export class MuboDatabase {
     next.run();
   }
 
+  /** Ends the current transaction and drains the queued transactions. */
   private finishTransaction(): void {
-    /** Commits the current transaction and drains any queued transactions. */
     this.transactionActive = false;
     this.drainTransactions();
   }

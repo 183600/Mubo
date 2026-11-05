@@ -2,15 +2,12 @@ import { MuboError } from "../core/errors.ts";
 import type { MuboRequestContext } from "./context.ts";
 import {
   compileRouteSegments,
-  decodeLookupPath,
-  literalMatches,
+  findBestMatch,
+  matchSegments,
   normalizePath,
   pathSegments,
-  matchSegments,
   routeKey,
-  segmentSpecificity,
-  isMoreSpecific,
-  findBestMatch,
+  type RouteSegment,
 } from "../utils/path.ts";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
@@ -24,15 +21,13 @@ export type RouteMiddleware = (
   next: () => Promise<Response>,
 ) => Response | Promise<Response>;
 
-export interface Segment {
-  kind: "literal" | "param" | "wildcard";
-  value: string;
-}
+/** A single compiled segment of a route path. */
+export type Segment = RouteSegment;
 
 export interface Route {
   method: HttpMethod;
   path: string;
-  segments: Segment[];
+  segments: RouteSegment[];
   handler: RouteHandler;
 }
 
@@ -68,15 +63,17 @@ export class Router {
 
   match(method: string, pathname: string): RouteMatch {
     const upper = method.toUpperCase();
-    const normalizedPathname = normalizePath(pathname);
-    const parts = pathSegments(normalizedPathname);
+    const parts = pathSegments(normalizePath(pathname));
 
-    const best = findBestMatch(this.routes as readonly { method: string; path: string; segments: { kind: "literal" | "param" | "wildcard"; value: string }[]; handler: unknown }[], upper, parts) ?? (upper === "HEAD" ? findBestMatch(this.routes as readonly { method: string; path: string; segments: { kind: "literal" | "param" | "wildcard"; value: string }[]; handler: unknown }[], "GET", parts) : undefined);
-    if (best) return { type: "match", route: best.route as Route, params: best.params };
+    const best =
+      this.findMatch(upper, parts) ??
+      // HEAD requests are served by the GET handler when no HEAD route exists.
+      (upper === "HEAD" ? this.findMatch("GET", parts) : undefined);
+    if (best) return { type: "match", route: best.route, params: best.params };
 
     const allowed = new Set<HttpMethod>();
     for (const route of this.routes) {
-      if (matchSegments(route as { segments: { kind: "literal" | "param" | "wildcard"; value: string }[] }, parts) !== null) allowed.add(route.method);
+      if (matchSegments(route, parts) !== null) allowed.add(route.method);
     }
     if (allowed.size > 0) {
       if (allowed.has("GET")) allowed.add("HEAD");
@@ -84,5 +81,13 @@ export class Router {
       return { type: "method-not-allowed", allowed: [...allowed].sort() };
     }
     return { type: "not-found" };
+  }
+
+  /** Finds the most specific route registered for the given method. */
+  private findMatch(
+    method: string,
+    parts: string[],
+  ): { route: Route; params: Record<string, string> } | undefined {
+    return findBestMatch(this.routes, method, parts);
   }
 }

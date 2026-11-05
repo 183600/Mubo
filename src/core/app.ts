@@ -715,6 +715,37 @@ export class MuboApp {
     });
   }
 
+  /** Resolves a request that reached the end of the middleware chain. */
+  private async handleMatchedRoute(
+    request: Request,
+    url: URL,
+    requestId: string,
+    ctx: MuboRequestContext,
+    match: RouteMatch,
+  ): Promise<Response> {
+    if (match.type === "match") {
+      return normalizeResponse(await match.route.handler(ctx));
+    }
+    if (match.type === "method-not-allowed") {
+      // An OPTIONS request without a registered handler advertises the
+      // supported methods instead of rejecting itself with 405; the Allow
+      // header already lists OPTIONS, so answering it keeps the header
+      // accurate (RFC 9110 9.3.7).
+      if (ctx.method === "OPTIONS") {
+        return this.optionsDiscoveryResponse(match.allowed);
+      }
+      return this.methodNotAllowedResponse(ctx, match.allowed);
+    }
+    const health = await this.healthResponse(ctx, url.pathname);
+    if (health) return health;
+    if (request.method === "GET" || request.method === "HEAD") {
+      const asset = await this.staticAssets.handle(request, url);
+      if (asset) return asset;
+    }
+    const error = new MuboError("NOT_FOUND", `Route not found: ${url.pathname}`);
+    return errorResponse(requestId, error, this.config.app.env === "production");
+  }
+
   private async dispatchHttp(
     request: Request,
     url: URL,
@@ -737,33 +768,60 @@ export class MuboApp {
     });
     if (match.type === "match") Object.assign(ctx.params, match.params);
 
-    const response = await this.runMiddlewares(ctx, async () => {
-      if (match.type === "match") {
-        return normalizeResponse(await match.route.handler(ctx));
-      }
-      if (match.type === "method-not-allowed") {
-        // An OPTIONS request without a registered handler advertises the
-        // supported methods instead of rejecting itself with 405; the Allow
-        // header already lists OPTIONS, so answering it keeps the header
-        // accurate (RFC 9110 9.3.7).
-        if (ctx.method === "OPTIONS") {
-          return this.optionsDiscoveryResponse(match.allowed);
-        }
-        return this.methodNotAllowedResponse(ctx, match.allowed);
-      }
-      const health = await this.healthResponse(ctx, url.pathname);
-      if (health) return health;
-      if (request.method === "GET" || request.method === "HEAD") {
-        const asset = await this.staticAssets.handle(request, url);
-        if (asset) return asset;
-      }
-      const error = new MuboError("NOT_FOUND", `Route not found: ${url.pathname}`);
-      return errorResponse(requestId, error, this.config.app.env === "production");
-    });
+    const response = await this.runMiddlewares(ctx, () =>
+      this.handleMatchedRoute(request, url, requestId, ctx, match),
+    );
 
     if (!response.headers.has("x-request-id")) response.headers.set("x-request-id", requestId);
     this.logHttp(request, url, requestId, response.status, started, ip);
     return response;
+  }
+
+  /** Builds the CORS preflight headers of an OPTIONS request. */
+  private buildPreflightHeaders(request: Request): Headers | undefined {
+    const cors = this.config.http.cors;
+    if (!cors) return undefined;
+    const allowOrigin = originAllowed(request, this.config);
+    if (!allowOrigin) return undefined;
+    const headers = new Headers({
+      "access-control-allow-origin": allowOrigin,
+      "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
+      "access-control-allow-headers":
+        request.headers.get("access-control-request-headers") ?? "content-type, authorization, x-request-id",
+      "access-control-max-age": String(cors.maxAgeSeconds ?? 600),
+      vary: "Origin",
+    });
+    if (cors.credentials) headers.set("access-control-allow-credentials", "true");
+    return headers;
+  }
+
+  /** Logs a failed request and converts it into an error response. */
+  private handleRequestError(
+    error: unknown,
+    request: Request,
+    url: URL,
+    requestId: string,
+  ): Response {
+    const expected =
+      isMuboError(error) &&
+      Number.isInteger(error.status) &&
+      error.status >= 400 &&
+      error.status < 500;
+    const fields = {
+      requestId,
+      method: request.method,
+      path: url.pathname,
+      error: errorMessage(error),
+      stack:
+        !expected && this.config.app.env !== "production" && error instanceof Error
+          ? error.stack
+          : undefined,
+    };
+    if (expected) this.logger.warn("Request rejected", fields);
+    else this.logger.error("Unhandled request error", fields);
+    const response = errorResponse(requestId, error, this.config.app.env === "production");
+    response.headers.set("x-request-id", requestId);
+    return applyCors(request, response, this.config);
   }
 
   async handleRequest(request: Request, server: Server<WsSocketData>): Promise<Response | undefined> {
@@ -784,28 +842,15 @@ export class MuboApp {
     }
 
     try {
-      let preflightHeaders: Headers | undefined;
-      if (this.config.http.cors && request.method.toUpperCase() === "OPTIONS") {
-        const allowOrigin = originAllowed(request, this.config);
-        if (allowOrigin) {
-          preflightHeaders = new Headers({
-            "access-control-allow-origin": allowOrigin,
-            "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
-            "access-control-allow-headers":
-              request.headers.get("access-control-request-headers") ?? "content-type, authorization, x-request-id",
-            "access-control-max-age": String(this.config.http.cors.maxAgeSeconds ?? 600),
-            vary: "Origin",
-          });
-          if (this.config.http.cors.credentials) preflightHeaders.set("access-control-allow-credentials", "true");
-          // A registered OPTIONS route takes precedence over the automatic
-          // preflight response, but the preflight headers are still applied to
-          // it so browsers accept the request.
-          if (this.router.match("OPTIONS", url.pathname).type !== "match") {
-            preflightHeaders.set("x-request-id", requestId);
-            this.logHttp(request, url, requestId, 204, started, ip);
-            return new Response(null, { status: 204, headers: preflightHeaders });
-          }
-        }
+      const preflightHeaders =
+        request.method.toUpperCase() === "OPTIONS" ? this.buildPreflightHeaders(request) : undefined;
+      // A registered OPTIONS route takes precedence over the automatic
+      // preflight response, but the preflight headers are still applied to
+      // it so browsers accept the request.
+      if (preflightHeaders && this.router.match("OPTIONS", url.pathname).type !== "match") {
+        preflightHeaders.set("x-request-id", requestId);
+        this.logHttp(request, url, requestId, 204, started, ip);
+        return new Response(null, { status: 204, headers: preflightHeaders });
       }
 
       const wsResponse = await this.handleWebSocketUpgrade(request, url, server, requestId);
@@ -825,27 +870,9 @@ export class MuboApp {
       if (preflightHeaders) mergePreflightHeaders(corsResponse, preflightHeaders);
       return corsResponse;
     } catch (error) {
-      const expected =
-        isMuboError(error) &&
-        Number.isInteger(error.status) &&
-        error.status >= 400 &&
-        error.status < 500;
-      const fields = {
-        requestId,
-        method: request.method,
-        path: url.pathname,
-        error: errorMessage(error),
-        stack:
-          !expected && this.config.app.env !== "production" && error instanceof Error
-            ? error.stack
-            : undefined,
-      };
-      if (expected) this.logger.warn("Request rejected", fields);
-      else this.logger.error("Unhandled request error", fields);
-      const response = errorResponse(requestId, error, this.config.app.env === "production");
-      response.headers.set("x-request-id", requestId);
+      const response = this.handleRequestError(error, request, url, requestId);
       this.logHttp(request, url, requestId, response.status, started, ip);
-      return applyCors(request, response, this.config);
+      return response;
     }
   }
 
