@@ -1082,6 +1082,23 @@ describe("WebSocket rooms and broadcasting", () => {
       smallSocket.addEventListener("message", () => resolve());
     });
     smallSocket.close();
+
+    // Large payload should be rejected by the server
+    const largeSocket = new WebSocket(`ws://127.0.0.1:${app.port}/ws`);
+    await new Promise<void>((resolve) => largeSocket.addEventListener("open", () => resolve()));
+    let errorReceived = false;
+    largeSocket.onerror = () => {
+      errorReceived = true;
+    };
+    largeSocket.onclose = (event) => {
+      if (event.code === 1003) {
+        // 1003 = unsupported data, which is what Bun sends for oversized payloads
+        expect(errorReceived).toBe(true);
+      }
+    };
+    largeSocket.send("x".repeat(200)); // 200 bytes exceeds maxPayloadBytes: 100
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    largeSocket.close();
   });
 
   test("onError returning a Promise is awaited and its rejections are logged", async () => {
