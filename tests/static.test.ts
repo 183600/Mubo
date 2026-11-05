@@ -1098,6 +1098,37 @@ describe("static assets", () => {
     expect(rangeIfNoneMatch?.status).toBe(304);
   });
 
+  test("serves partial content for embedded assets with Range header", async () => {
+    const content = "0123456789abcdef";
+    const assets = new StaticAssets(
+      { mode: "embedded", assets: { "/range.txt": content } },
+      process.cwd(),
+    );
+
+    const full = await assets.handle(
+      new Request("http://localhost/range.txt"),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(full?.status).toBe(200);
+    expect(await full?.text()).toBe(content);
+
+    const range = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=0-4" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(range?.status).toBe(206);
+    expect(await range?.text()).toBe("01234");
+    expect(range?.headers.get("content-range")).toBe(`bytes 0-4/${content.length}`);
+    expect(range?.headers.get("content-length")).toBe("5");
+
+    const unsatisfiable = await assets.handle(
+      new Request("http://localhost/range.txt", { headers: { range: "bytes=100-" } }),
+      new URL("http://localhost/range.txt"),
+    );
+    expect(unsatisfiable?.status).toBe(416);
+    expect(unsatisfiable?.headers.get("content-range")).toBe(`bytes */${content.length}`);
+  });
+
   test("rejects invalid Range headers", async () => {
     const dir = tempDir();
     const content = "0123456789";
