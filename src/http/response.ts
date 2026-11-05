@@ -2,6 +2,7 @@ import { isMuboError, type MuboError } from "../core/errors.ts";
 
 export type JsonInit = ResponseInit;
 
+/** Ensures response headers are a Headers object, casting if needed. */
 function makeHeaders(headers: ResponseInit["headers"]): Headers {
   return new Headers(headers as any);
 }
@@ -25,10 +26,13 @@ export function htmlResponse(html: string, init: ResponseInit = {}): Response {
 }
 
 export interface ErrorPayload {
+  /** Error code (e.g. "VALIDATION_ERROR", "NOT_FOUND") */
   error: { code: string; message: string; details?: unknown };
+  /** Unique request identifier */
   requestId: string;
 }
 
+/** Builds an error payload from a MuboError or generic error. */
 export function errorPayload(requestId: string, error: unknown, production = false): ErrorPayload {
   const known = isMuboError(error);
   const status = known ? error.status : 500;
@@ -45,6 +49,7 @@ export function errorPayload(requestId: string, error: unknown, production = fal
   return payload;
 }
 
+/** Converts an error into an HTTP response, handling MuboError and fallback. */
 export function errorResponse(requestId: string, error: unknown, production = false): Response {
   const known = isMuboError(error);
   const status =

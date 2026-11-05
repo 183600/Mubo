@@ -32,19 +32,19 @@ A small internal application typically requires significant infrastructure:
 
 Mubo reduces this "infrastructure cost" to near zero: applications ship as a single executable, databases are created automatically on first start, and upgrades are just binary replacements.
 
-It's not trying to replace Kubernetes, large microservice architectures or full-featured ORMs. Mubo prioritizes **reliability, controllability, portability**, while allowing frontend frameworks like React, Vue, Svelte or plain static pages.
+It is not trying to replace Kubernetes, large microservice architectures or full-featured ORMs. Mubo prioritizes **reliability, controllability, and portability**, while allowing frontend frameworks like React, Vue, Svelte or plain static pages.
 
 ## Core Capabilities
 
 | Capability | Description |
 | --- | --- |
-| HTTP Service | Routing, middleware, JSON/form parsing, unified error responses |
-| SQLite | WAL mode, busy timeout, prepared statement caching, transactions |
-| Auto Migrations | Append-only migrations from declarative schema |
-| WebSocket | Connection handling, rooms, broadcasting, heartbeats |
-| Static Assets | Disk or embedded, ETag, caching, directory index, SPA fallback |
-| Single-File Builds | Frontend, backend entry and migrations in one executable |
-| Observability | Structured logging, request IDs, slow query hints, `/healthz` and `/readyz` |
+| HTTP Service | Routing, middleware, JSON/form parsing, unified error responses, health checks |
+| SQLite | WAL mode, busy timeout, prepared statement caching, transactions, slow query logging |
+| Auto Migrations | Append-only migrations from declarative schema, safe-only by default |
+| WebSocket | Connection handling, rooms, broadcasting, heartbeats, authorization |
+| Static Assets | Disk or embedded mode, ETag/304 caching, directory index, SPA fallback, range requests |
+| Single-File Builds | Frontend, backend entry and migrations compile into one executable binary |
+| Observability | Structured logging (human-readable/JSON), request IDs, slow query hints, health checks |
 
 ## Quick Start
 

@@ -36,13 +36,15 @@ type WsRoute = { path: string; handlers: WsHandlers };
 /** Signals that trigger graceful shutdown. */
 type ShutdownSignal = "SIGINT" | "SIGTERM";
 
-/** Rate limit settings with the "disabled" variant removed. */
+/** Rate limit settings, excluding the "disabled" sentinel. */
 type RateLimitConfig = Exclude<ResolvedMuboConfig["http"]["rateLimit"], false>;
 
-const SHUTDOWN_SIGNALS: ShutdownSignal[] = ["SIGINT", "SIGTERM"];
+const SHUTDOWN_SIGNALS: readonly ShutdownSignal[] = ["SIGINT", "SIGTERM"];
 
-/** Track running apps for process-level shutdown handling. */
+/** Set of running Mubo applications, for process-level shutdown. */
 const runningApps = new Set<MuboApp>();
+
+/** Global signal handlers installed for all running apps. */
 let shutdownHandlers: Array<[ShutdownSignal, () => void]> | undefined;
 
 export interface CreateMuboAppOptions extends ResolveConfigOptions {}
@@ -109,7 +111,7 @@ function normalizeResponse(value: unknown): Response {
   return jsonResponse(value);
 }
 
-/** Checks if the request origin is allowed by CORS config; returns the allowed origin or undefined. */
+/** Checks whether a request origin is allowed by the CORS configuration. */
 function originAllowed(request: Request, config: ResolvedMuboConfig): string | undefined {
   const cors = config.http.cors;
   if (!cors) return undefined;
@@ -119,7 +121,7 @@ function originAllowed(request: Request, config: ResolvedMuboConfig): string | u
   return cors.origin.includes(origin) ? origin : undefined;
 }
 
-/** Adds a value to the Vary header, avoiding duplicates. */
+/** Appends a value to the Vary header, preventing duplicate entries. */
 function addVaryHeader(headers: Headers, value: string): void {
   const current = headers.get("vary");
   if (!current) {
@@ -147,7 +149,7 @@ function applyCors(request: Request, response: Response, config: ResolvedMuboCon
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-/** Copies the automatic preflight headers onto a response without overwriting explicit ones. */
+/** Merges preflight response headers onto the final response, skipping reserved keys. */
 function mergePreflightHeaders(response: Response, preflight: Headers): void {
   preflight.forEach((value, key) => {
     if (key === "vary" || key === "x-request-id") return;
@@ -478,10 +480,12 @@ export class MuboApp {
     if (this.wsRoutes.size === 0) return null;
     let route = this.wsRoutes.get(routeIdentity(url.pathname));
     if (!route) {
+      // Try matching the decoded path (handles percent-encoded segments).
       try {
         const decoded = decodeLookupPath(url.pathname);
         if (decoded !== undefined) route = this.wsRoutes.get(routeIdentity(decoded));
       } catch {
+        // Malformed percent-encoding - no route match possible.
         route = undefined;
       }
     }

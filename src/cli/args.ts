@@ -18,6 +18,8 @@ const BOOLEAN_FLAGS = new Set([
   "version",
 ]);
 
+/** Parses command-line arguments into a structured CliArgs object. */
+/** Commands: init, dev, build, migrate, doctor. Positional args are command-specific. */
 export function parseCliArgs(argv: string[]): CliArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | boolean>();
@@ -58,6 +60,9 @@ export function parseCliArgs(argv: string[]): CliArgs {
  * Commands resolve their configuration from the tokens they were invoked with,
  * so the parsed flags have to be turned back into argv form.
  */
+/** Rebuilds an argv list from parsed CliArgs, reversing the parsing process.
+ *  Commands resolve their configuration from the tokens they were invoked with,
+ *  so the parsed flags have to be turned back into argv form. */
 export function cliArgsToArgv(args: CliArgs): string[] {
   const argv: string[] = [];
   if (args.command !== undefined) argv.push(args.command);
@@ -68,6 +73,7 @@ export function cliArgsToArgv(args: CliArgs): string[] {
   return argv;
 }
 
+/** Extracts a string flag value from parsed arguments, throwing if missing. */
 export function stringFlag(args: CliArgs, name: string): string | undefined {
   const value = args.flags.get(name);
   if (value === undefined) return undefined;
@@ -75,6 +81,7 @@ export function stringFlag(args: CliArgs, name: string): string | undefined {
   throw new MuboError("CONFIG_ERROR", `Missing value for --${name}`);
 }
 
+/** Extracts a boolean flag value from parsed arguments. Returns false if not set. */
 export function boolFlag(args: CliArgs, name: string): boolean {
   const value = args.flags.get(name);
   if (value === undefined) return false;

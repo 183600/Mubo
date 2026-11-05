@@ -616,7 +616,7 @@ export function resolveConfig(
     mergeConfig(envOverrides(env) as unknown, argvOverrides(options.argv ?? process.argv.slice(2)) as unknown),
   ) as ResolvedMuboConfig;
 
-  // Validate required sections exist and are plain objects
+// Validate required sections exist and are plain objects
   requireSection(merged.app, "app");
   requireSection(merged.http, "HTTP");
   requireSection(merged.db, "database");
@@ -627,7 +627,7 @@ export function resolveConfig(
   requireSection(merged.ws.heartbeat, "WebSocket heartbeat");
   requireSection(merged.log, "log");
 
-  // Validate boolean fields
+// Validate boolean fields
   requireBoolean("trust proxy", merged.http.trustProxy);
   requireBoolean("database WAL", merged.db.wal);
   requireBoolean("database foreign keys", merged.db.foreignKeys);
@@ -636,19 +636,20 @@ export function resolveConfig(
   requireBoolean("WebSocket enabled", merged.ws.enabled);
   requireBoolean("JSON logging", merged.log.json);
 
-  // Validate required string fields
+// Validate required string fields
   requireString("app name", merged.app.name);
   requireString("data directory", merged.dataDir);
   requireString("database path", merged.db.path);
   requireString("migrations table", merged.db.migrations.table);
   requireString("static directory", merged.static.dir);
 
+// Trim resolved paths
   merged.dataDir = merged.dataDir.trim();
   merged.db.path = merged.db.path.trim();
   merged.db.migrations.table = merged.db.migrations.table.trim();
   merged.static.dir = merged.static.dir.trim();
 
-  // Normalize immutable extensions: trim, remove leading dots, lowercase
+// Normalize immutable extensions: trim, remove leading dots, lowercase
   const immutableExtensions = merged.static.cache.immutableExtensions;
   if (
     !Array.isArray(immutableExtensions) ||
@@ -664,13 +665,17 @@ export function resolveConfig(
     extension.trim().replace(/^\.+/, "").toLowerCase(),
   );
 
+// Configure log JSON mode: default to production if not explicitly set
   if (!logJsonConfigured) merged.log.json = merged.app.env === "production";
-  // Validate enum fields
+
+// Validate enum fields
   requireChoice("app environment", merged.app.env, APP_ENVIRONMENTS);
   requireChoice("log level", merged.log.level, ["debug", "info", "warn", "error"]);
   requireChoice("migrations mode", merged.db.migrations.mode, MIGRATION_MODES);
   requireChoice("migrations lock", merged.db.migrations.lock, ["file", "sqlite"]);
   requireChoice("static mode", merged.static.mode, STATIC_MODES);
+
+// Validate CORS configuration
   if (merged.http.cors !== false) {
     const cors = merged.http.cors as unknown;
     if (typeof cors !== "object" || cors === null || Array.isArray(cors)) {

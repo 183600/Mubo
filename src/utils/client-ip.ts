@@ -1,3 +1,5 @@
+/** WeakMap storing client IPs keyed by Request, allowing middleware to reuse
+ * the resolved IP without re-resolving the socket address. */
 const clientIps = new WeakMap<Request, string>();
 
 /**

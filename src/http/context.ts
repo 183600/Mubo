@@ -48,6 +48,7 @@ function payloadTooLarge(limit: number): MuboError {
   });
 }
 
+/** Creates a request context with body parsing, parameter extraction and response helpers. */
 export function createRequestContext<App = MuboApp>(
   deps: ContextDependencies<App>,
 ): MuboRequestContext<App> {

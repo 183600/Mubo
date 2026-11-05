@@ -1,13 +1,13 @@
 import { MuboError } from "../core/errors.ts";
 import type { MuboRequestContext } from "./context.ts";
 import {
-  routeKey,
   compileRouteSegments,
-  decode,
+  decodeLookupPath,
   literalMatches,
   normalizePath,
   pathSegments,
   matchSegments,
+  routeKey,
   segmentSpecificity,
   isMoreSpecific,
   findBestMatch,

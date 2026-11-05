@@ -48,6 +48,8 @@ interface TransactionContext {
   parent?: TransactionContext;
 }
 
+/** Normalizes query parameters into a format suitable for SQLite statements. */
+/** Accepts either individual values or an array of values. */
 function normalizeParams(params: unknown[]): QueryArgument[] {
   if (params.length === 1 && Array.isArray(params[0])) return params[0] as QueryArgument[];
   return params as QueryArgument[];
@@ -284,6 +286,7 @@ export class MuboDatabase {
     fn: (db: MuboDatabase) => T | Promise<T>,
     immediate: boolean,
   ): T | Promise<T> {
+    /** If a child transaction is already active, queue the new transaction. */
     if (parent.childActive) {
       return new Promise<T>((resolve, reject) => {
         parent.childQueue.push({
@@ -355,6 +358,7 @@ export class MuboDatabase {
     immediate: boolean,
     parentContext?: TransactionContext,
   ): T | Promise<T> {
+    /** Transaction context tracking depth, activity, and child transactions. */
     const context: TransactionContext = {
       depth: parentDepth + 1,
       active: true,
@@ -446,6 +450,7 @@ export class MuboDatabase {
     fn: (db: MuboDatabase) => T | Promise<T>,
     immediate: boolean,
   ): Promise<T> {
+    /** Queues a transaction for sequential execution, avoiding concurrent commits. */
     return new Promise<T>((resolve, reject) => {
       this.transactionQueue.push({
         run: () => {
@@ -489,6 +494,7 @@ export class MuboDatabase {
   }
 
   private finishTransaction(): void {
+    /** Commits the current transaction and drains any queued transactions. */
     this.transactionActive = false;
     this.drainTransactions();
   }

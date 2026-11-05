@@ -1,11 +1,14 @@
 import { MuboError } from "../core/errors.ts";
 
+/** Collapses multiple slashes and trims leading/trailing slashes from a path. */
+/** Returns "/" for empty or whitespace-only paths. */
 export function normalizePath(path: string): string {
   const collapsed = path.replace(/\/+/g, "/");
   const trimmed = collapsed.replace(/^\/+|\/+$/g, "");
   return trimmed ? `/${trimmed}` : "/";
 }
 
+/** Validates and normalizes a route path, rejecting queries, fragments, and control characters. */
 export function normalizeRoutePath(path: string): string {
   if (typeof path !== "string" || path.trim().length === 0) {
     throw new MuboError("CONFIG_ERROR", `Route path must be a non-empty string: ${String(path)}`);
@@ -19,6 +22,7 @@ export function normalizeRoutePath(path: string): string {
   return normalizePath(path);
 }
 
+/** Decodes a URL path component, throwing on malformed percent-encoding. */
 export function decodeRoutePath(path: string): string {
   try {
     return decodeURIComponent(path);
@@ -27,12 +31,14 @@ export function decodeRoutePath(path: string): string {
   }
 }
 
+/** Decodes and normalizes a lookup path, returning undefined if segments contain slashes. */
 export function decodeLookupPath(path: string): string | undefined {
   const segments = path.split("/").map((segment) => decodeRoutePath(segment));
   if (segments.some((segment) => segment.includes("/"))) return undefined;
   return normalizePath(segments.join("/"));
 }
 
+/** Creates a stable identity string for a route path by normalizing and encoding segments. */
 export function routeIdentity(path: string): string {
   const normalized = normalizePath(path);
   const segments = normalized === "/" ? [] : normalized.slice(1).split("/");
@@ -47,6 +53,7 @@ export function routeIdentity(path: string): string {
   );
 }
 
+/** Compiles a route path into an array of segments, validating parameter names and wildcard placement. */
 export function compileRouteSegments(path: string): { kind: "literal" | "param" | "wildcard"; value: string }[] {
   if (typeof path !== "string" || path.trim().length === 0) {
     throw new MuboError("CONFIG_ERROR", `Route path must be a non-empty string: ${String(path)}`);
@@ -109,6 +116,7 @@ function decodeLiteral(value: string): string {
 }
 
 export function decode(value: string): string {
+  /** Decodes a URL path component, throwing on malformed percent-encoding. */
   try {
     return decodeURIComponent(value);
   } catch {
@@ -117,10 +125,12 @@ export function decode(value: string): string {
 }
 
 export function literalMatches(part: string, expected: string): boolean {
+  /** Compares two route path segments, supporting both decoded and literal matching. */
   const decoded = decode(part);
   return decoded === expected || decodeLiteral(expected) === decoded;
 }
 
+/** Splits a pathname into segments, removing leading/trailing slashes. */
 export function pathSegments(pathname: string): string[] {
   const trimmed = pathname.replace(/^\/+|\/+$/g, "");
   return trimmed === "" ? [] : trimmed.split("/");
@@ -130,6 +140,7 @@ export function matchSegments(
   route: { segments: { kind: "literal" | "param" | "wildcard"; value: string }[] },
   parts: string[],
 ): Record<string, string> | null {
+  /** Matches route segments against URL path parts, collecting parameter values. */
   const params = Object.create(null) as Record<string, string>;
   for (let index = 0; index < route.segments.length; index++) {
     const segment = route.segments[index]!;
@@ -148,6 +159,7 @@ export function matchSegments(
   return parts.length === route.segments.length ? params : null;
 }
 
+/** Returns a numeric specificity weight for a route segment: literal=3, param=2, wildcard=1. */
 export function segmentSpecificity(segment: { kind: "literal" | "param" | "wildcard" } | undefined): number {
   if (!segment) return 4;
   if (segment.kind === "literal") return 3;
@@ -155,6 +167,7 @@ export function segmentSpecificity(segment: { kind: "literal" | "param" | "wildc
   return 1;
 }
 
+/** Compares two routes' segment specificity, returning true if the first is more specific. */
 export function isMoreSpecific(
   route: { segments: { kind: "literal" | "param" | "wildcard" }[] },
   than: { segments: { kind: "literal" | "param" | "wildcard" }[] },
@@ -168,6 +181,7 @@ export function isMoreSpecific(
   return false;
 }
 
+/** Finds the best matching route from a list, prioritizing more specific paths. */
 export function findBestMatch(
   routes: readonly { method: string; path: string; segments: { kind: "literal" | "param" | "wildcard"; value: string }[]; handler: unknown }[],
   method: string,

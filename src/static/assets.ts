@@ -79,6 +79,7 @@ function sliceBody(body: Uint8Array | Bun.BunFile, start: number, end: number): 
  */
 export const EMBEDDED_ASSETS_KEY = "__MUBO_EMBEDDED_ASSETS__";
 
+/** MIME type mappings for common static asset extensions. */
 const MIME_TYPES: Record<string, string> = {
   html: "text/html; charset=utf-8",
   htm: "text/html; charset=utf-8",
@@ -108,12 +109,19 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 export interface StaticAssetsOptions {
+  /** Mode for serving static assets: "embedded" (bundled in binary), "disk" (from directory), or "off". */
   mode?: "embedded" | "disk" | "off";
+  /** Directory containing static assets (relative to cwd, defaults to "public"). */
   dir?: string;
+  /** When true, returns index.html for unmatched routes (SPA fallback). */
   spaFallback?: boolean;
+  /** Mapping of embedded assets installed via registerEmbeddedAssets. */
   assets?: EmbeddedAssets;
+  /** Cache configuration for served assets. */
   cache?: {
+    /** Extensions that should receive a 1-year immutable cache header. Assets with content-hashed filenames match these. */
     immutableExtensions?: string[];
+    /** Default max-age in seconds for assets without content hashes. */
     defaultMaxAgeSeconds?: number;
   };
 }
@@ -328,6 +336,7 @@ export class StaticAssets {
   private immutableExtensions: Set<string>;
   private defaultMaxAgeSeconds: number;
 
+  /** Constructs a StaticAssets instance with the given configuration. */
   constructor(options: StaticAssetsOptions = {}, cwd = process.cwd()) {
     validateStaticAssetsOptions(options);
     this.mode = options.mode ?? "disk";

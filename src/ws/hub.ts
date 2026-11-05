@@ -6,43 +6,63 @@ import type { MuboApp } from "../core/app.ts";
 export type WsPayload = string | ArrayBuffer | ArrayBufferView | Blob | unknown;
 
 export interface WsSocketData {
+  /** The WebSocket route path associated with this connection. */
   routePath: string;
+  /** Unique request identifier for the connection. */
   requestId: string;
+  /** The full URL of the WebSocket connection. */
   url: string;
+  /** The resolved client IP address. */
   ip: string;
+  /** Authorization result from the connection's authorize hook. */
   user: unknown;
+  /** Additional connection-level state. */
   state: Record<string, unknown>;
 }
 
 export interface MuboWsContext<App = MuboApp> {
+  /** Unique connection identifier. */
   readonly id: string;
   readonly ws: ServerWebSocket<WsSocketData>;
   readonly ip: string;
   readonly url: string;
   readonly requestId: string;
+  /** Authorization result from the connection's authorize hook. */
   readonly user: unknown;
   readonly state: Record<string, unknown>;
+  /** Read-only live view of the current room subscriptions. */
   readonly rooms: ReadonlySet<string>;
   readonly log: Logger;
   /** The application instance that owns the connection. */
   readonly app: App;
   send(data: WsPayload): void;
+  /** Emit an event to the connection. */
   emit(event: string, data?: unknown, id?: string): void;
+  /** Publish data to a specific room. */
   publish(room: string, data: WsPayload): number;
+  /** Broadcast data to all connections (optionally excluding some). */
   broadcast(data: WsPayload, options?: { except?: string }): number;
+  /** Subscribe to a room. */
   subscribe(room: string): void;
+  /** Unsubscribe from a room. */
   unsubscribe(room: string): void;
+  /** Close the WebSocket connection. */
   close(code?: number, reason?: string): void;
 }
 
 export interface WsHandlers {
+  /** Optional authorization hook. Returns user context, null/false to reject. */
   authorize?: (
     request: Request,
     info: { path: string },
   ) => unknown | null | false | Promise<unknown | null | false>;
+  /** Called when a connection is established. */
   onConnect?: (ctx: MuboWsContext) => unknown | Promise<unknown>;
+  /** Called when a message is received. */
   onMessage?: (ctx: MuboWsContext, message: string | Buffer) => unknown | Promise<unknown>;
+  /** Called when a connection is closed. */
   onClose?: (ctx: MuboWsContext, code: number, reason: string) => unknown | Promise<unknown>;
+  /** Called when a message handling error occurs. */
   onError?: (ctx: MuboWsContext, error: unknown) => unknown | Promise<unknown>;
 }
 
@@ -67,6 +87,7 @@ function serializeBigint(_key: string, value: unknown): unknown {
 }
 
 export function serializePayload(data: unknown): string | ArrayBuffer | ArrayBufferView | Blob {
+  /** Serializes a payload for WebSocket transmission. */
   if (isRawPayload(data)) return data;
   if (typeof data === "bigint") return data.toString();
   let json: string | undefined;
@@ -108,6 +129,7 @@ function readonlySetError(): never {
   );
 }
 
+/** Creates a read-only view of a Set, preventing direct mutation. */
 export function createReadonlySetView<T>(source: Set<T>): ReadonlySet<T> {
   const bound = new Map<PropertyKey, (...args: unknown[]) => unknown>();
   return new Proxy(source, {

@@ -66,9 +66,9 @@
 
 ## 2. Design Principles
 
-1. **Bun-first**: Use only Bun's built-in SQLite, `Bun.serve`, WebSocket, file APIs and test framework.
-2. **SQL-focused**: No "magic ORM". Provide lightweight wrappers, type helpers and safe parameter binding.
-3. **Default-safe**: Default bind to localhost only, default to append-only migrations, default to sensible caching.
+1. **Bun-first**: Use only Bun's built-in SQLite, `Bun.serve`, WebSocket, file APIs and test framework. No external runtime dependencies.
+2. **SQL-focused**: No "magic ORM". Provide lightweight wrappers, type helpers and safe parameter binding. Users write SQL when needed.
+3. **Default-safe**: Default bind to localhost only, default to append-only migrations, default to sensible caching and rate limits.
 4. **Observability built-in**: Structured logging, request IDs, slow query hints, basic health checks.
 5. **Extensible but simple**: Core remains small and stable; complex capabilities via explicit configuration or middleware.
 
@@ -103,7 +103,8 @@ mubo/
       hub.ts          # WebSocket connection, room and broadcast
     utils/
       path.ts         # Path normalization and route compilation utilities
-    index.ts          # Public exports
+      client-ip.ts    # Client IP resolution with trustProxy support
+  index.ts          # Public exports
   examples/
     minimal/
   tests/

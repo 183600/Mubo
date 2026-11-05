@@ -5,22 +5,34 @@ import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, statSync } 
 import { dirname, join, resolve } from "node:path";
 
 export interface MigrationOptions {
+  /** One of "apply", "check", or "off". Controls whether migrations run automatically. */
   mode?: "apply" | "check" | "off";
+  /** When true, only append-only migrations are allowed (no column drops, type changes, etc.). */
   safeOnly?: boolean;
+  /** Name of the migration history table. */
   table?: string;
+  /** Lock strategy for concurrent migration safety. "file" uses a lock file, "sqlite" uses a SQLite lock. */
   lock?: "file" | "sqlite";
 }
 
 export interface MigrationPlan {
+  /** Identifier (checksum) of the migration plan. */
   id: string | null;
+  /** SQL statements that need to be executed. */
   statements: string[];
+  /** Human-readable descriptions of the changes. */
   changes: string[];
 }
 
+/** Result of a migration operation. */
 export interface MigrationResult {
+  /** Status: "applied", "pending", "none", or "off". */
   status: "applied" | "pending" | "none" | "off";
+  /** Identifier of the migration that was applied, or null. */
   id: string | null;
+  /** SQL statements that were executed. */
   statements: string[];
+  /** Human-readable descriptions of the changes. */
   changes: string[];
 }
 
@@ -984,6 +996,9 @@ export function planMigrations(
   schema: MuboSchema,
   options: MigrationOptions = {},
 ): MigrationPlan {
+  /** Plans migrations by comparing the declared schema against the current database state.
+   *  Returns the SQL statements and change descriptions needed to bring the database up to date.
+   */
   const { safeOnly } = normalizeMigrationOptions(options);
   const { statements, changes } = planForSchema(db, schema, safeOnly);
   if (statements.length === 0) return { id: null, statements: [], changes: [] };
@@ -995,6 +1010,10 @@ export async function applyMigrations(
   schema: MuboSchema,
   options: MigrationOptions = {},
 ): Promise<MigrationResult> {
+  /** Applies planned migrations to the database. 
+   *  Mode "apply" runs pending migrations, "check" only checks for pending ones, "off" does nothing.
+   *  When safeOnly is enabled, destructive changes are rejected.
+   */
   const { mode, table, safeOnly, lock } = normalizeMigrationOptions(options);
   if (mode === "off") {
     return { status: "off", id: null, statements: [], changes: [] };
