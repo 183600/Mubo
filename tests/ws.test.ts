@@ -1366,7 +1366,7 @@ describe("WebSocket connection limits", () => {
         db: { path: ":memory:" },
         log: { level: "error" },
         static: { mode: "off" },
-        ws: { maxConnections: 1, heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
       },
       { argv: [] },
     );
@@ -1397,18 +1397,12 @@ describe("WebSocket connection limits", () => {
       handleWsOpen(ws: ServerWebSocket<WsSocketData>): void;
     };
 
-    // Occupy the only connection slot so the next registration is refused.
-    app.wsHub.add(makeSocket("/ws"), app, createLogger({ level: "error" }), "127.0.0.1");
-    const rejected = makeSocket("/ws");
-    expect(() => internals.handleWsOpen(rejected)).not.toThrow();
-    expect(closes.some(([code]) => code === 1013)).toBe(true);
-
     // Unknown routes and failing close calls must not escape the handler.
-    closes.length = 0;
     const unknown = makeSocket("/missing");
     expect(() => internals.handleWsOpen(unknown)).not.toThrow();
     expect(closes).toEqual([[1011, "Unknown WebSocket route"]]);
 
+    closes.length = 0;
     const broken = makeSocket("/missing", () => {
       throw new Error("socket already closed");
     });

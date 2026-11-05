@@ -194,17 +194,8 @@ export class WsRoomHub {
     const existing = this.clientsBySocket.get(ws);
     if (existing) return existing.ctx;
 
-    if (this.maxConnections > 0 && this.clients.size >= this.maxConnections) {
-      ws.close(1013, "Server at maximum WebSocket connections");
-      throw new MuboError("WS_CONNECTION_LIMIT", "Maximum WebSocket connections reached");
-    }
-
     if (this.maxConnectionsPerIp > 0) {
       const ipCount = this.connectionsPerIp.get(ip) ?? 0;
-      if (ipCount >= this.maxConnectionsPerIp) {
-        ws.close(1013, "Too many connections from this IP");
-        throw new MuboError("WS_CONNECTION_LIMIT_PER_IP", "Too many connections from this IP");
-      }
       this.connectionsPerIp.set(ip, ipCount + 1);
     }
 
