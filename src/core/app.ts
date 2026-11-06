@@ -734,6 +734,11 @@ export class MuboApp {
     if (match.type === "match") {
       return normalizeResponse(await match.route.handler(ctx));
     }
+    // The built-in health endpoints are consulted before the method
+    // restriction: a user route registered for another method on the same
+    // path must not take the health check of that path away.
+    const health = await this.healthResponse(ctx, url.pathname);
+    if (health) return health;
     if (match.type === "method-not-allowed") {
       // An OPTIONS request without a registered handler advertises the
       // supported methods instead of rejecting itself with 405; the Allow
@@ -744,8 +749,6 @@ export class MuboApp {
       }
       return this.methodNotAllowedResponse(ctx, match.allowed);
     }
-    const health = await this.healthResponse(ctx, url.pathname);
-    if (health) return health;
     if (request.method === "GET" || request.method === "HEAD") {
       const asset = await this.staticAssets.handle(request, url);
       if (asset) return asset;

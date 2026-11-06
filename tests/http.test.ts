@@ -402,6 +402,32 @@ describe("HTTP routing and middleware", () => {
     expect(wrongMethod.headers.get("allow")).toContain("OPTIONS");
   });
 
+  test("keeps the built-in health check when a user route uses another method", async () => {
+    const app = await startApp({
+      app: { name: "health-user-route-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.post("/healthz", (ctx) => ctx.json({ custom: true }));
+    app.post("/readyz", (ctx) => ctx.json({ custom: true }));
+
+    const health = await fetch(`${base(app)}/healthz`);
+    expect(health.status).toBe(200);
+    const healthJson = (await health.json()) as { ok: boolean; app: string };
+    expect(healthJson.ok).toBe(true);
+    expect(healthJson.app).toBe("health-user-route-test");
+
+    const ready = await fetch(`${base(app)}/readyz`);
+    expect(ready.status).toBe(200);
+    expect(((await ready.json()) as any).ok).toBe(true);
+
+    // The user route still handles its own method.
+    const custom = await fetch(`${base(app)}/healthz`, { method: "POST" });
+    expect(custom.status).toBe(200);
+    expect(await custom.json()).toEqual({ custom: true });
+  });
+
   test("readiness stays consistent under concurrent checks and leaves no probe files", async () => {
     const dir = tempDir();
     const app = await startApp({
