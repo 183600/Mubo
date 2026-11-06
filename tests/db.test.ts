@@ -2143,6 +2143,7 @@ describe("database and automatic migrations", () => {
     const failure = caught as MuboError;
     expect(failure.code).toBe("MIGRATION_ERROR");
     expect(failure.message).toContain("Failed to apply migration statement");
+    expect(failure.message).toContain("syntax error");
     expect(failure.details).toMatchObject({ statement: expect.stringContaining('CREATE TABLE "broken"') });
     expect(
       db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'broken'").get(),
