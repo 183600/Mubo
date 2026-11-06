@@ -1394,6 +1394,36 @@ describe("middleware boundaries", () => {
     expect(fallback.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
   });
 
+  test("the CORS preflight response advertises the allowed methods", async () => {
+    const app = await startApp({
+      app: { name: "options-cors-allow-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { cors: { origin: ["http://allowed.test"] } },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/resource", (ctx) => ctx.json({ ok: true }));
+
+    // The health endpoints answer OPTIONS with GET and HEAD.
+    for (const path of ["/healthz", "/readyz"]) {
+      const health = await fetch(`${base(app)}${path}`, {
+        method: "OPTIONS",
+        headers: { origin: "http://allowed.test" },
+      });
+      expect(health.status).toBe(204);
+      expect(health.headers.get("allow")).toBe("GET, HEAD");
+      expect(health.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+    }
+
+    // Other paths advertise the methods of the matching routes.
+    const resource = await fetch(`${base(app)}/resource`, {
+      method: "OPTIONS",
+      headers: { origin: "http://allowed.test" },
+    });
+    expect(resource.status).toBe(204);
+    expect(resource.headers.get("allow")).toBe("GET, HEAD, OPTIONS");
+  });
+
   test("app.patch() registers a PATCH route and handles partial updates", async () => {
     const app = await startApp({
       app: { name: "patch-test", env: "test" },
