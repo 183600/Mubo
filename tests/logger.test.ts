@@ -2,16 +2,23 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createLogger } from "../src/index.ts";
 
 const originalLog = console.log;
+const originalWarn = console.warn;
+const originalError = console.error;
 
 afterEach(() => {
   console.log = originalLog;
+  console.warn = originalWarn;
+  console.error = originalError;
 });
 
 function captureLogs(run: () => void): string[] {
   const lines: string[] = [];
-  console.log = (...args: unknown[]) => {
+  const capture = (...args: unknown[]) => {
     lines.push(args.map((arg) => String(arg)).join(" "));
   };
+  console.log = capture;
+  console.warn = capture;
+  console.error = capture;
   run();
   return lines;
 }
@@ -161,5 +168,51 @@ describe("logger", () => {
     expect(entry.message).toBe("envelope");
     expect(entry.field_message).toBe("second");
     expect(entry.field_message_).toBe("first");
+  });
+
+  describe("log level threshold", () => {
+    test("exposes the configured level and suppresses debug below info", () => {
+      const logger = createLogger({ level: "info", json: true });
+      expect(logger.level).toBe("info");
+      const lines = captureLogs(() => {
+        logger.debug("hidden", { detail: "debug" });
+        logger.info("shown", { detail: "info" });
+      });
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0]!).message).toBe("shown");
+    });
+
+    test("suppresses info and debug below warn", () => {
+      const logger = createLogger({ level: "warn", json: true });
+      const lines = captureLogs(() => {
+        logger.debug("hidden");
+        logger.info("hidden");
+        logger.warn("shown");
+      });
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0]!).message).toBe("shown");
+    });
+
+    test("suppresses everything below error", () => {
+      const logger = createLogger({ level: "error", json: true });
+      const lines = captureLogs(() => {
+        logger.debug("hidden");
+        logger.info("hidden");
+        logger.warn("hidden");
+        logger.error("shown");
+      });
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0]!).message).toBe("shown");
+    });
+
+    test("defaults to info level when no level is provided", () => {
+      const logger = createLogger({ json: true });
+      expect(logger.level).toBe("info");
+      const lines = captureLogs(() => {
+        logger.debug("hidden");
+        logger.info("shown");
+      });
+      expect(lines).toHaveLength(1);
+    });
   });
 });
