@@ -360,7 +360,7 @@ app.db.exec("ALTER TABLE users DROP COLUMN nickname"); // manual migration
 await app.start();
 ```
 
-With `db.migrations.lock: "file"`, migrations are serialized through a lock file next to the database. Locks left behind by crashed processes are detected and reclaimed automatically; locks held by a live process are respected.
+With `db.migrations.lock: "file"`, migrations are serialized through a lock file next to the database. Locks left behind by crashed processes are detected and reclaimed automatically; a lock is also reclaimed once it is older than the stale threshold (10 minutes), even when its owner is still running.
 
 Database tuning options: `db.wal` (WAL mode, default `true`), `db.foreignKeys` (default `true`), `db.busyTimeoutMs` (default `5000`) and `db.slowQueryMs` (default `200`, logs a warning for slower queries).
 
