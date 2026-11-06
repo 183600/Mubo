@@ -37,7 +37,7 @@ Mubo depends only on Bun's built-in features: HTTP/WebSocket (`Bun.serve`), SQLi
 
 ## Why Hyper-Monolith?
 
-A small internal application typically requires significant infrastructure:
+A small internal application usually needs a lot of infrastructure:
 
 - Docker or Docker Compose
 - PostgreSQL or MySQL
@@ -45,9 +45,9 @@ A small internal application typically requires significant infrastructure:
 - Object storage (S3)
 - Reverse proxy, certificates, configuration management
 
-Mubo reduces this "infrastructure cost" to near zero: applications ship as a single executable, databases are created automatically on first start, and upgrades are just binary replacements.
+Mubo reduces this infrastructure cost to near zero. Applications ship as a single executable, the database is created automatically on first start, and upgrades are binary replacements.
 
-It is not trying to replace Kubernetes, large microservice architectures or full-featured ORMs. Mubo prioritizes **reliability, controllability, and portability**, while allowing frontend frameworks like React, Vue, Svelte or plain static pages.
+Mubo does not replace Kubernetes, large microservice architectures, or full-featured ORMs. It prioritizes **reliability, controllability, and portability**, while working with frontend frameworks like React, Vue, Svelte, or plain static pages.
 
 ## Core Capabilities
 
@@ -65,7 +65,7 @@ It is not trying to replace Kubernetes, large microservice architectures or full
 
 ### Requirements
 
-- Bun >= 1.2
+- Bun 1.2 or later
 - macOS, Linux, or Windows
 
 ```bash
@@ -89,7 +89,7 @@ When developing inside this repository:
 bun run src/cli/index.ts init /tmp/my-app
 ```
 
-`mubo init` generates `package.json`, `tsconfig.json`, `mubo.config.ts`, an example schema, routes, WebSocket handlers and a minimal test. Use `--force` to overwrite non-empty directories and `--install` to install dependencies right after creation.
+`mubo init` generates `package.json`, `tsconfig.json`, `mubo.config.ts`, an example schema, routes, WebSocket handlers, and a minimal test. Use `--force` to overwrite non-empty directories and `--install` to install dependencies immediately after creation.
 
 The generated project depends on the published `mubo` package when the CLI runs from an installed package (`bunx`/`npx`). A CLI that runs from a source checkout links the project to the local framework instead.
 

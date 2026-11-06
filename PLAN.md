@@ -66,11 +66,11 @@
 
 ## 2. Design Principles
 
-1. **Bun-first**: Use only Bun's built-in SQLite, `Bun.serve`, WebSocket, file APIs and test framework. No external runtime dependencies.
-2. **SQL-focused**: No "magic ORM". Provide lightweight wrappers, type helpers and safe parameter binding. Users write SQL when needed.
-3. **Default-safe**: Default bind to localhost only, default to append-only migrations, default to sensible caching and rate limits.
-4. **Observability built-in**: Structured logging, request IDs, slow query hints, basic health checks.
-5. **Extensible but simple**: Core remains small and stable; complex capabilities via explicit configuration or middleware.
+1. **Bun-first**: Use only Bun's built-in SQLite, `Bun.serve`, WebSocket, file APIs, and test framework. No external runtime dependencies.
+2. **SQL-focused**: No "magic ORM". Provide lightweight wrappers, type helpers, and safe parameter binding. Users write SQL when needed.
+3. **Default-safe**: Binds to localhost by default, uses append-only migrations by default, and applies sensible caching and rate limits by default.
+4. **Observability built-in**: Structured logging, request IDs, slow query hints, and basic health checks.
+5. **Extensible but simple**: Core remains small and stable; complex capabilities are added via explicit configuration or middleware.
 
 ## 3. Repository Structure
 
@@ -126,15 +126,15 @@ mubo/
 
 ### 4.2 Startup Flow
 
-1. Merge configuration (defaults, config file, environment variables, CLI arguments)
-2. Initialize logger (level, format, base fields)
-3. Parse data directory and database path
-4. Open SQLite, set WAL, `busy_timeout`, foreign keys
-5. Plan and execute migrations from schema
-6. Register HTTP routes, middleware and WebSocket handlers
-7. Initialize static asset service
-8. Start `Bun.serve`
-9. Register signal handlers and call `app.stop()` for graceful shutdown (close connections, stop server, close database)
+1. Merge configuration from defaults, config file, environment variables, and CLI arguments.
+2. Initialize logger with level, format, and base fields.
+3. Resolve data directory and database path.
+4. Open SQLite and configure WAL, `busy_timeout`, and foreign keys.
+5. Plan and execute migrations from the schema.
+6. Register HTTP routes, middleware, and WebSocket handlers.
+7. Initialize the static asset service.
+8. Start `Bun.serve`.
+9. Register signal handlers for graceful shutdown, which closes connections, stops the server, and closes the database.
 
 ### 4.3 App Lifecycle
 
@@ -157,7 +157,7 @@ From highest to lowest priority:
 3. `mubo.config.ts` / `mubo.config.js` / `mubo.config.mjs`
 4. Default values
 
-When explicit config is passed, file loading is disabled by default; use `loadFile: true` to force it. CLI-generated entry files import config directly, so compiled applications don't depend on runtime config files.
+When explicit config is passed, file loading is disabled by default; use `loadFile: true` to force it. CLI-generated entry files import config directly, so compiled applications do not depend on runtime config files.
 
 ### 5.2 Configuration Structure
 
@@ -543,12 +543,12 @@ Database not bundled; writes to `<dataDir>/mubo.sqlite` at runtime.
 
 ### 10.2 Build Flow
 
-1. Find entry file
-2. Load project config and parse static assets directory
-3. Collect static assets, generate base64 manifest
-4. Generate `.mubo/embedded-assets.ts` and `.mubo/build-entry.ts`
-5. Execute `bun build --compile` to output executable
-6. Append `.exe` based on target or platform
+1. Find the entry file.
+2. Load project config and parse the static assets directory.
+3. Collect static assets and generate a base64 manifest.
+4. Generate `.mubo/embedded-assets.ts` and `.mubo/build-entry.ts`.
+5. Execute `bun build --compile` to output the executable.
+6. Append `.exe` for the target platform if required.
 
 ### 10.3 Upgradeability
 
@@ -620,13 +620,13 @@ Newlines in log fields are escaped to prevent log injection. JSON serialization 
 
 ## 13. Security
 
-- Binds `127.0.0.1` by default; recommend reverse proxy for external access
-- Request body limits and WebSocket max payload enforced by default
-- Production error responses don't leak stack traces
-- SQL parameters must be bound; no string concatenation helpers
-- Migrations default to `safeOnly`, preventing destructive changes
-- Static asset paths strictly validated, preventing directory traversal
-- WebSocket should use `authorize` hook and limit message size
+- Binds to `127.0.0.1` by default; use a reverse proxy for external access.
+- Request body limits and WebSocket max payload are enforced by default.
+- Production error responses do not leak stack traces.
+- SQL parameters must be bound; no string concatenation helpers are provided.
+- Migrations default to `safeOnly`, preventing destructive changes.
+- Static asset paths are strictly validated to prevent directory traversal.
+- WebSocket connections should use the `authorize` hook and limit message size.
 
 ## 14. Test Strategy
 

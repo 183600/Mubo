@@ -60,11 +60,11 @@ function decodeLiteral(value: string): string {
 }
 
 /** Collapses multiple slashes and trims leading/trailing slashes from a path. */
-/** Returns "/" for empty or whitespace-only paths. */
+ /** Returns "/" for empty or whitespace-only paths. */
 export function normalizePath(path: string): string {
   const collapsed = path.replace(/\/+/g, "/");
   const trimmed = collapsed.replace(/^\/+|\/+$/g, "");
-  return trimmed ? `/${trimmed}` : "/";
+  return trimmed.length ? `/${trimmed}` : "/";
 }
 
 /** Validates and normalizes a route path, rejecting queries, fragments, and control characters. */
