@@ -14,7 +14,7 @@ export const ENTRY_CANDIDATES = [
 ];
 
 /** Minimum Bun runtime supported by the framework (mirrors package.json engines). */
-export const MINIMUM_BUN_VERSION = "1.2.0";
+export const MINIMUM_BUN_VERSION = "1.4.0";
 
 /** Absolute path of the framework package root. */
 export const FRAMEWORK_ROOT = resolve(import.meta.dir, "..", "..");

@@ -256,12 +256,11 @@ describe("CLI", () => {
   });
 
   test("checks the minimum supported Bun version", () => {
-    expect(satisfiesMinimumBunVersion("1.2.0")).toBe(true);
-    expect(satisfiesMinimumBunVersion("1.2.1")).toBe(true);
-    expect(satisfiesMinimumBunVersion("1.3.0")).toBe(true);
+    expect(satisfiesMinimumBunVersion("1.4.0")).toBe(true);
+    expect(satisfiesMinimumBunVersion("1.4.1")).toBe(true);
     expect(satisfiesMinimumBunVersion("2.0.0")).toBe(true);
-    expect(satisfiesMinimumBunVersion("1.1.9")).toBe(false);
-    expect(satisfiesMinimumBunVersion("1.0.0")).toBe(false);
+    expect(satisfiesMinimumBunVersion("1.2.0")).toBe(false);
+    expect(satisfiesMinimumBunVersion("1.3.9")).toBe(false);
     expect(satisfiesMinimumBunVersion("1.2.0", "1.2.1")).toBe(false);
     expect(satisfiesMinimumBunVersion("1.2.1", "1.2.1")).toBe(true);
     expect(satisfiesMinimumBunVersion("1.3.0", "1.2.1")).toBe(true);
@@ -293,7 +292,7 @@ describe("CLI", () => {
   });
 
   test("exposes a minimum Bun version matching the package engines", () => {
-    expect(MINIMUM_BUN_VERSION).toBe("1.2.0");
+    expect(MINIMUM_BUN_VERSION).toBe("1.4.0");
   });
 
   test("init creates a complete project and refuses to overwrite non-empty dirs", async () => {
