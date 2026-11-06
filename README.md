@@ -65,7 +65,7 @@ Mubo does not replace Kubernetes, large microservice architectures, or full-feat
 
 ### Requirements
 
-- Bun 1.2 or later
+- Bun 1.4 or later
 - macOS, Linux, or Windows
 
 ```bash
