@@ -208,6 +208,24 @@ describe("schema validation edge cases", () => {
     releaseFileLock(lockPath);
     expect(existsSync(lockPath)).toBe(false);
   });
+
+  test("reclaims a file lock whose timestamp is older than the stale threshold", async () => {
+    const dir = tempDir();
+    const dbPath = join(dir, "app.sqlite");
+    const lockPath = join(dir, "._mubo_migrations.lock");
+    // A lock left by another pid but older than the stale threshold is
+    // reclaimed so a new migration can proceed.
+    const staleAt = Date.now() - 20 * 60 * 1000; // 20 minutes ago
+    writeFileSync(lockPath, `${999999}\n${staleAt}`);
+    const acquired = await acquireFileLock(dbPath, "_mubo_migrations", {
+      attempts: 3,
+      delayMs: 0,
+    });
+    expect(existsSync(acquired)).toBe(true);
+    // The reclaimed lock now belongs to this process and is released cleanly.
+    releaseFileLock(acquired);
+    expect(existsSync(lockPath)).toBe(false);
+  });
 });
 
 tempDirs.forEach((dir) => rmSync(dir, { recursive: true, force: true }));
