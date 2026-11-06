@@ -674,21 +674,29 @@ export class MuboApp {
     invoke: () => unknown | Promise<unknown>,
   ): void {
     const report = (error: unknown) => {
-      ctx.log.error("WebSocket handler failed", {
-        id: ctx.id,
-        error: errorMessage(error),
-      });
-      if (!handlers.onError) return;
+      if (!handlers.onError) {
+        ctx.log.error("WebSocket handler failed", {
+          id: ctx.id,
+          error: errorMessage(error),
+        });
+        return;
+      }
       try {
         const handled = handlers.onError(ctx, error);
         if (handled instanceof Promise) {
           handled.catch((nested) =>
             ctx.log.error("WebSocket onError failed", { error: String(nested) }),
           );
+          return;
         }
+        if (handled) return;
       } catch (nested) {
         ctx.log.error("WebSocket onError failed", { error: String(nested) });
       }
+      ctx.log.error("WebSocket handler failed", {
+        id: ctx.id,
+        error: errorMessage(error),
+      });
     };
     try {
       const result = invoke();

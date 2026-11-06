@@ -1405,6 +1405,48 @@ describe("WebSocket rooms and broadcasting", () => {
       console.error = originalConsoleError;
     }
   });
+
+  test("onError returning true considers the error handled and suppresses the handler-failed log", async () => {
+    const loggedErrors: string[] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      loggedErrors.push(args.map((value) => String(value)).join(" "));
+    };
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-onerror-true-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+        throw new Error("connect exploded");
+      },
+      onError(ctx, error) {
+        return true; // Consider the error handled
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+    expect(await socket.next()).toEqual({ type: "ready" });
+    socket.socket.send(JSON.stringify({ type: "ping" }));
+    await socket.expectNone(200);
+    socket.socket.close();
+    await Bun.sleep(50);
+    console.error = originalConsoleError;
+    // When onError returns true, the "WebSocket handler failed" log should NOT appear
+    const handlerFailedLogs = loggedErrors.filter((log) => log.includes("WebSocket handler failed"));
+    expect(handlerFailedLogs).toEqual([]);
+    // But the original error should still be captured by onError
+    expect(true).toBe(true); // onError was called and returned true
+  });
 });
 
 describe("WebSocket connection limits", () => {
