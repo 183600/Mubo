@@ -346,7 +346,11 @@ describe("HTTP routing and middleware", () => {
 
     const health = await fetch(`${base(app)}/healthz`);
     expect(health.status).toBe(200);
-    expect(((await health.json()) as any).ok).toBe(true);
+    const healthJson = await health.json() as { ok: boolean; app: string; uptimeMs: number };
+    expect(healthJson.ok).toBe(true);
+    expect(healthJson.app).toBe("health-test");
+    expect(typeof healthJson.uptimeMs).toBe("number");
+    expect(healthJson.uptimeMs).toBeGreaterThanOrEqual(0);
 
     const ready = await fetch(`${base(app)}/readyz`);
     expect(ready.status).toBe(200);
