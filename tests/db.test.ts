@@ -2946,3 +2946,29 @@ describe("application database wiring", () => {
     await app.stop();
   });
 });
+
+describe("README declarative schema example", () => {
+  test("the documented schema applies and stays idempotent", async () => {
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    const section = readme.slice(readme.indexOf("### Declarative Schema"));
+    expect(section.length).toBeGreaterThan(0);
+    const block = section.match(/```ts\n([\s\S]*?)```/)?.[1];
+    expect(block).toBeDefined();
+
+    let schema: ReturnType<typeof defineSchema>;
+    try {
+      schema = new Function("defineSchema", `${block}\nreturn schema;`)(defineSchema) as ReturnType<
+        typeof defineSchema
+      >;
+    } catch (error) {
+      throw new Error(`README schema example is not valid JavaScript: ${(error as Error).message}`);
+    }
+
+    const db = new MuboDatabase({ path: ":memory:" });
+    const first = await db.migrate(schema);
+    expect(first.status).toBe("applied");
+    const second = await db.migrate(schema);
+    expect(second.status).toBe("none");
+    db.close();
+  });
+});

@@ -322,12 +322,19 @@ SQLite failures are reported as `MuboError` with the code `DB_ERROR`; the failin
 ```ts
 const schema = defineSchema({
   tables: {
+    orgs: {
+      columns: {
+        id: { type: "integer", primaryKey: true, autoIncrement: true },
+        title: { type: "text", notNull: true },
+      },
+    },
     users: {
       columns: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
         email: { type: "text", notNull: true, unique: true },
         name: { type: "text", default: "anon" },
         org_id: { type: "integer", references: { table: "orgs", column: "id", onDelete: "CASCADE" } },
+        active: { type: "integer", default: 1 },
         created_at: { type: "text", sqlDefault: "CURRENT_TIMESTAMP" },
       },
       indexes: [
@@ -338,6 +345,8 @@ const schema = defineSchema({
   },
 });
 ```
+
+The example is self-contained: the referenced `orgs` table exists and the partial index only uses columns of `users`, so the schema can be applied as-is.
 
 Column options are `type` (`text`, `integer`, `real`, `blob`, `numeric`, `boolean`), `primaryKey`, `autoIncrement`, `notNull`, `unique`, `default`, `sqlDefault` and `references` (`table`, `column`, `onDelete`, `onUpdate`). Index options are `name`, `columns`, `unique` and `where`.
 
