@@ -993,6 +993,47 @@ describe("WebSocket rooms and broadcasting", () => {
     }
   });
 
+  test("routes async onMessage rejections through onError", async () => {
+    const errors: string[] = [];
+    const app = await createMuboApp(
+      {
+        app: { name: "ws-async-error-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { heartbeat: { intervalMs: 0, timeoutMs: 30_000 } },
+      },
+      { argv: [] },
+    );
+    app.ws("/ws", {
+      onConnect(ctx) {
+        ctx.send({ type: "ready" });
+      },
+      onMessage(ctx) {
+        return Promise.reject(new Error("async message boom"));
+      },
+      onError(ctx, error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        ctx.send({ type: "error", message: errors.at(-1) });
+        return true;
+      },
+    });
+    await app.start();
+    apps.push(app);
+
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const socket = await openSocket(`ws://127.0.0.1:${app.port}/ws`);
+      expect(await socket.next()).toEqual({ type: "ready" });
+      socket.socket.send("hi");
+      expect(await socket.next()).toEqual({ type: "error", message: "async message boom" });
+      expect(errors).toEqual(["async message boom"]);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
   test("handles WebSocket with binary data", async () => {
     const received: ArrayBuffer[] = [];
     const app = await createMuboApp(
