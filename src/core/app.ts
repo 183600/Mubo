@@ -423,11 +423,28 @@ export class MuboApp {
     return response;
   }
 
+  /** Returns the health endpoint name of a path, if the path is a health endpoint. */
+  private healthPath(pathname: string): string | undefined {
+    const normalized = normalizePath(pathname).replace(/^\/+|\/+$/g, "");
+    return normalized === "healthz" || normalized === "readyz" ? normalized : undefined;
+  }
+
+  /**
+   * Computes the Allow header of an automatic OPTIONS response.
+   *
+   * The automatic preflight response answers the same discovery request as the
+   * regular OPTIONS handling, so both advertise the same methods.
+   */
+  private optionsAllowHeader(pathname: string, match: RouteMatch): string | undefined {
+    if (this.healthPath(pathname)) return "GET, HEAD";
+    if (match.type === "method-not-allowed") return match.allowed.join(", ");
+    return undefined;
+  }
+
   /** Handles /healthz and /readyz endpoints, returning health check responses. */
   private async healthResponse(ctx: MuboRequestContext, pathname: string): Promise<Response | null> {
-    const normalized = normalizePath(pathname);
-    const path = normalized.replace(/^\/+|\/+$/g, "");
-    if (path !== "healthz" && path !== "readyz") return null;
+    const path = this.healthPath(pathname);
+    if (!path) return null;
     // The health endpoints are served for GET and HEAD only; other methods
     // answer 405 with an Allow header instead of a misleading 404. OPTIONS
     // advertises the supported methods like every other resource.
@@ -734,6 +751,11 @@ export class MuboApp {
     if (match.type === "match") {
       return normalizeResponse(await match.route.handler(ctx));
     }
+    // The built-in health endpoints are consulted before the method
+    // restriction: a user route registered for another method on the same
+    // path must not take the health check of that path away.
+    const health = await this.healthResponse(ctx, url.pathname);
+    if (health) return health;
     if (match.type === "method-not-allowed") {
       // An OPTIONS request without a registered handler advertises the
       // supported methods instead of rejecting itself with 405; the Allow
@@ -744,8 +766,6 @@ export class MuboApp {
       }
       return this.methodNotAllowedResponse(ctx, match.allowed);
     }
-    const health = await this.healthResponse(ctx, url.pathname);
-    if (health) return health;
     if (request.method === "GET" || request.method === "HEAD") {
       const asset = await this.staticAssets.handle(request, url);
       if (asset) return asset;
@@ -852,13 +872,18 @@ export class MuboApp {
     try {
       const preflightHeaders =
         request.method.toUpperCase() === "OPTIONS" ? this.buildPreflightHeaders(request) : undefined;
-      // A registered OPTIONS route takes precedence over the automatic
-      // preflight response, but the preflight headers are still applied to
-      // it so browsers accept the request.
-      if (preflightHeaders && this.router.match("OPTIONS", url.pathname).type !== "match") {
-        preflightHeaders.set("x-request-id", requestId);
-        this.logHttp(request, url, requestId, 204, started, ip);
-        return new Response(null, { status: 204, headers: preflightHeaders });
+      if (preflightHeaders) {
+        const optionsMatch = this.router.match("OPTIONS", url.pathname);
+        // A registered OPTIONS route takes precedence over the automatic
+        // preflight response, but the preflight headers are still applied to
+        // it so browsers accept the request.
+        if (optionsMatch.type !== "match") {
+          preflightHeaders.set("x-request-id", requestId);
+          const allow = this.optionsAllowHeader(url.pathname, optionsMatch);
+          if (allow) preflightHeaders.set("allow", allow);
+          this.logHttp(request, url, requestId, 204, started, ip);
+          return new Response(null, { status: 204, headers: preflightHeaders });
+        }
       }
 
       const wsResponse = await this.handleWebSocketUpgrade(request, url, server, requestId);

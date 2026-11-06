@@ -101,6 +101,20 @@ describe("WebSocket room hub", () => {
     expect(first.sent).toHaveLength(1);
   });
 
+  test("skips a single connection when publishing with an except option", () => {
+    const hub = new WsRoomHub();
+    const first = fakeSocket();
+    const second = fakeSocket();
+    const firstCtx = hub.add(first.ws, null, logger, "127.0.0.1");
+    const secondCtx = hub.add(second.ws, null, logger, "127.0.0.1");
+    hub.subscribe(firstCtx, "lobby");
+    hub.subscribe(secondCtx, "lobby");
+
+    expect(firstCtx.publish("lobby", { event: 1 }, { except: secondCtx.id })).toBe(1);
+    expect(JSON.parse(first.sent[0] as string)).toEqual({ event: 1 });
+    expect(second.sent).toHaveLength(0);
+  });
+
   test("is idempotent for duplicate socket registration", () => {
     const hub = new WsRoomHub();
     const socket = fakeSocket();

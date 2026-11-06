@@ -322,12 +322,19 @@ SQLite failures are reported as `MuboError` with the code `DB_ERROR`; the failin
 ```ts
 const schema = defineSchema({
   tables: {
+    orgs: {
+      columns: {
+        id: { type: "integer", primaryKey: true, autoIncrement: true },
+        title: { type: "text", notNull: true },
+      },
+    },
     users: {
       columns: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
         email: { type: "text", notNull: true, unique: true },
         name: { type: "text", default: "anon" },
         org_id: { type: "integer", references: { table: "orgs", column: "id", onDelete: "CASCADE" } },
+        active: { type: "integer", default: 1 },
         created_at: { type: "text", sqlDefault: "CURRENT_TIMESTAMP" },
       },
       indexes: [
@@ -338,6 +345,8 @@ const schema = defineSchema({
   },
 });
 ```
+
+The example is self-contained: the referenced `orgs` table exists and the partial index only uses columns of `users`, so the schema can be applied as-is.
 
 Column options are `type` (`text`, `integer`, `real`, `blob`, `numeric`, `boolean`), `primaryKey`, `autoIncrement`, `notNull`, `unique`, `default`, `sqlDefault` and `references` (`table`, `column`, `onDelete`, `onUpdate`). Index options are `name`, `columns`, `unique` and `where`.
 
@@ -351,7 +360,7 @@ app.db.exec("ALTER TABLE users DROP COLUMN nickname"); // manual migration
 await app.start();
 ```
 
-With `db.migrations.lock: "file"`, migrations are serialized through a lock file next to the database. Locks left behind by crashed processes are detected and reclaimed automatically; locks held by a live process are respected.
+With `db.migrations.lock: "file"`, migrations are serialized through a lock file next to the database. Locks left behind by crashed processes are detected and reclaimed automatically; a lock is also reclaimed once it is older than the stale threshold (10 minutes), even when its owner is still running.
 
 Database tuning options: `db.wal` (WAL mode, default `true`), `db.foreignKeys` (default `true`), `db.busyTimeoutMs` (default `5000`) and `db.slowQueryMs` (default `200`, logs a warning for slower queries).
 

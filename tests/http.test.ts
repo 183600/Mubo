@@ -402,6 +402,32 @@ describe("HTTP routing and middleware", () => {
     expect(wrongMethod.headers.get("allow")).toContain("OPTIONS");
   });
 
+  test("keeps the built-in health check when a user route uses another method", async () => {
+    const app = await startApp({
+      app: { name: "health-user-route-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.post("/healthz", (ctx) => ctx.json({ custom: true }));
+    app.post("/readyz", (ctx) => ctx.json({ custom: true }));
+
+    const health = await fetch(`${base(app)}/healthz`);
+    expect(health.status).toBe(200);
+    const healthJson = (await health.json()) as { ok: boolean; app: string };
+    expect(healthJson.ok).toBe(true);
+    expect(healthJson.app).toBe("health-user-route-test");
+
+    const ready = await fetch(`${base(app)}/readyz`);
+    expect(ready.status).toBe(200);
+    expect(((await ready.json()) as any).ok).toBe(true);
+
+    // The user route still handles its own method.
+    const custom = await fetch(`${base(app)}/healthz`, { method: "POST" });
+    expect(custom.status).toBe(200);
+    expect(await custom.json()).toEqual({ custom: true });
+  });
+
   test("readiness stays consistent under concurrent checks and leaves no probe files", async () => {
     const dir = tempDir();
     const app = await startApp({
@@ -1366,6 +1392,36 @@ describe("middleware boundaries", () => {
     });
     expect(fallback.status).toBe(204);
     expect(fallback.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+  });
+
+  test("the CORS preflight response advertises the allowed methods", async () => {
+    const app = await startApp({
+      app: { name: "options-cors-allow-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { cors: { origin: ["http://allowed.test"] } },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/resource", (ctx) => ctx.json({ ok: true }));
+
+    // The health endpoints answer OPTIONS with GET and HEAD.
+    for (const path of ["/healthz", "/readyz"]) {
+      const health = await fetch(`${base(app)}${path}`, {
+        method: "OPTIONS",
+        headers: { origin: "http://allowed.test" },
+      });
+      expect(health.status).toBe(204);
+      expect(health.headers.get("allow")).toBe("GET, HEAD");
+      expect(health.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+    }
+
+    // Other paths advertise the methods of the matching routes.
+    const resource = await fetch(`${base(app)}/resource`, {
+      method: "OPTIONS",
+      headers: { origin: "http://allowed.test" },
+    });
+    expect(resource.status).toBe(204);
+    expect(resource.headers.get("allow")).toBe("GET, HEAD, OPTIONS");
   });
 
   test("app.patch() registers a PATCH route and handles partial updates", async () => {

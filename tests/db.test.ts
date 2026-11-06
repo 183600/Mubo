@@ -2143,6 +2143,7 @@ describe("database and automatic migrations", () => {
     const failure = caught as MuboError;
     expect(failure.code).toBe("MIGRATION_ERROR");
     expect(failure.message).toContain("Failed to apply migration statement");
+    expect(failure.message).toContain("syntax error");
     expect(failure.details).toMatchObject({ statement: expect.stringContaining('CREATE TABLE "broken"') });
     expect(
       db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'broken'").get(),
@@ -2943,5 +2944,31 @@ describe("application database wiring", () => {
     expect(result.status).toBe("pending");
 
     await app.stop();
+  });
+});
+
+describe("README declarative schema example", () => {
+  test("the documented schema applies and stays idempotent", async () => {
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    const section = readme.slice(readme.indexOf("### Declarative Schema"));
+    expect(section.length).toBeGreaterThan(0);
+    const block = section.match(/```ts\n([\s\S]*?)```/)?.[1];
+    expect(block).toBeDefined();
+
+    let schema: ReturnType<typeof defineSchema>;
+    try {
+      schema = new Function("defineSchema", `${block}\nreturn schema;`)(defineSchema) as ReturnType<
+        typeof defineSchema
+      >;
+    } catch (error) {
+      throw new Error(`README schema example is not valid JavaScript: ${(error as Error).message}`);
+    }
+
+    const db = new MuboDatabase({ path: ":memory:" });
+    const first = await db.migrate(schema);
+    expect(first.status).toBe("applied");
+    const second = await db.migrate(schema);
+    expect(second.status).toBe("none");
+    db.close();
   });
 });

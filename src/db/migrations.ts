@@ -1053,10 +1053,19 @@ function executeStatements(db: MuboDatabase, statements: string[]): void {
     } catch (error) {
       if (isMuboError(error) && error.code !== "DB_ERROR") throw error;
       const summary = statement.replace(/\s+/g, " ").slice(0, 200);
-      throw new MuboError("MIGRATION_ERROR", `Failed to apply migration statement: ${summary}`, {
-        cause: error,
-        details: { statement },
-      });
+      // The SQLite reason is part of the message so the failure is actionable
+      // without digging into the error cause.
+      const reason = (error instanceof Error ? error.message : String(error))
+        .replace(/\s+/g, " ")
+        .slice(0, 200);
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `Failed to apply migration statement: ${summary}${reason ? ` (${reason})` : ""}`,
+        {
+          cause: error,
+          details: { statement },
+        },
+      );
     }
   }
 }

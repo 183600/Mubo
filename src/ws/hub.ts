@@ -48,7 +48,7 @@ export interface MuboWsContext<App = MuboApp> {
   /** Emit an event to the connection. */
   emit(event: string, data?: unknown, id?: string): void;
   /** Publish data to a specific room. */
-  publish(room: string, data: WsPayload): number;
+  publish(room: string, data: WsPayload, options?: { except?: string }): number;
   /** Broadcast data to all connections (optionally excluding some). */
   broadcast(data: WsPayload, options?: { except?: string }): number;
   /** Subscribe to a room. */
@@ -279,7 +279,7 @@ export class WsRoomHub<App = unknown> {
       send: (data) => sendDirect(ws, data, this.logger),
       emit: (event, data, messageId) =>
         sendDirect(ws, { t: "event", e: event, d: data, id: messageId }, this.logger),
-      publish: (room, data) => this.publishToRoom(room, data),
+      publish: (room, data, options) => this.publishToRoom(room, data, options),
       broadcast: (data, options) => this.broadcastToAll(data, options),
       subscribe: (room) => this.subscribeToRoom(context, room),
       unsubscribe: (room) => this.unsubscribeFromRoom(context, room),

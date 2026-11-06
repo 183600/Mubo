@@ -221,6 +221,17 @@ describe("CLI", () => {
     expect(devForwardedArgs(parseCliArgs(["dev"]))).toEqual([]);
   });
 
+  test("dev forwards explicit boolean values for --no-static and --no-ws", () => {
+    expect(devForwardedArgs(parseCliArgs(["dev", "--no-static=false", "--no-ws=0"]))).toEqual([
+      "--no-static=false",
+      "--no-ws=0",
+    ]);
+    expect(devForwardedArgs(parseCliArgs(["dev", "--no-static=true"]))).toEqual(["--no-static=true"]);
+    expect(() => devForwardedArgs(parseCliArgs(["dev", "--no-ws=maybe"]))).toThrow(
+      /Invalid boolean value for --no-ws/,
+    );
+  });
+
   test("dev rejects entry paths that are not files", async () => {
     const cwd = tempDir();
     mkdirSync(join(cwd, "entry-dir"));
