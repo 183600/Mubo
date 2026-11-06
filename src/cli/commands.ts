@@ -222,8 +222,11 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
   try {
     if (config.db.path === ":memory:") {
       const db = new Database(":memory:", { strict: true });
-      dbOk = Boolean(db.query("SELECT 1 AS ok").get());
-      db.close();
+      try {
+        dbOk = Boolean(db.query("SELECT 1 AS ok").get());
+      } finally {
+        db.close();
+      }
     } else {
       const parent = dirname(config.db.path);
       if (!existsSync(parent)) mkdirSync(parent, { recursive: true });

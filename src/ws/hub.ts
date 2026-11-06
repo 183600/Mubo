@@ -182,15 +182,6 @@ function sendStatus(
   return true;
 }
 
-function safeSend(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Logger): boolean {
-  try {
-    return sendStatus(ws, serializePayload(data), logger);
-  } catch (error) {
-    reportSendFailure(logger, error);
-    return false;
-  }
-}
-
 function sendDirect(ws: ServerWebSocket<WsSocketData>, data: unknown, logger?: Logger): void {
   const payload = serializePayload(data);
   try {
@@ -355,16 +346,44 @@ export class WsRoomHub<App = unknown> {
     return this.publishToRoom(room, data, options);
   }
 
+  /**
+   * Serializes a payload once and sends the same bytes to every recipient.
+   *
+   * A broadcast to N connections used to stringify the payload N times. Apart
+   * from the wasted work, a payload whose `toJSON` is not deterministic would
+   * then produce different content for each recipient. Serializing once keeps
+   * the wire data identical for all clients and makes the cost independent of
+   * the audience size.
+   */
+  private sendToClients(
+    clients: Iterable<Client<App>>,
+    data: unknown,
+    options: { except?: string },
+  ): number {
+    let payload: ReturnType<typeof serializePayload>;
+    try {
+      payload = serializePayload(data);
+    } catch (error) {
+      reportSendFailure(this.logger, error);
+      return 0;
+    }
+    let sent = 0;
+    for (const client of clients) {
+      if (options.except && client.ctx.id === options.except) continue;
+      try {
+        if (sendStatus(client.ws, payload, this.logger)) sent++;
+      } catch (error) {
+        reportSendFailure(this.logger, error);
+      }
+    }
+    return sent;
+  }
+
   private publishToRoom(room: string, data: unknown, options: { except?: string } = {}): number {
     assertRoomName(room);
     const members = this.rooms.get(room);
-    if (!members) return 0;
-    let sent = 0;
-    for (const client of members) {
-      if (options.except && client.ctx.id === options.except) continue;
-      if (safeSend(client.ws, data, this.logger)) sent++;
-    }
-    return sent;
+    if (!members || members.size === 0) return 0;
+    return this.sendToClients(members, data, options);
   }
 
   broadcast(data: unknown, options: { except?: string } = {}): number {
@@ -372,12 +391,8 @@ export class WsRoomHub<App = unknown> {
   }
 
   private broadcastToAll(data: unknown, options: { except?: string } = {}): number {
-    let sent = 0;
-    for (const client of this.clients.values()) {
-      if (options.except && client.ctx.id === options.except) continue;
-      if (safeSend(client.ws, data, this.logger)) sent++;
-    }
-    return sent;
+    if (this.clients.size === 0) return 0;
+    return this.sendToClients(this.clients.values(), data, options);
   }
 
   pingAll(): void {

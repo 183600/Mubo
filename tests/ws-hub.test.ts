@@ -396,6 +396,30 @@ describe("WebSocket room hub", () => {
     expect(socket.sent).toHaveLength(0);
   });
 
+  test("serializes a shared payload once per publish and broadcast", () => {
+    const hub = new WsRoomHub(logger);
+    const sockets = [fakeSocket(), fakeSocket(), fakeSocket()];
+    const contexts = sockets.map((socket, index) =>
+      hub.add(socket.ws, null, logger, `10.0.0.${index + 1}`),
+    );
+    for (const ctx of contexts) hub.subscribe(ctx, "lobby");
+
+    let serializations = 0;
+    const payload = {
+      toJSON() {
+        serializations++;
+        return { event: "greeting" };
+      },
+    };
+    const expected = JSON.stringify({ event: "greeting" });
+
+    expect(hub.publish("lobby", payload)).toBe(3);
+    expect(serializations).toBe(1);
+    expect(hub.broadcast(payload)).toBe(3);
+    expect(serializations).toBe(2);
+    for (const socket of sockets) expect(socket.sent).toEqual([expected, expected]);
+  });
+
   test("tracks per-IP connection count and releases the slot on removal", () => {
     const hub = new WsRoomHub(logger, 0, 100);
     const first = fakeSocket();
