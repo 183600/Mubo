@@ -54,7 +54,12 @@ export function devForwardedArgs(args: CliArgs): string[] {
     if (value !== undefined) forwarded.push(`--${name}=${value}`);
   }
   for (const name of ["no-static", "no-ws"]) {
-    if (boolFlag(args, name)) forwarded.push(`--${name}`);
+    const value = args.flags.get(name);
+    if (value === undefined) continue;
+    // Validate the value and keep the explicit form, so `--no-static=false`
+    // still re-enables static assets in the spawned process.
+    boolFlag(args, name);
+    forwarded.push(value === true ? `--${name}` : `--${name}=${value}`);
   }
   return forwarded;
 }
