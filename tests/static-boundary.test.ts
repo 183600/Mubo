@@ -497,6 +497,32 @@ test("embedded mode with no assets returns 404", async () => {
   await app.stop();
 });
 
+test("embedded SPA fallback serves index.html for unknown paths", async () => {
+  const app = await createMuboApp({
+    app: { name: "embedded-spa-test", env: "test" },
+    db: { path: ":memory:" },
+    log: { level: "error" },
+    static: {
+      mode: "embedded",
+      spaFallback: true,
+      assets: { "/index.html": "<!doctype html><title>SPA</title>", "/app.js": "console.log(1)" },
+    },
+  });
+  await app.start();
+  apps.push(app);
+  const root = `http://127.0.0.1:${app.port}`;
+
+  // An unknown route falls back to the embedded index.html.
+  const fallback = await fetch(`${root}/some/unknown/route`);
+  expect(fallback.status).toBe(200);
+  expect(await fallback.text()).toContain("SPA");
+
+  // An actual embedded asset is still served directly.
+  const asset = await fetch(`${root}/app.js`);
+  expect(asset.status).toBe(200);
+  expect(await asset.text()).toBe("console.log(1)");
+});
+
 describe("hasFile security boundaries", () => {
   test("rejects path traversal via .. segments", async () => {
     const dir = publicDir();
