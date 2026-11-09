@@ -228,6 +228,33 @@ describe("static assets", () => {
     expect(await assets.hasFile("/disk-only.txt")).toBe(false);
   });
 
+  test("refreshes embedded ETag and body after configure replaces assets", async () => {
+    const dir = tempDir();
+    const assets = new StaticAssets(
+      { mode: "embedded", spaFallback: false, assets: { "/app.txt": "first" } },
+      dir,
+    );
+
+    const first = await assets.handle(
+      new Request("http://localhost/app.txt"),
+      new URL("http://localhost/app.txt"),
+    );
+    expect(first?.status).toBe(200);
+    expect(await first?.text()).toBe("first");
+    const firstEtag = first?.headers.get("etag");
+    expect(firstEtag).toBeTruthy();
+
+    assets.configure({ assets: { "/app.txt": "second" } });
+
+    const second = await assets.handle(
+      new Request("http://localhost/app.txt"),
+      new URL("http://localhost/app.txt"),
+    );
+    expect(second?.status).toBe(200);
+    expect(await second?.text()).toBe("second");
+    expect(second?.headers.get("etag")).not.toBe(firstEtag);
+  });
+
   test("prefers exact embedded asset keys over decoded aliases", async () => {
     const assets = new StaticAssets({
       mode: "embedded",

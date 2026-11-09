@@ -1660,6 +1660,47 @@ describe("rate limiting", () => {
     expect(afterWindow.headers.get("x-ratelimit-remaining")).toBe("0");
   });
 
+  test("re-arms the cleanup interval after it cleared itself while idle", async () => {
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const scheduled = new Set<unknown>();
+    const cleared = new Set<unknown>();
+    globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+      const handle = originalSetInterval(...args);
+      scheduled.add(handle);
+      return handle;
+    }) as typeof globalThis.setInterval;
+    globalThis.clearInterval = ((handle: Parameters<typeof clearInterval>[0]) => {
+      cleared.add(handle);
+      return originalClearInterval(handle);
+    }) as typeof globalThis.clearInterval;
+
+    try {
+      const app = await startApp({
+        app: { name: "ratelimit-cleanup-rearm-test", env: "test" },
+        db: { path: ":memory:" },
+        log: { level: "error" },
+        static: { mode: "off" },
+        ws: { enabled: false },
+        http: { rateLimit: { maxRequests: 5, windowMs: 20 } },
+      });
+      app.get("/ping", (ctx) => ctx.json({ ok: true }));
+      expect(scheduled.size).toBe(1);
+
+      // With no traffic the interval notices an empty store and clears itself.
+      await Bun.sleep(120);
+      expect(cleared.size).toBeGreaterThan(0);
+
+      // A request arriving after that idle gap must schedule cleanup again.
+      const response = await fetch(`${base(app)}/ping`);
+      expect(response.status).toBe(200);
+      expect(scheduled.size).toBe(2);
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
+    }
+  });
+
   test("uses custom key function for rate limiting", async () => {
     const app = await startApp({
       app: { name: "ratelimit-custom-key-test", env: "test" },

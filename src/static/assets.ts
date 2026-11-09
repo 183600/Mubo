@@ -330,6 +330,11 @@ export class StaticAssets {
   private assets: Map<string, EmbeddedAsset | string | Uint8Array | ArrayBuffer>;
   private immutableExtensions: Set<string>;
   private defaultMaxAgeSeconds: number;
+  /** Decoded bytes and ETag of embedded assets, keyed by their resolved path. */
+  private readonly embeddedCache = new Map<
+    string,
+    { bytes: Uint8Array; etag: string; type?: string }
+  >();
 
   /** Constructs a StaticAssets instance with the given configuration. */
   constructor(options: StaticAssetsOptions = {}, cwd = process.cwd()) {
@@ -350,7 +355,10 @@ export class StaticAssets {
     if (options.mode !== undefined) this.mode = options.mode;
     if (options.dir !== undefined) this.root = resolve(cwd, options.dir || "public");
     if (options.spaFallback !== undefined) this.spaFallback = options.spaFallback;
-    if (options.assets !== undefined) this.assets = normalizeAssets(options.assets);
+    if (options.assets !== undefined) {
+      this.assets = normalizeAssets(options.assets);
+      this.embeddedCache.clear();
+    }
     if (options.cache?.immutableExtensions !== undefined) {
       this.immutableExtensions = new Set(
         options.cache.immutableExtensions.map(normalizeExtension).filter(Boolean),
@@ -403,10 +411,11 @@ export class StaticAssets {
     }
     if (range.kind === "range") {
       const { start, end } = range;
-      const chunk = sliceBody(body, start, end);
       headers.set("content-range", `bytes ${start}-${end}/${size}`);
       headers.set("content-length", String(end - start + 1));
+      // HEAD carries no body, so slicing the representation is wasted work.
       if (isHead(request)) return new Response(null, { status: 206, headers });
+      const chunk = sliceBody(body, start, end);
       return new Response(chunk, { status: 206, headers });
     }
 
@@ -455,12 +464,27 @@ export class StaticAssets {
     if (!found) return null;
     const { asset, path: finalPath } = found;
 
-    const bytes = decodeAsset(asset);
-    const metadata = assetMetadata(asset);
-    const type = metadata?.type;
-    const etag =
-      metadata?.etag || `"${new Bun.CryptoHasher("sha256").update(bytes).digest("hex").slice(0, 20)}"`;
-    return this.respond(request, finalPath, bytes, etag, type ?? contentTypeFor(finalPath), bytes.byteLength);
+    // Decoding (notably base64) and hashing an embedded representation is
+    // deterministic, so do it once per asset instead of on every request,
+    // including conditional requests that end in a 304.
+    let cached = this.embeddedCache.get(finalPath);
+    if (!cached) {
+      const bytes = decodeAsset(asset);
+      const metadata = assetMetadata(asset);
+      const etag =
+        metadata?.etag ||
+        `"${new Bun.CryptoHasher("sha256").update(bytes).digest("hex").slice(0, 20)}"`;
+      cached = { bytes, etag, type: metadata?.type };
+      this.embeddedCache.set(finalPath, cached);
+    }
+    return this.respond(
+      request,
+      finalPath,
+      cached.bytes,
+      cached.etag,
+      cached.type ?? contentTypeFor(finalPath),
+      cached.bytes.byteLength,
+    );
   }
 
   private safeDiskPath(pathname: string): { path: string; directory: boolean; error?: Response } {

@@ -349,7 +349,7 @@ export class MuboApp {
     const store = new Map<string, { count: number; resetAt: number }>();
     let cleanupTimer: ReturnType<typeof setInterval> | undefined;
     const scheduleCleanup = () => {
-      if (cleanupTimer) return;
+      if (cleanupTimer || this.hasStopped) return;
       cleanupTimer = setInterval(() => {
         const now = Date.now();
         let hasEntries = false;
@@ -379,6 +379,10 @@ export class MuboApp {
     };
 
     return async (ctx, next) => {
+      // The interval clears itself once the store is empty, so re-arm it on
+      // demand. Otherwise buckets created after an idle period are never
+      // reclaimed and the store grows without bound.
+      scheduleCleanup();
       const identifier = key(ctx.req);
       const now = Date.now();
       const entry = store.get(identifier);
