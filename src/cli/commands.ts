@@ -136,14 +136,21 @@ async function checkPort(host: string, port: number): Promise<boolean> {
 }
 
 async function checkWritableDirectory(path: string): Promise<boolean> {
+  const probe = join(path, `.mubo-doctor-${process.pid}-${Date.now()}`);
   try {
     mkdirSync(path, { recursive: true });
-    const probe = join(path, `.mubo-doctor-${process.pid}-${Date.now()}`);
     await Bun.write(probe, "ok");
-    rmSync(probe, { force: true });
     return true;
   } catch {
     return false;
+  } finally {
+    // Clean up the probe even when the write itself failed; otherwise a
+    // partial write leaves a `.mubo-doctor-*` file behind.
+    try {
+      rmSync(probe, { force: true });
+    } catch {
+      // The probe may already be gone; the writability result stands.
+    }
   }
 }
 

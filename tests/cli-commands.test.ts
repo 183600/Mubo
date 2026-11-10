@@ -344,7 +344,10 @@ export default defineConfig({
     expect(sqlite?.detail).toContain(":memory:");
   });
 
-  test("flags a read-only data directory as a fatal problem", async () => {
+  // A chmod-based write check cannot make a directory unwritable for root,
+  // so the assertion below is only meaningful for unprivileged users.
+  const skipWhenRoot = typeof process.getuid === "function" && process.getuid() === 0;
+  test.skipIf(skipWhenRoot)("flags a read-only data directory as a fatal problem", async () => {
     const cwd = tempDir();
     const dataDir = join(cwd, "locked");
     mkdirSync(dataDir, { recursive: true });
