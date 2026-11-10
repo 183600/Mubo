@@ -1424,6 +1424,32 @@ describe("middleware boundaries", () => {
     expect(resource.headers.get("allow")).toBe("GET, HEAD, OPTIONS");
   });
 
+  test("CORS preflight varies on the requested method and headers", async () => {
+    const app = await startApp({
+      app: { name: "cors-preflight-vary-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { port: 0, cors: { origin: ["http://allowed.test"], maxAgeSeconds: 120 } },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/resource", (ctx) => ctx.json({ ok: true }));
+
+    const preflight = await fetch(`${base(app)}/resource`, {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://allowed.test",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "x-custom",
+      },
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-headers")).toBe("x-custom");
+    const vary = (preflight.headers.get("vary") ?? "").toLowerCase();
+    expect(vary).toContain("origin");
+    expect(vary).toContain("access-control-request-method");
+    expect(vary).toContain("access-control-request-headers");
+  });
+
   test("app.patch() registers a PATCH route and handles partial updates", async () => {
     const app = await startApp({
       app: { name: "patch-test", env: "test" },

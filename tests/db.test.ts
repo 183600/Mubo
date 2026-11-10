@@ -35,6 +35,24 @@ const baseSchema = defineSchema({
 });
 
 describe("database and automatic migrations", () => {
+  test("keeps the prepared statement cache bounded for dynamic SQL", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    try {
+      const cache = (db as unknown as { statementCache: Map<string, unknown> }).statementCache;
+      for (let index = 0; index < 300; index++) {
+        expect(db.query<{ value: number }>(`SELECT ${index} AS value`).get()?.value).toBe(index);
+      }
+      // Distinct SQL statements must not grow the cache (and the underlying
+      // SQLite statement handles) without bound.
+      expect(cache.size).toBeLessThan(300);
+      expect(cache.size).toBeGreaterThan(0);
+      // A statement that was evicted is simply prepared again on next use.
+      expect(db.query<{ value: number }>("SELECT 0 AS value").get()?.value).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
   test("creates schema, supports CRUD, and is idempotent", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const first = await db.migrate(baseSchema);

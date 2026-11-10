@@ -78,6 +78,15 @@ function translateSqliteError(error: unknown, sql: string): unknown {
   });
 }
 
+/**
+ * Upper bound for cached prepared statements.
+ *
+ * Applications that build SQL dynamically (for example per-tenant or
+ * per-table statements) would otherwise grow the cache and the underlying
+ * SQLite statement handles without bound during the lifetime of the process.
+ */
+const MAX_CACHED_STATEMENTS = 256;
+
 export class MuboDatabase {
   readonly raw: SQLiteDatabase;
   readonly path: string;
@@ -199,8 +208,26 @@ export class MuboDatabase {
 
   private statement<Row>(sql: string): Statement<Row, QueryArgument[]> {
     const cached = this.statementCache.get(sql);
-    if (cached) return cached as Statement<Row, QueryArgument[]>;
+    if (cached) {
+      // Refresh the insertion order so frequently used statements survive
+      // eviction; Map preserves insertion order.
+      this.statementCache.delete(sql);
+      this.statementCache.set(sql, cached);
+      return cached as Statement<Row, QueryArgument[]>;
+    }
     const statement = this.raw.query<Row, QueryArgument[]>(sql);
+    if (this.statementCache.size >= MAX_CACHED_STATEMENTS) {
+      const oldestKey = this.statementCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        const oldest = this.statementCache.get(oldestKey);
+        this.statementCache.delete(oldestKey);
+        try {
+          oldest?.finalize();
+        } catch {
+          // The runtime may already have finalized it; eviction is best effort.
+        }
+      }
+    }
     this.statementCache.set(sql, statement as Statement<unknown, QueryArgument[]>);
     return statement;
   }

@@ -238,8 +238,17 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
       const parent = dirname(config.db.path);
       if (!existsSync(parent)) mkdirSync(parent, { recursive: true });
       const probe = join(parent, `.mubo-doctor-db-${process.pid}-${Date.now()}`);
-      await Bun.write(probe, "");
-      rmSync(probe, { force: true });
+      try {
+        await Bun.write(probe, "");
+      } finally {
+        // A failed or partial write must not leave a probe file behind, just
+        // like the data directory probe in checkWritableDirectory().
+        try {
+          rmSync(probe, { force: true });
+        } catch {
+          // The probe may already be gone; the sqlite check below still runs.
+        }
+      }
       if (existsSync(config.db.path)) {
         const db = new Database(config.db.path, { create: false, strict: true });
         try {

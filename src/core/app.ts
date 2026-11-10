@@ -821,7 +821,11 @@ export class MuboApp {
       "access-control-allow-headers":
         request.headers.get("access-control-request-headers") ?? "content-type, authorization, x-request-id",
       "access-control-max-age": String(cors.maxAgeSeconds ?? 600),
-      vary: "Origin",
+      // This response echoes Access-Control-Request-Headers and is cacheable
+      // for maxAgeSeconds, so shared caches must also key on the requested
+      // method and headers. Varying on Origin alone can serve a preflight
+      // answer built for one header set to a request for a different one.
+      vary: "Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
     });
     if (cors.credentials) headers.set("access-control-allow-credentials", "true");
     return headers;

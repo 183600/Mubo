@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseCliArgs } from "../src/cli/args.ts";
@@ -214,6 +214,31 @@ describe("doctorCommand", () => {
     expect(byName.get("http.rateLimit")?.detail).toContain("maxRequests=10");
     expect(byName.get("ws.maxConnections")?.detail).toBe("4");
     expect(byName.get("ws.maxConnectionsPerIp")?.detail).toBe("2");
+  });
+
+  test("cleans up the sqlite probe file when its write fails", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "mubo.config.ts"), doctorConfigSource(cwd));
+    // Bun.write is overloaded; keep a uniformly typed reference for delegation.
+    const originalWrite = Bun.write as unknown as (path: unknown, data: unknown) => Promise<number>;
+    const spy = spyOn(Bun, "write").mockImplementation(async (path, data) => {
+      const target = String(path);
+      if (target.includes(".mubo-doctor-db-")) {
+        // Simulate a partial write that created the file before failing.
+        writeFileSync(target, "");
+        throw new Error("simulated probe write failure");
+      }
+      return originalWrite(path, data);
+    });
+    try {
+      const { code } = await captureCommand(() =>
+        doctorCommand({ cwd, args: parseCliArgs(["doctor", "--json"]) }),
+      );
+      expect(code).toBe(1);
+      expect(readdirSync(cwd).some((name) => name.startsWith(".mubo-doctor-db-"))).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("prints human-readable lines without --json", async () => {
