@@ -1878,6 +1878,30 @@ describe("database and automatic migrations", () => {
     }
   });
 
+  test("releases the statement prepared for iterate() when the iterator ends", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    db.exec("CREATE TABLE items (id INTEGER PRIMARY KEY)");
+    db.query("INSERT INTO items (id) VALUES (?)").run(1);
+    const raw = db.raw as any;
+    const originalQuery = raw.query.bind(raw);
+    let iterated: any;
+    raw.query = (sql: string) => {
+      iterated = originalQuery(sql);
+      return iterated;
+    };
+    try {
+      const rows = [...db.query<{ id: number }>("SELECT id FROM items").iterate()];
+      expect(rows).toEqual([{ id: 1 }]);
+      // iterate() prepares a statement outside the cache. Without an explicit
+      // finalize() its sqlite3_stmt handle stays alive until close(), leaking
+      // handles across many iterations in a long-lived process.
+      expect(() => iterated.get()).toThrow(/finalized/);
+    } finally {
+      raw.query = originalQuery;
+      db.close();
+    }
+  });
+
   test("guards iterators after their transaction or database closes", () => {
     const db = new MuboDatabase({ path: ":memory:" });
     db.exec("CREATE TABLE items (id INTEGER PRIMARY KEY)");

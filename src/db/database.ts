@@ -243,8 +243,10 @@ export class MuboDatabase {
         this.assertTransactionActive();
         const context = this.transactionContext.getStore();
         let iterator: IterableIterator<Row>;
+        let statement: Statement<Row, QueryArgument[]> | undefined;
         try {
-          iterator = this.raw.query<Row, QueryArgument[]>(sql).iterate(...normalizeParams(params));
+          statement = this.raw.query<Row, QueryArgument[]>(sql);
+          iterator = statement.iterate(...normalizeParams(params));
         } catch (error) {
           throw translateSqliteError(error, sql);
         }
@@ -265,6 +267,17 @@ export class MuboDatabase {
             }
           } finally {
             iterator.return?.();
+            // iterate() prepares its own statement outside the cache so every
+            // iterator owns an exclusive cursor. Bun keeps the underlying
+            // sqlite3_stmt alive after the iterator finishes, so release it
+            // explicitly, just like statement() does when evicting the cache.
+            // Best effort: an already finalized statement or a closed
+            // database must not mask the error that triggered this finally.
+            try {
+              statement?.finalize();
+            } catch {
+              // Already finalized; nothing left to release.
+            }
           }
         })();
       },

@@ -9,8 +9,6 @@ import {
 import { MuboError } from "../core/errors.ts";
 import { textResponse } from "../http/response.ts";
 
-const RANGE_MAX_PARTS = 10;
-
 /**
  * Result of parsing a `Range` header.
  *
@@ -27,7 +25,8 @@ type ParsedRange =
 function parseRangeHeader(header: string | null, size: number): ParsedRange {
   if (!header || !header.startsWith("bytes=")) return { kind: "ignore" };
   const specs = header.slice(6).split(",");
-  if (specs.length > RANGE_MAX_PARTS) return { kind: "ignore" };
+  // Only a single range is supported; the following check subsumes any
+  // "too many parts" limit, so no separate part cap is needed.
   if (specs.length > 1) return { kind: "ignore" };
   const trimmed = specs[0]!.trim();
   const match = trimmed.match(/^(\d*)-(\d*)$/);
