@@ -2868,6 +2868,26 @@ describe("database and automatic migrations", () => {
     db.close();
   });
 
+  test("explicitly undefined migration options keep the database-level defaults", async () => {
+    const db = new MuboDatabase({
+      path: ":memory:",
+      migrations: { table: "custom_history", mode: "apply", safeOnly: true },
+    });
+
+    // A caller that forwards an optional value as `undefined` must not erase
+    // the migration history table configured on the database.
+    const result = await db.migrate(baseSchema, { table: undefined });
+    expect(result.status).toBe("applied");
+
+    const tables = db
+      .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((row) => row.name);
+    expect(tables).toContain("custom_history");
+    expect(tables).not.toContain("_mubo_migrations");
+    db.close();
+  });
+
   test("keeps database-level migration defaults overridable per call", async () => {
     const db = new MuboDatabase({
       path: ":memory:",

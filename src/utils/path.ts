@@ -59,8 +59,7 @@ function decodeLiteral(value: string): string {
   }
 }
 
-/** Collapses multiple slashes and trims leading/trailing slashes from a path. */
- /** Returns "/" for empty or whitespace-only paths. */
+/** Collapses repeated slashes and trims leading/trailing slashes. Returns "/" for empty or slash-only paths. */
 export function normalizePath(path: string): string {
   const collapsed = path.replace(/\/+/g, "/");
   const trimmed = collapsed.replace(/^\/+|\/+$/g, "");

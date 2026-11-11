@@ -525,6 +525,7 @@ export class MuboApp {
     url: URL,
     server: Server<WsSocketData>,
     requestId: string,
+    clientIpAddr: string,
   ): Promise<Response | null> {
     if (this.wsRoutes.size === 0) return null;
     let route = this.wsRoutes.get(routeIdentity(url.pathname));
@@ -567,7 +568,9 @@ export class MuboApp {
       }
     }
 
-    const clientIpAddr = clientIp(request, server, this.config.http.trustProxy);
+    // The client IP was already resolved and attached in `handleRequest`;
+    // reusing it avoids a second `server.requestIP()` lookup per upgrade and
+    // keeps the WebSocket connection's IP identical to the HTTP log/limit key.
     if (this.config.ws.maxConnections > 0 && this.wsHub.clientCount >= this.config.ws.maxConnections) {
       return errorResponse(requestId, new MuboError("WS_CONNECTION_LIMIT", "Maximum WebSocket connections reached"), true);
     }
@@ -877,9 +880,12 @@ export class MuboApp {
       return response;
     }
 
+    // Computed outside the try so an error thrown by a registered OPTIONS
+    // handler still receives the CORS preflight headers it would have had on
+    // a successful response.
+    const preflightHeaders =
+      request.method.toUpperCase() === "OPTIONS" ? this.buildPreflightHeaders(request) : undefined;
     try {
-      const preflightHeaders =
-        request.method.toUpperCase() === "OPTIONS" ? this.buildPreflightHeaders(request) : undefined;
       if (preflightHeaders) {
         const optionsMatch = this.router.match("OPTIONS", url.pathname);
         // A registered OPTIONS route takes precedence over the automatic
@@ -894,7 +900,7 @@ export class MuboApp {
         }
       }
 
-      const wsResponse = await this.handleWebSocketUpgrade(request, url, server, requestId);
+      const wsResponse = await this.handleWebSocketUpgrade(request, url, server, requestId, ip);
       if (wsResponse) {
         if (wsResponse.status === 101) {
           this.logHttp(request, url, requestId, 101, started, ip);
@@ -912,6 +918,7 @@ export class MuboApp {
       return corsResponse;
     } catch (error) {
       const response = this.handleRequestError(error, request, url, requestId);
+      if (preflightHeaders) mergePreflightHeaders(response, preflightHeaders);
       this.logHttp(request, url, requestId, response.status, started, ip);
       return response;
     }

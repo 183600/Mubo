@@ -1394,6 +1394,31 @@ describe("middleware boundaries", () => {
     expect(fallback.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
   });
 
+  test("CORS preflight headers survive an error from a registered OPTIONS route", async () => {
+    const app = await startApp({
+      app: { name: "options-cors-error-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { cors: { origin: ["http://allowed.test"], maxAgeSeconds: 120 } },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.get("/resource", (ctx) => ctx.json({ ok: true }));
+    app.options("/resource", () => {
+      throw new MuboError("INTERNAL_ERROR", "OPTIONS handler failed");
+    });
+
+    const response = await fetch(`${base(app)}/resource`, {
+      method: "OPTIONS",
+      headers: { origin: "http://allowed.test" },
+    });
+    // The browser must still see the CORS headers when the handler fails,
+    // otherwise the failing preflight is indistinguishable from a CORS error.
+    expect(response.status).toBe(500);
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+    expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(response.headers.get("access-control-max-age")).toBe("120");
+  });
+
   test("the CORS preflight response advertises the allowed methods", async () => {
     const app = await startApp({
       app: { name: "options-cors-allow-test", env: "test" },

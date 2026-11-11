@@ -541,14 +541,21 @@ export class MuboDatabase {
 
   /**
    * Merge the database-level migration defaults with caller supplied options.
-   * Undefined entries are dropped so they never override the built-in defaults.
+   *
+   * Caller entries that are `undefined` are removed before merging so they
+   * never erase a value configured on the database (for example a custom
+   * migration history table).
    */
   private migrationOptions(options: MigrationOptions): MigrationOptions {
+    const overrides = { ...options };
+    for (const key of Object.keys(overrides) as (keyof MigrationOptions)[]) {
+      if (overrides[key] === undefined) delete overrides[key];
+    }
     const merged: MigrationOptions = {
       table: "_mubo_migrations",
       safeOnly: true,
       ...this.migrations,
-      ...options,
+      ...overrides,
     };
     for (const key of Object.keys(merged) as (keyof MigrationOptions)[]) {
       if (merged[key] === undefined) delete merged[key];
