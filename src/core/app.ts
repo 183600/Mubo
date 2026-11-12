@@ -149,10 +149,27 @@ function applyCors(request: Request, response: Response, config: ResolvedMuboCon
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-/** Merges preflight response headers onto the final response, skipping reserved keys. */
+/**
+ * Merges preflight response headers onto the final response, skipping the
+ * request id that the pipeline sets itself.
+ *
+ * Vary is accumulated instead of skipped: the preflight headers echo the
+ * requested method and headers and are cacheable for maxAgeSeconds, so a
+ * response produced by a registered OPTIONS handler (or by the error path)
+ * needs the same cache keys as the automatic 204 preflight response. Dropping
+ * them would let a shared cache reuse an answer built for one header set for
+ * a request asking for another one.
+ */
 function mergePreflightHeaders(response: Response, preflight: Headers): void {
   preflight.forEach((value, key) => {
-    if (key === "vary" || key === "x-request-id") return;
+    if (key === "x-request-id") return;
+    if (key === "vary") {
+      for (const entry of value.split(",")) {
+        const name = entry.trim();
+        if (name) addVaryHeader(response.headers, name);
+      }
+      return;
+    }
     if (!response.headers.has(key)) response.headers.set(key, value);
   });
 }

@@ -1375,15 +1375,25 @@ describe("middleware boundaries", () => {
 
     const response = await fetch(`${base(app)}/resource`, {
       method: "OPTIONS",
-      headers: { origin: "http://allowed.test" },
+      headers: {
+        origin: "http://allowed.test",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "x-custom",
+      },
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ custom: true });
     expect(response.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
     expect(response.headers.get("access-control-allow-credentials")).toBe("true");
     expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(response.headers.get("access-control-allow-headers")).toBe("x-custom");
     expect(response.headers.get("access-control-max-age")).toBe("120");
-    expect(response.headers.get("vary")).toBe("Origin");
+    // A registered OPTIONS handler must keep the preflight cache keys, just
+    // like the automatic 204 response does for paths without an OPTIONS route.
+    const vary = (response.headers.get("vary") ?? "").toLowerCase();
+    expect(vary).toContain("origin");
+    expect(vary).toContain("access-control-request-method");
+    expect(vary).toContain("access-control-request-headers");
 
     // Paths without an OPTIONS route keep the automatic preflight response.
     const fallback = await fetch(`${base(app)}/other`, {
@@ -1409,14 +1419,23 @@ describe("middleware boundaries", () => {
 
     const response = await fetch(`${base(app)}/resource`, {
       method: "OPTIONS",
-      headers: { origin: "http://allowed.test" },
+      headers: {
+        origin: "http://allowed.test",
+        "access-control-request-headers": "x-custom",
+      },
     });
     // The browser must still see the CORS headers when the handler fails,
     // otherwise the failing preflight is indistinguishable from a CORS error.
     expect(response.status).toBe(500);
     expect(response.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
     expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(response.headers.get("access-control-allow-headers")).toBe("x-custom");
     expect(response.headers.get("access-control-max-age")).toBe("120");
+    // The error path receives the same cache keys as a successful preflight.
+    const vary = (response.headers.get("vary") ?? "").toLowerCase();
+    expect(vary).toContain("origin");
+    expect(vary).toContain("access-control-request-method");
+    expect(vary).toContain("access-control-request-headers");
   });
 
   test("the CORS preflight response advertises the allowed methods", async () => {

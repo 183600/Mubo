@@ -136,7 +136,10 @@ async function checkPort(host: string, port: number): Promise<boolean> {
 }
 
 async function checkWritableDirectory(path: string): Promise<boolean> {
-  const probe = join(path, `.mubo-doctor-${process.pid}-${Date.now()}`);
+  // Use a unique name: concurrent diagnostics in the same process must not
+  // delete each other's probe file (the same reason readiness checks in
+  // MuboApp use a UUID rather than a timestamp).
+  const probe = join(path, `.mubo-doctor-${process.pid}-${crypto.randomUUID()}`);
   try {
     mkdirSync(path, { recursive: true });
     await Bun.write(probe, "ok");
@@ -237,7 +240,7 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
     } else {
       const parent = dirname(config.db.path);
       if (!existsSync(parent)) mkdirSync(parent, { recursive: true });
-      const probe = join(parent, `.mubo-doctor-db-${process.pid}-${Date.now()}`);
+      const probe = join(parent, `.mubo-doctor-db-${process.pid}-${crypto.randomUUID()}`);
       try {
         await Bun.write(probe, "");
       } finally {
