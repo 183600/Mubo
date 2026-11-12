@@ -79,6 +79,22 @@ describe("logger", () => {
     expect(lines[0]).toContain("[object Object]");
   });
 
+  test("human-readable output keeps bigint values inside object fields", () => {
+    const logger = createLogger({ level: "debug", json: false });
+
+    const lines = captureLogs(() => {
+      logger.info("metrics", {
+        count: 7n,
+        nested: { total: 12n, ok: true, label: "rows" },
+      });
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("count=7");
+    expect(lines[0]).toContain('nested={"total":"12","ok":true,"label":"rows"}');
+    expect(lines[0]).not.toContain("[object Object]");
+  });
+
   test("escapes line separators in human-readable messages and fields", () => {
     const logger = createLogger({ level: "debug", json: false });
     const lines = captureLogs(() => {

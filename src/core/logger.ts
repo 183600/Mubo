@@ -21,8 +21,15 @@ function formatValue(value: unknown): string {
     return oneLine(/^[A-Za-z0-9._:/@+-]+$/.test(value) ? value : JSON.stringify(value));
   }
   if (value instanceof Error) return oneLine(JSON.stringify(value.message));
+  if (typeof value === "bigint") return value.toString();
   try {
-    const json = JSON.stringify(value);
+    // A bigint nested inside an object makes JSON.stringify throw, which used
+    // to degrade the whole field to "[object Object]" and drop every value in
+    // it. Convert bigints the same way JSON logging does so human-readable
+    // logs keep the field data. Circular values still fall back below.
+    const json = JSON.stringify(value, (_key, nested) =>
+      typeof nested === "bigint" ? nested.toString() : nested,
+    );
     return oneLine(json === undefined ? String(value) : json);
   } catch {
     return oneLine(String(value));
