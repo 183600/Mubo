@@ -224,6 +224,41 @@ describe("single-file build", () => {
     expect(manifest).toContain("/index.html");
   }, 60_000);
 
+  test("embeds every asset from a large static directory without losing order or bytes", async () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "index.ts"), "console.log('many assets');\n");
+    const publicDir = join(cwd, "public");
+    mkdirSync(join(publicDir, "nested"), { recursive: true });
+
+    const expected: Record<string, string> = {};
+    // More files than one concurrency batch, so several read waves are needed.
+    for (let i = 0; i < 80; i++) {
+      const name = `asset-${String(i).padStart(3, "0")}.txt`;
+      const contents = `contents-${i}-${"z".repeat(i * 13)}`;
+      writeFileSync(join(publicDir, name), contents);
+      expected[`/${name}`] = contents;
+    }
+    const nestedContents = JSON.stringify({ ok: true, deep: [1, 2, 3] });
+    writeFileSync(join(publicDir, "nested", "deep.json"), nestedContents);
+    expected["/nested/deep.json"] = nestedContents;
+
+    const result = await buildProject({ cwd, outfile: "dist/many-assets-app" });
+    expect(result.assets).toBe(Object.keys(expected).length);
+
+    const manifest = readFileSync(join(cwd, ".mubo", "embedded-assets.ts"), "utf8");
+    const assets = JSON.parse(manifest.slice(manifest.indexOf("{")).trim().replace(/;$/, "")) as Record<
+      string,
+      { data: string; encoding: string; type: string }
+    >;
+    const sortedKeys = Object.keys(expected).sort();
+    expect(Object.keys(assets)).toEqual(sortedKeys);
+    for (const key of sortedKeys) {
+      const asset = assets[key]!;
+      expect(asset.encoding).toBe("base64");
+      expect(Buffer.from(asset.data, "base64").toString("utf8")).toBe(expected[key]!);
+    }
+  }, 60_000);
+
   test(
     "bakes the project configuration into the compiled binary",
     async () => {

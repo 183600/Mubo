@@ -77,6 +77,9 @@ function findStaticDir(
   return undefined;
 }
 
+/** Upper bound on simultaneous asset reads so large frontends cannot exhaust file descriptors. */
+const ASSET_READ_CONCURRENCY = 32;
+
 async function collectAssets(root: string): Promise<Record<string, { data: string; encoding: "base64"; type: string }>> {
   const files: string[] = [];
   const glob = new Bun.Glob("**/*");
@@ -84,19 +87,37 @@ async function collectAssets(root: string): Promise<Record<string, { data: strin
     files.push(file);
   }
   files.sort();
-  const assets: Record<string, { data: string; encoding: "base64"; type: string }> = {};
-  for (const file of files) {
-    const path = join(root, file);
-    const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
-    const key = `/${file.split(sep).join("/")}`;
-    const ext = extname(file).slice(1).toLowerCase();
-    assets[key] = {
-      data: Buffer.from(bytes).toString("base64"),
-      encoding: "base64",
-      type: mimeTypeForExtension(ext) ?? "application/octet-stream",
-    };
-  }
-  return assets;
+  type Asset = { data: string; encoding: "base64"; type: string };
+  // The reads are independent: awaiting them one by one serializes all of the
+  // I/O for a large static directory. Results are written back by index so the
+  // generated manifest keeps exactly the same deterministic order and content.
+  const entries: Array<[string, Asset]> = new Array(files.length);
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= files.length) return;
+      const file = files[index]!;
+      // Buffer.from(ArrayBuffer) is a zero-copy view: the intermediate
+      // Uint8Array + Buffer.from(bytes) copy used to duplicate every asset in
+      // memory before base64 encoding it.
+      const buffer = Buffer.from(await Bun.file(join(root, file)).arrayBuffer());
+      const key = `/${file.split(sep).join("/")}`;
+      const ext = extname(file).slice(1).toLowerCase();
+      entries[index] = [
+        key,
+        {
+          data: buffer.toString("base64"),
+          encoding: "base64",
+          type: mimeTypeForExtension(ext) ?? "application/octet-stream",
+        },
+      ];
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(ASSET_READ_CONCURRENCY, files.length) }, () => worker()),
+  );
+  return Object.fromEntries(entries);
 }
 
 function importPath(fromDir: string, toFile: string): string {

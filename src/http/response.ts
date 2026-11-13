@@ -13,10 +13,16 @@ function makeHeaders(headers: ResponseInit["headers"]): Headers {
  * An `undefined` payload becomes `null` so the body stays parseable, and
  * bigint values become strings - matching the WebSocket payload and log
  * serializers instead of failing the response with an internal error.
+ *
+ * `JSON.stringify` also returns `undefined` for functions, symbols and values
+ * whose `toJSON()` returns `undefined`. Falling back to `null` for those keeps
+ * the response body parseable: otherwise the response advertises JSON but has
+ * an empty body, and every client fails to parse it.
  */
 function serializeJsonPayload(data: unknown): string {
   if (data === undefined) return "null";
-  return JSON.stringify(data, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
+  const json = JSON.stringify(data, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
+  return json === undefined ? "null" : json;
 }
 
 /** Builds a response with a default content type. */

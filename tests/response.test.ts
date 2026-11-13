@@ -126,6 +126,19 @@ describe("response helpers", () => {
     expect(await response.json()).toBeNull();
   });
 
+  test("serializes non-encodable top-level payloads as null so the body stays parseable", async () => {
+    // JSON.stringify returns undefined for these values. Without a fallback the
+    // response would advertise application/json but carry an empty body.
+    for (const payload of [() => 1, Symbol("x"), { toJSON: () => undefined }]) {
+      const response = jsonResponse(payload);
+      const clone = response.clone();
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+      expect(await response.text()).toBe("null");
+      expect(await clone.json()).toBeNull();
+    }
+  });
+
   test("falls back to a generic payload when the error itself is unreadable", async () => {
     const hostile = Object.create(Error.prototype);
     Object.defineProperty(hostile, "message", {
