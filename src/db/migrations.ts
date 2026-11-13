@@ -603,9 +603,6 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
       if (column) column.unique = true;
     }
     if (row.origin === "pk" || row.name.startsWith("sqlite_autoindex")) continue;
-    const definition = db
-      .query<{ sql: string | null }>("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?")
-      .get(row.name);
     const keyColumns = db
       .query<{ desc: number; key: number; coll: string }>(
         "SELECT desc, key, coll FROM pragma_index_xinfo(?) ORDER BY seqno",
@@ -614,14 +611,24 @@ function introspectTable(db: MuboDatabase, table: string): ExistingTable {
       .filter((column) => column.key === 1);
     const descending = keyColumns.some((column) => column.desc === 1);
     const customCollation = keyColumns.some((column) => column.coll !== "BINARY");
+    const partial = row.partial === 1;
+    // Only partial indexes carry a WHERE clause, which has to be recovered
+    // from their DDL. Skip the sqlite_master lookup for ordinary indexes.
+    let where: string | undefined;
+    if (partial) {
+      const definition = db
+        .query<{ sql: string | null }>("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?")
+        .get(row.name);
+      where = indexWhere(definition?.sql);
+    }
     indexes.set(row.name, {
       name: row.name,
       unique: row.unique === 1,
       columns: indexColumns,
       descending,
       customCollation,
-      partial: row.partial === 1,
-      where: row.partial === 1 ? indexWhere(definition?.sql) : undefined,
+      partial,
+      where,
     });
   }
   const foreignKeys = new Map<string, ExistingForeignKey[]>();
