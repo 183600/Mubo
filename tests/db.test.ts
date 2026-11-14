@@ -53,6 +53,29 @@ describe("database and automatic migrations", () => {
     }
   });
 
+  test("reuses a single cached statement for repeated readiness pings", () => {
+    const db = new MuboDatabase({ path: ":memory:" });
+    const raw = db.raw as any;
+    const originalQuery = raw.query.bind(raw);
+    let prepared = 0;
+    raw.query = (sql: string) => {
+      if (sql === "SELECT 1 AS ok") prepared++;
+      return originalQuery(sql);
+    };
+    try {
+      for (let index = 0; index < 20; index++) expect(db.ping()).toBe(true);
+      // Preparing a fresh raw.query() statement on every /readyz probe would
+      // leak a sqlite3_stmt handle each time until close(). The bounded cache
+      // prepares it once and reuses it for all subsequent pings.
+      expect(prepared).toBe(1);
+      const cache = (db as unknown as { statementCache: Map<string, unknown> }).statementCache;
+      expect(cache.has("SELECT 1 AS ok")).toBe(true);
+    } finally {
+      raw.query = originalQuery;
+      db.close();
+    }
+  });
+
   test("creates schema, supports CRUD, and is idempotent", async () => {
     const db = new MuboDatabase({ path: ":memory:" });
     const first = await db.migrate(baseSchema);

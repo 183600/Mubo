@@ -546,7 +546,12 @@ export class MuboDatabase {
   ping(): boolean {
     try {
       this.assertOpen();
-      return this.raw.query("SELECT 1 AS ok").get() !== null;
+      // Use the bounded statement cache instead of preparing a fresh handle on
+      // every call: /readyz polls ping() frequently, and a raw.query()
+      // statement is never finalized on its own, so each probe used to leak a
+      // sqlite3_stmt handle until close(). The cache reuses this constant
+      // statement and finalizes it when it is eventually evicted.
+      return this.statement("SELECT 1 AS ok").get() !== null;
     } catch {
       return false;
     }
