@@ -68,7 +68,8 @@ function parseRangeHeader(header: string | null, size: number): ParsedRange {
 }
 
 function sliceBody(body: Uint8Array | Bun.BunFile, start: number, end: number): Uint8Array | Blob {
-  if (body instanceof Uint8Array) return body.slice(start, end + 1);
+  // Both Uint8Array and BunFile/Blob implement slice(start, end) and return
+  // their own type; the previous instanceof branch did the same call twice.
   return body.slice(start, end + 1);
 }
 
@@ -389,9 +390,8 @@ export class StaticAssets {
     etag: string,
     contentType: string,
     size: number,
-    extraHeaders?: Record<string, string> | Headers,
   ): Response {
-    const headers = new Headers(extraHeaders as any);
+    const headers = new Headers();
     headers.set("etag", etag);
     headers.set("cache-control", this.cacheControl(path));
     headers.set("content-type", contentType);

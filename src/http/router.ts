@@ -49,13 +49,27 @@ export function assertRouteHandler(
 
 export class Router {
   readonly routes: Route[] = [];
+  /**
+   * Cached route keys, keyed by the route object itself.
+   *
+   * `add()` used to call `routeKey(route.path)` for every already registered
+   * route while looking for a duplicate. That re-runs the segment split,
+   * percent-decoding and JSON serialization for each earlier route, making
+   * registration of N routes quadratic. The key is immutable for a route, so
+   * compute it once at registration and look it up here instead. A WeakMap
+   * lets replaced routes be collected without extra bookkeeping.
+   */
+  private readonly routeKeys = new WeakMap<Route, string>();
 
   add(method: HttpMethod, path: string, handler: RouteHandler): this {
     assertRouteHandler(handler, method, path);
     const segments = compileRouteSegments(path);
     const key = routeKey(path);
-    const existing = this.routes.findIndex((route) => route.method === method && routeKey(route.path) === key);
+    const existing = this.routes.findIndex(
+      (route) => route.method === method && this.routeKeys.get(route) === key,
+    );
     const route: Route = { method, path, segments, handler };
+    this.routeKeys.set(route, key);
     if (existing >= 0) this.routes[existing] = route;
     else this.routes.push(route);
     return this;
