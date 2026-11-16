@@ -24,7 +24,7 @@ export interface MuboConfig {
     host?: string;
     port?: number;
     trustProxy?: boolean;
-    cors?: false | CorsConfig;
+    cors?: false | "*" | string[] | CorsConfig;
     bodyLimit?: number;
     requestTimeoutMs?: number;
     rateLimit?: false | {
@@ -693,26 +693,49 @@ function validateChoices(config: ResolvedMuboConfig): void {
   requireChoice("static mode", config.static.mode, STATIC_MODES);
 }
 
-/** Validates the CORS settings and normalizes the configured origins. */
-function normalizeCors(config: ResolvedMuboConfig): void {
-  if (config.http.cors === false) return;
-  const cors = config.http.cors as unknown;
-  if (typeof cors !== "object" || cors === null || Array.isArray(cors)) {
-    throw new MuboError("CONFIG_ERROR", "Invalid CORS configuration");
-  }
-  const origin = (cors as { origin?: unknown }).origin;
+/** Normalizes a CORS origin list, rejecting empty lists and non-string entries. */
+function normalizeCorsOrigins(origin: unknown[]): string[] {
   if (
-    origin !== "*" &&
-    (!Array.isArray(origin) ||
-      origin.length === 0 ||
-      origin.some((value) => typeof value !== "string" || value.trim().length === 0))
+    origin.length === 0 ||
+    origin.some((value) => typeof value !== "string" || value.trim().length === 0)
   ) {
     throw new MuboError(
       "CONFIG_ERROR",
       'Invalid CORS origin: expected "*" or a non-empty array of strings',
     );
   }
-  const credentials = (cors as { credentials?: unknown }).credentials;
+  return origin.map((value) => (value as string).trim());
+}
+
+/**
+ * Validates the CORS settings and normalizes the configured origins.
+ *
+ * Besides the object form, `http.cors` accepts the documented shorthand
+ * `"*"` or an array of allowed origins.
+ */
+function normalizeCors(config: ResolvedMuboConfig): void {
+  const configured = config.http.cors as unknown;
+  if (configured === false) return;
+  if (configured === "*") {
+    config.http.cors = { origin: "*" };
+    return;
+  }
+  if (Array.isArray(configured)) {
+    config.http.cors = { origin: normalizeCorsOrigins(configured) };
+    return;
+  }
+  if (typeof configured !== "object" || configured === null) {
+    throw new MuboError("CONFIG_ERROR", "Invalid CORS configuration");
+  }
+  const cors = configured as { origin?: unknown; credentials?: unknown; maxAgeSeconds?: unknown };
+  const origin = cors.origin;
+  if (origin !== "*" && !Array.isArray(origin)) {
+    throw new MuboError(
+      "CONFIG_ERROR",
+      'Invalid CORS origin: expected "*" or a non-empty array of strings',
+    );
+  }
+  const credentials = cors.credentials;
   if (credentials !== undefined && typeof credentials !== "boolean") {
     throw new MuboError("CONFIG_ERROR", "Invalid CORS credentials setting");
   }
@@ -724,8 +747,8 @@ function normalizeCors(config: ResolvedMuboConfig): void {
   }
   if (Array.isArray(origin)) {
     config.http.cors = {
-      ...(config.http.cors as CorsConfig),
-      origin: origin.map((value) => (value as string).trim()),
+      ...(configured as CorsConfig),
+      origin: normalizeCorsOrigins(origin),
     };
   }
 }

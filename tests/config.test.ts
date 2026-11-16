@@ -755,6 +755,31 @@ export default defineConfig({
     expect(input.http.cors.origin).toEqual(["  https://one.test ", "https://two.test  "]);
   });
 
+  test("accepts the documented CORS shorthand", () => {
+    const wildcard = resolveConfig({ http: { cors: "*" } }, { env: {}, argv: [] });
+    expect(wildcard.http.cors).toEqual({ origin: "*" });
+
+    const listed = resolveConfig(
+      { http: { cors: ["  https://one.test ", "https://two.test  "] } },
+      { env: {}, argv: [] },
+    );
+    expect(listed.http.cors).toEqual({
+      origin: ["https://one.test", "https://two.test"],
+    });
+  });
+
+  test("rejects malformed CORS shorthand", () => {
+    expect(() => resolveConfig({ http: { cors: [] } }, { env: {}, argv: [] })).toThrow(
+      /Invalid CORS origin/,
+    );
+    expect(() =>
+      resolveConfig({ http: { cors: [""] } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid CORS origin/);
+    expect(() =>
+      resolveConfig({ http: { cors: ["https://ok.test", 2 as never] } }, { env: {}, argv: [] }),
+    ).toThrow(/Invalid CORS origin/);
+  });
+
   test("rejects malformed CORS configuration", () => {
     expect(() => resolveConfig({ http: { cors: true as never } }, { env: {}, argv: [] })).toThrow(
       /Invalid CORS configuration/,

@@ -1073,6 +1073,34 @@ test("readiness works with no schema configured", async () => {
     expect(all.headers.get("vary")).toBe("*");
   });
 
+  test("applies CORS shorthand origins to preflight and actual responses", async () => {
+    const app = await startApp({
+      app: { name: "cors-shorthand-test", env: "test" },
+      db: { path: ":memory:" },
+      http: { port: 0, cors: ["http://allowed.test"] },
+      log: { level: "error" },
+      static: { mode: "off" },
+    });
+    app.post("/cors", (ctx) => ctx.json({ ok: true }));
+
+    const preflight = await fetch(`${base(app)}/cors`, {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://allowed.test",
+        "access-control-request-method": "POST",
+      },
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+
+    const actual = await fetch(`${base(app)}/cors`, {
+      method: "POST",
+      headers: { origin: "http://allowed.test" },
+    });
+    expect(actual.status).toBe(200);
+    expect(actual.headers.get("access-control-allow-origin")).toBe("http://allowed.test");
+  });
+
   test("varies CORS responses even when the request origin is absent or denied", async () => {
     const app = await startApp({
       app: { name: "cors-missing-origin-test", env: "test" },
