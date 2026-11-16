@@ -3030,6 +3030,54 @@ describe("application database wiring", () => {
 
     await app.stop();
   });
+
+  test("app.db.migrate() explicit options override the configured safeOnly setting", async () => {
+    const app = await createMuboApp(
+      {
+        app: { name: "migrate-options-override-test", env: "test" },
+        db: {
+          path: ":memory:",
+          migrations: { mode: "apply", safeOnly: true, table: "custom_history" },
+        },
+        log: { level: "error" },
+        static: { mode: "off" },
+        schema: defineSchema({
+          tables: {
+            accounts: {
+              columns: { id: { type: "integer", primaryKey: true } },
+            },
+          },
+        }),
+      },
+      { argv: [] },
+    );
+    await app.start();
+
+    const withNotNull = defineSchema({
+      tables: {
+        accounts: {
+          columns: {
+            id: { type: "integer", primaryKey: true },
+            slug: { type: "text", notNull: true },
+          },
+        },
+      },
+    });
+    // safeOnly=true from config rejects adding a NOT NULL column without a default.
+    await expect(app.db.migrate(withNotNull)).rejects.toThrow(
+      /Cannot automatically add NOT NULL column accounts\.slug without a default value/,
+    );
+
+    // Explicit safeOnly=false overrides the configuration and applies it.
+    const override = await app.db.migrate(withNotNull, { safeOnly: false });
+    expect(override.status).toBe("applied");
+    expect(app.db.query("SELECT slug FROM accounts LIMIT 1").get()?.slug).toBeUndefined();
+    expect(
+      app.db.query<{ total: number }>("SELECT COUNT(*) AS total FROM custom_history").get()?.total,
+    ).toBe(2);
+
+    await app.stop();
+  });
 });
 
 describe("README declarative schema example", () => {
