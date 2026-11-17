@@ -1856,6 +1856,39 @@ describe("rate limiting", () => {
     expect(limited.headers.get("x-ratelimit-remaining")).toBe("0");
   });
 
+  test("reports a fresh window when the bucket expires during a slow handler", async () => {
+    // A handler that outlives its rate limit window must not advertise a
+    // reset timestamp that has already passed: at response time the limiter
+    // starts a fresh window, so remaining and reset describe that window.
+    const app = await startApp({
+      app: { name: "ratelimit-slow-handler-test", env: "test" },
+      db: { path: ":memory:" },
+      log: { level: "error" },
+      static: { mode: "off" },
+      http: {
+        rateLimit: {
+          maxRequests: 1,
+          windowMs: 50,
+          key: () => "slow-bucket",
+        },
+      },
+    });
+    app.get("/slow", async (ctx) => {
+      await Bun.sleep(1300);
+      return ctx.json({ ok: true });
+    });
+
+    const response = await fetch(`${base(app)}/slow`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-ratelimit-limit")).toBe("1");
+    const sampledAt = Date.now();
+    const reset = Number(response.headers.get("x-ratelimit-reset"));
+    // The reset second must not be in the past: the stale window ended about
+    // 1.2s before the response was written, so a stale header would be at
+    // least one whole second below this bound.
+    expect(reset).toBeGreaterThanOrEqual(Math.ceil((sampledAt - 200) / 1000));
+  });
+
   test("does not apply rate limiting when disabled", async () => {
     const app = await startApp({
       app: { name: "no-ratelimit-test", env: "test" },

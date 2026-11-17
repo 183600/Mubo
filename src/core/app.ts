@@ -419,8 +419,18 @@ export class MuboApp {
         }
       }
       const response = await next();
-      const remaining = Math.max(0, maxRequests - (store.get(identifier)?.count ?? 0));
-      return addRateLimitHeaders(response, remaining, store.get(identifier)?.resetAt ?? now + windowMs);
+      // The bucket state was read before the handler ran. If the window
+      // elapsed (or the cleanup interval reclaimed the entry) while the
+      // handler was still running, the limiter starts a fresh window for the
+      // next request, so the headers must describe that window instead of
+      // advertising a reset timestamp that has already passed.
+      const current = store.get(identifier);
+      const nowAfter = Date.now();
+      if (!current || current.resetAt < nowAfter) {
+        return addRateLimitHeaders(response, maxRequests, nowAfter + windowMs);
+      }
+      const remaining = Math.max(0, maxRequests - current.count);
+      return addRateLimitHeaders(response, remaining, current.resetAt);
     };
   }
 
