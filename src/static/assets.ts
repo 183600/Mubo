@@ -23,7 +23,7 @@ type ParsedRange =
   | { kind: "range"; start: number; end: number };
 
 function parseRangeHeader(header: string | null, size: number): ParsedRange {
-  if (!header || !header.startsWith("bytes=")) return { kind: "ignore" };
+  if (!header || !/^bytes=/i.test(header)) return { kind: "ignore" };
   const specs = header.slice(6).split(",");
   // Only a single range is supported; the following check subsumes any
   // "too many parts" limit, so no separate part cap is needed.
