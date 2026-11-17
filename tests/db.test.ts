@@ -7,7 +7,7 @@ import { MuboDatabase } from "../src/db/database.ts";
 import { defineSchema } from "../src/db/schema.ts";
 import { MuboError } from "../src/core/errors.ts";
 import { createLogger } from "../src/core/logger.ts";
-import { acquireFileLock, releaseFileLock } from "../src/db/migrations.ts";
+import { acquireFileLock, releaseFileLock, validateSchema } from "../src/db/migrations.ts";
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -1037,6 +1037,20 @@ describe("database and automatic migrations", () => {
       expect(() => db.plan(item.schema as never)).toThrow(item.message);
     }
     db.close();
+  });
+
+  test("rejects AUTOINCREMENT on non-integer columns during schema validation", () => {
+    expect(() =>
+      validateSchema(
+        defineSchema({
+          tables: {
+            items: {
+              columns: { id: { type: "text", primaryKey: true, autoIncrement: true } },
+            },
+          },
+        }),
+      ),
+    ).toThrow(/AUTOINCREMENT requires an INTEGER primary key/);
   });
 
   test("logs slow queries and rejects operations after close", () => {

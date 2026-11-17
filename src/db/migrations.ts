@@ -203,6 +203,12 @@ function validateTable(name: string, table: TableDefinition): void {
         `AUTOINCREMENT requires a primary key for ${name}.${columnName}`,
       );
     }
+    if (column.autoIncrement && normalizeType(column.type) !== "INTEGER") {
+      throw new MuboError(
+        "MIGRATION_ERROR",
+        `AUTOINCREMENT requires an INTEGER primary key: ${name}.${columnName}`,
+      );
+    }
     const references = column.references;
     if (references !== undefined && references !== null) {
       if (!isObject(references)) {
